@@ -27,10 +27,6 @@ export class RateLimiter {
     setInterval(() => this.cleanup(), 60000);
   }
 
-  /**
-   * Check if a user can execute a command based on their rate limit
-   * @returns true if allowed, false if rate limited
-   */
   async checkLimit(member: GuildMember): Promise<{ allowed: boolean; timeLeft?: number }> {
     const limit = this.getUserLimit(member);
     
@@ -63,9 +59,6 @@ export class RateLimiter {
     return { allowed: true };
   }
 
-  /**
-   * Get the rate limit for a specific member based on their roles and permissions
-   */
   private getUserLimit(member: GuildMember): number {
     // Check if server owner
     if (member.id === member.guild.ownerId) {
@@ -90,30 +83,20 @@ export class RateLimiter {
     return this.config.limits.default;
   }
 
-  /**
-   * Reset rate limit for a specific user
-   */
   resetUser(userId: string): void {
     this.userLimits.delete(userId);
   }
 
-  /**
-   * Reset all rate limits
-   */
+
   resetAll(): void {
     this.userLimits.clear();
   }
 
-  /**
-   * Get formatted cooldown message
-   */
+
   getCooldownMessage(timeLeft: number): string {
     return this.config.message.replace('{time}', timeLeft.toString());
   }
 
-  /**
-   * Clean up expired rate limit entries
-   */
   private cleanup(): void {
     const now = Date.now();
     for (const [userId, limit] of this.userLimits.entries()) {
@@ -123,9 +106,6 @@ export class RateLimiter {
     }
   }
 
-  /**
-   * Get current rate limit status for a user (for debugging/info)
-   */
   getUserStatus(member: GuildMember): {
     limit: number;
     used: number;

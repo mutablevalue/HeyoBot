@@ -22,9 +22,6 @@ export class CommandRegistry {
     console.log(`Added command to registry: ${command.data.name}`);
   }
 
-  /**
-   * Register all commands at once
-   */
   async registerCommands(clientId: string, guildId?: string): Promise<void> {
     const commandData = this.commands.map(cmd => cmd.data.toJSON());
     
@@ -62,9 +59,6 @@ export class CommandRegistry {
     }
   }
 
-  /**
-   * Clear all commands (useful for development)
-   */
   async clearCommands(clientId: string, guildId?: string): Promise<void> {
     try {
       if (guildId) {
@@ -86,9 +80,6 @@ export class CommandRegistry {
     }
   }
 
-  /**
-   * Get registered commands (useful for debugging)
-   */
   async getRegisteredCommands(clientId: string, guildId?: string): Promise<any[]> {
     try {
       if (guildId) {

@@ -5,7 +5,6 @@ import {
   EmbedBuilder
 } from 'discord.js';
 
-// We'll need to pass the rateLimiter instance to this command
 let rateLimiterInstance: any;
 
 export function setRateLimiter(rateLimiter: any) {
@@ -40,9 +39,9 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
   // Add permission info
   if (member.id === interaction.guild.ownerId) {
-    embed.setDescription('👑 You are the server owner - no rate limits!');
+    embed.setDescription('You are the server owner - no rate limits!');
   } else if (member.permissions.has(PermissionFlagsBits.Administrator)) {
-    embed.setDescription('🛡️ You have Administrator permission - no rate limits!');
+    embed.setDescription('You have Administrator permission - no rate limits!');
   }
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
