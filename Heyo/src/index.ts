@@ -7,8 +7,11 @@ import {
 } from 'discord.js';
 import { ConfigLoader } from './utils/configLoader';
 import { QueueManager } from './utils/queueManager';
-import { botIntents } from './utils/intents';
+import { RateLimiter } from './utils/rateLimiter';
+import { CommandRegistry } from './utils/commandRegistry';
+import { botIntents } from './intents';
 import * as pingCommand from './commands/ping';
+import * as rateLimitCommand from './commands/ratelimit';
 import * as path from 'path';
 import { Collection as DjsCollection } from 'discord.js';
 
@@ -29,6 +32,7 @@ async function main() {
   const token = config.get('token');
   const prefix = config.get('prefix');
   const queueCfg = config.get('queue');
+  const rateLimitCfg = config.get('rateLimit');
   
   const client = new Client({
     intents: botIntents,
@@ -39,6 +43,11 @@ async function main() {
     queueCfg.workerCount,
     queueCfg.retryDelaySeconds
   );
+  
+  const rateLimiter = new RateLimiter(rateLimitCfg);
+  
+  // Pass rateLimiter to commands that need it
+  rateLimitCommand.setRateLimiter(rateLimiter);
   
   async function exampleWorker(item: string) {
     console.log(`Processing item from queue: ${item}`);
@@ -53,12 +62,22 @@ async function main() {
     data: pingCommand.data,
     execute: pingCommand.execute,
   });
+  client.commands.set(rateLimitCommand.data.name, {
+    data: rateLimitCommand.data,
+    execute: rateLimitCommand.execute,
+  });
   
   client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user?.tag}`);
     const clientId = client.user!.id;
-    await pingCommand.registerSlashCommand(clientId, token);
-    console.log('Slash commands registered.');
+    
+    // Register all commands at once
+    const commandRegistry = new CommandRegistry(token);
+    commandRegistry.addCommand(pingCommand);
+    commandRegistry.addCommand(rateLimitCommand);
+    await commandRegistry.registerCommands(clientId);
+    
+    console.log('All slash commands registered successfully.');
   });
   
   client.on(Events.InteractionCreate, async (interaction: Interaction) => {
@@ -68,6 +87,22 @@ async function main() {
     if (!command) return;
     
     try {
+      // Check rate limit for guild commands
+      if (interaction.guild && interaction.member) {
+        const guildMember = interaction.guild.members.cache.get(interaction.user.id);
+        if (guildMember) {
+          const { allowed, timeLeft } = await rateLimiter.checkLimit(guildMember);
+          
+          if (!allowed && timeLeft) {
+            await interaction.reply({ 
+              content: rateLimiter.getCooldownMessage(timeLeft), 
+              ephemeral: true 
+            });
+            return;
+          }
+        }
+      }
+      
       await command.execute(interaction);
     } catch (error) {
       console.error(error);

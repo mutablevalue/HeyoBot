@@ -36,8 +36,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const discord_js_1 = require("discord.js");
 const configLoader_1 = require("./utils/configLoader");
 const queueManager_1 = require("./utils/queueManager");
-const intents_1 = require("./utils/intents");
+const rateLimiter_1 = require("./utils/rateLimiter");
+const commandRegistry_1 = require("./utils/commandRegistry");
+const intents_1 = require("./intents");
 const pingCommand = __importStar(require("./commands/ping"));
+const rateLimitCommand = __importStar(require("./commands/ratelimit"));
 const path = __importStar(require("path"));
 const discord_js_2 = require("discord.js");
 async function main() {
@@ -45,10 +48,14 @@ async function main() {
     const token = config.get('token');
     const prefix = config.get('prefix');
     const queueCfg = config.get('queue');
+    const rateLimitCfg = config.get('rateLimit');
     const client = new discord_js_1.Client({
         intents: intents_1.botIntents,
     });
     const queueManager = new queueManager_1.QueueManager(queueCfg.maxSize, queueCfg.workerCount, queueCfg.retryDelaySeconds);
+    const rateLimiter = new rateLimiter_1.RateLimiter(rateLimitCfg);
+    // Pass rateLimiter to commands that need it
+    rateLimitCommand.setRateLimiter(rateLimiter);
     async function exampleWorker(item) {
         console.log(`Processing item from queue: ${item}`);
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -60,11 +67,19 @@ async function main() {
         data: pingCommand.data,
         execute: pingCommand.execute,
     });
+    client.commands.set(rateLimitCommand.data.name, {
+        data: rateLimitCommand.data,
+        execute: rateLimitCommand.execute,
+    });
     client.once(discord_js_1.Events.ClientReady, async () => {
         console.log(`Logged in as ${client.user?.tag}`);
         const clientId = client.user.id;
-        await pingCommand.registerSlashCommand(clientId, token);
-        console.log('Slash commands registered.');
+        // Register all commands at once
+        const commandRegistry = new commandRegistry_1.CommandRegistry(token);
+        commandRegistry.addCommand(pingCommand);
+        commandRegistry.addCommand(rateLimitCommand);
+        await commandRegistry.registerCommands(clientId);
+        console.log('All slash commands registered successfully.');
     });
     client.on(discord_js_1.Events.InteractionCreate, async (interaction) => {
         if (!interaction.isChatInputCommand())
@@ -73,6 +88,20 @@ async function main() {
         if (!command)
             return;
         try {
+            // Check rate limit for guild commands
+            if (interaction.guild && interaction.member) {
+                const guildMember = interaction.guild.members.cache.get(interaction.user.id);
+                if (guildMember) {
+                    const { allowed, timeLeft } = await rateLimiter.checkLimit(guildMember);
+                    if (!allowed && timeLeft) {
+                        await interaction.reply({
+                            content: rateLimiter.getCooldownMessage(timeLeft),
+                            ephemeral: true
+                        });
+                        return;
+                    }
+                }
+            }
             await command.execute(interaction);
         }
         catch (error) {
