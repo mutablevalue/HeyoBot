@@ -8,5 +8,5 @@ exports.data = new discord_js_1.SlashCommandBuilder()
     .setDescription('Check bot latency');
 async function execute(interaction) {
     const latency = Math.round(interaction.client.ws.ping);
-    await interaction.reply(`🏓 Pong! Latency: ${latency}ms`);
+    await interaction.reply(`Pong! Latency: ${latency}ms`);
 }

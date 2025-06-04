@@ -4,7 +4,6 @@ exports.data = void 0;
 exports.setRateLimiter = setRateLimiter;
 exports.execute = execute;
 const discord_js_1 = require("discord.js");
-// We'll need to pass the rateLimiter instance to this command
 let rateLimiterInstance;
 function setRateLimiter(rateLimiter) {
     rateLimiterInstance = rateLimiter;
@@ -29,10 +28,10 @@ async function execute(interaction) {
         .setTimestamp();
     // Add permission info
     if (member.id === interaction.guild.ownerId) {
-        embed.setDescription('👑 You are the server owner - no rate limits!');
+        embed.setDescription('You are the server owner - no rate limits!');
     }
     else if (member.permissions.has(discord_js_1.PermissionFlagsBits.Administrator)) {
-        embed.setDescription('🛡️ You have Administrator permission - no rate limits!');
+        embed.setDescription('You have Administrator permission - no rate limits!');
     }
     await interaction.reply({ embeds: [embed], ephemeral: true });
 }

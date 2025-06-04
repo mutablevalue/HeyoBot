@@ -15,9 +15,6 @@ class CommandRegistry {
         this.commands.push(command);
         console.log(`Added command to registry: ${command.data.name}`);
     }
-    /**
-     * Register all commands at once
-     */
     async registerCommands(clientId, guildId) {
         const commandData = this.commands.map(cmd => cmd.data.toJSON());
         console.log('Commands to register:', commandData.map(cmd => ({
@@ -47,9 +44,6 @@ class CommandRegistry {
             throw error; // Re-throw to handle in calling code
         }
     }
-    /**
-     * Clear all commands (useful for development)
-     */
     async clearCommands(clientId, guildId) {
         try {
             if (guildId) {
@@ -66,9 +60,6 @@ class CommandRegistry {
             throw error;
         }
     }
-    /**
-     * Get registered commands (useful for debugging)
-     */
     async getRegisteredCommands(clientId, guildId) {
         try {
             if (guildId) {

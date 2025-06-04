@@ -123,10 +123,10 @@ async function main() {
             if (item) {
                 const success = queueManager.enqueue(item);
                 if (success) {
-                    await message.reply(`✅ Enqueued: ${item}`);
+                    await message.reply(`Enqueued: ${item}`);
                 }
                 else {
-                    await message.reply('❌ Queue is full.');
+                    await message.reply('Queue is full.');
                 }
             }
         }
