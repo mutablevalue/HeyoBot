@@ -1,4 +1,8 @@
-token: ""
+# ===== Updated config.yaml =====
+
+# (Original settings preserved; new "antiNuke:" block added below)
+
+token: "MTM3OTkzNzIyNDI1NDI5NjE2NA.GXlWom.zaKMFAKN9qABWfGAuldzRkCgtE0EoQdrfAkhPQ"
 prefix: ""
 logging:
   level: "info"
@@ -10,10 +14,35 @@ queue:
 rateLimit:
   windowMs: 60000
   limits:
-    serverOwner: 0        
-    administrator: 0      
-    default: 5           
+    serverOwner: 0
+    administrator: 0
+    default: 5
   customRoles:
     # "Role Name": limit
     # "VIP": 20
   message: "You're sending commands too quickly! Please wait {time} seconds."
+
+# ── Anti-Nuke Configuration ─────────────────────────────────────────────────
+antiNuke:
+  # List of user IDs and role IDs always allowed to bypass anti-nuke checks:
+  whitelist:
+    users:
+      - "123456789012345678"   # ← Replace with trusted user IDs
+    roles:
+      - "876543210987654321"   # ← Replace with trusted role IDs
+
+  # Roles permitted to manage the anti-nuke whitelist (via /antinuke commands):
+  adminRoles:
+    - "987654321098765432"    # ← Replace with role IDs that can run whitelist commands
+
+  spamThreshold:
+    maxActions: 5             # >5 admin actions in 1 minute triggers mitigation
+    timeWindowMinutes: 1
+
+  adminLogChannel: "111111111111111111"  # ← Channel ID to record all admin commands
+  abuseLogChannel: "222222222222222222"  # ← Channel ID for abuse alerts (role stripping)
+
+# ==================================================================================
+# Note: When you use /antinuke whitelist add/remove, the "whitelist" section above will
+# be updated automatically by the code. You do not need to add entries here manually.
+# ==================================================================================
