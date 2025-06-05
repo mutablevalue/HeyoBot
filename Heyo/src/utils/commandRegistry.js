@@ -1,28 +1,21 @@
 import { REST } from '@discordjs/rest';
 import { Routes } from 'discord-api-types/v10';
-import { SlashCommandBuilder } from 'discord.js';
-
-interface Command {
-  data: SlashCommandBuilder;
-}
 
 export class CommandRegistry {
-  private commands: Command[] = [];
-  private rest: REST;
-
-  constructor(token: string) {
+  constructor(token) {
+    this.commands = [];
     this.rest = new REST({ version: '10' }).setToken(token);
   }
 
   /**
    * Add a command to the registry
    */
-  addCommand(command: Command): void {
+  addCommand(command) {
     this.commands.push(command);
     console.log(`Added command to registry: ${command.data.name}`);
   }
 
-  async registerCommands(clientId: string, guildId?: string): Promise<void> {
+  async registerCommands(clientId, guildId) {
     const commandData = this.commands.map(cmd => cmd.data.toJSON());
     
     console.log('Commands to register:', commandData.map(cmd => ({
@@ -59,7 +52,7 @@ export class CommandRegistry {
     }
   }
 
-  async clearCommands(clientId: string, guildId?: string): Promise<void> {
+  async clearCommands(clientId, guildId) {
     try {
       if (guildId) {
         await this.rest.put(
@@ -80,17 +73,17 @@ export class CommandRegistry {
     }
   }
 
-  async getRegisteredCommands(clientId: string, guildId?: string): Promise<any[]> {
+  async getRegisteredCommands(clientId, guildId) {
     try {
       if (guildId) {
         const commands = await this.rest.get(
           Routes.applicationGuildCommands(clientId, guildId)
-        ) as any[];
+        );
         return commands;
       } else {
         const commands = await this.rest.get(
           Routes.applicationCommands(clientId)
-        ) as any[];
+        );
         return commands;
       }
     } catch (error) {

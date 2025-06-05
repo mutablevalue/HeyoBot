@@ -1,33 +1,15 @@
-import { GuildMember, PermissionFlagsBits } from 'discord.js';
-
-interface RateLimitConfig {
-  windowMs: number;
-  limits: {
-    serverOwner: number;
-    administrator: number;
-    default: number;
-  };
-  customRoles?: Record<string, number>;
-  message: string;
-}
-
-interface UserRateLimit {
-  commands: number;
-  resetTime: number;
-}
+import { PermissionFlagsBits } from 'discord.js';
 
 export class RateLimiter {
-  private userLimits: Map<string, UserRateLimit> = new Map();
-  private config: RateLimitConfig;
-
-  constructor(config: RateLimitConfig) {
+  constructor(config) {
+    this.userLimits = new Map();
     this.config = config;
     
     // Clean up expired entries every minute
     setInterval(() => this.cleanup(), 60000);
   }
 
-  async checkLimit(member: GuildMember): Promise<{ allowed: boolean; timeLeft?: number }> {
+  async checkLimit(member) {
     const limit = this.getUserLimit(member);
     
     // No rate limit for this user
@@ -59,7 +41,7 @@ export class RateLimiter {
     return { allowed: true };
   }
 
-  private getUserLimit(member: GuildMember): number {
+  getUserLimit(member) {
     // Check if server owner
     if (member.id === member.guild.ownerId) {
       return this.config.limits.serverOwner;
@@ -83,21 +65,19 @@ export class RateLimiter {
     return this.config.limits.default;
   }
 
-  resetUser(userId: string): void {
+  resetUser(userId) {
     this.userLimits.delete(userId);
   }
 
-
-  resetAll(): void {
+  resetAll() {
     this.userLimits.clear();
   }
 
-
-  getCooldownMessage(timeLeft: number): string {
+  getCooldownMessage(timeLeft) {
     return this.config.message.replace('{time}', timeLeft.toString());
   }
 
-  private cleanup(): void {
+  cleanup() {
     const now = Date.now();
     for (const [userId, limit] of this.userLimits.entries()) {
       if (now > limit.resetTime) {
@@ -106,12 +86,7 @@ export class RateLimiter {
     }
   }
 
-  getUserStatus(member: GuildMember): {
-    limit: number;
-    used: number;
-    remaining: number;
-    resetIn: number;
-  } {
+  getUserStatus(member) {
     const limit = this.getUserLimit(member);
     const userLimit = this.userLimits.get(member.id);
     

@@ -1,13 +1,12 @@
 import { 
-  ChatInputCommandInteraction, 
   SlashCommandBuilder,
   PermissionFlagsBits,
   EmbedBuilder
 } from 'discord.js';
 
-let rateLimiterInstance: any;
+let rateLimiterInstance;
 
-export function setRateLimiter(rateLimiter: any) {
+export function setRateLimiter(rateLimiter) {
   rateLimiterInstance = rateLimiter;
 }
 
@@ -15,7 +14,7 @@ export const data = new SlashCommandBuilder()
   .setName('ratelimit')
   .setDescription('Check your rate limit status');
 
-export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function execute(interaction) {
   if (!interaction.guild || !interaction.member) {
     await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
     return;
