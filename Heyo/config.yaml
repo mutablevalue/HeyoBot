@@ -1,7 +1,3 @@
-# ===== Updated config.yaml =====
-
-# (Original settings preserved; new "antiNuke:" block added below)
-
 token: "MTM3OTkzNzIyNDI1NDI5NjE2NA.GXlWom.zaKMFAKN9qABWfGAuldzRkCgtE0EoQdrfAkhPQ"
 prefix: ""
 logging:
@@ -21,28 +17,91 @@ rateLimit:
     # "Role Name": limit
     # "VIP": 20
   message: "You're sending commands too quickly! Please wait {time} seconds."
-
 # ── Anti-Nuke Configuration ─────────────────────────────────────────────────
 antiNuke:
-  # List of user IDs and role IDs always allowed to bypass anti-nuke checks:
+  # ── Whitelist Configuration ──
+  # Users and roles that bypass ALL anti-nuke checks
   whitelist:
     users:
       - "123456789012345678"   # ← Replace with trusted user IDs
     roles:
       - "876543210987654321"   # ← Replace with trusted role IDs
-
-  # Roles permitted to manage the anti-nuke whitelist (via /antinuke commands):
+ 
+  # ── Admin Configuration ──
+  # Who can manage the anti-nuke system using /antinuke commands
+  # Note: Server owner ALWAYS has admin access automatically
+  adminUsers:
+    - "987654321098765432"    # ← User IDs who can manage anti-nuke
+    - "234567890123456789"    
+ 
   adminRoles:
-    - "987654321098765432"    # ← Replace with role IDs that can run whitelist commands
-
-  spamThreshold:
-    maxActions: 5             # >5 admin actions in 1 minute triggers mitigation
-    timeWindowMinutes: 1
-
-  adminLogChannel: "111111111111111111"  # ← Channel ID to record all admin commands
-  abuseLogChannel: "222222222222222222"  # ← Channel ID for abuse alerts (role stripping)
-
+    - "1235002473698299956"   # ← Role IDs who can manage anti-nuke
+ 
+  # ── Abuse Detection Limits ──
+  # Configure thresholds for different types of abuse
+  limits:
+    # Command spam detection
+    commands:
+      maxActions: 5           # Maximum admin commands allowed
+      timeWindowSeconds: 60   # Within this time window (in seconds)
+   
+    # Ban spam detection
+    bans:
+      maxActions: 3           # Maximum bans allowed
+      timeWindowSeconds: 120  # Within this time window (in seconds)
+   
+    # Kick spam detection
+    kicks:
+      maxActions: 5           # Maximum kicks allowed
+      timeWindowSeconds: 120  # Within this time window (in seconds)
+   
+    # Message spam detection (for all users)
+    messages:
+      maxMessages: 1         # Maximum messages allowed
+      timeWindowSeconds: 10   # Within this time window (in seconds)
+      timeoutDuration: "60s"   # Options: "5m" (5 minutes) or "60s" (60 seconds)
+   
+    # Channel creation detection
+    channelCreate:
+      maxActions: 3           # Maximum channels created
+      timeWindowSeconds: 60   # Within this time window (in seconds)
+   
+    # Channel deletion detection
+    channelDelete:
+      maxActions: 2           # Maximum channels deleted
+      timeWindowSeconds: 60   # Within this time window (in seconds)
+   
+    # Role creation detection
+    roleCreate:
+      maxActions: 3           # Maximum roles created
+      timeWindowSeconds: 60   # Within this time window (in seconds)
+   
+    # Role deletion detection
+    roleDelete:
+      maxActions: 2           # Maximum roles deleted
+      timeWindowSeconds: 60   # Within this time window (in seconds)
+ 
+  # ── Logging Channels ──
+  adminLogChannel: "111111111111111111"  # ← Channel for normal admin actions
+  abuseLogChannel: "222222222222222222"  # ← Channel for abuse alerts & mitigation
 # ==================================================================================
-# Note: When you use /antinuke whitelist add/remove, the "whitelist" section above will
-# be updated automatically by the code. You do not need to add entries here manually.
+# How Anti-Nuke Works:
+#
+# 1. WHITELIST: Users/roles here bypass ALL checks (trusted users)
+# 2. ADMIN ACCESS: Users/roles here can use /antinuke commands (also bypass spam)
+# 3. LIMITS: When limits are exceeded, action is taken:
+#    - Admins with perms: Roles stripped
+#    - Regular users: Timeout (configurable: "5m" or "60s")
+# 4. MESSAGE SPAM: Applies to EVERYONE except whitelisted and admin users
+#
+# The system now monitors:
+# - Admin command usage
+# - Ban/kick actions
+# - Message spam (all users)
+# - Channel creation/deletion
+# - Role creation/deletion
+#
+# Actions taken:
+# - Admin abuse: All roles removed
+# - Regular user spam: Timeout (configurable duration)
 # ==================================================================================

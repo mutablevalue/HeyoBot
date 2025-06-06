@@ -1,7 +1,7 @@
 // antiNuke.js
 // Anti-nuke system for Discord bot with whitelist management commands
 
-import { Collection, PermissionsBitField, Routes, REST } from "discord.js";
+import { Collection, PermissionsBitField } from "discord.js";
 import yaml from "js-yaml";
 import fs from "fs";
 import path from "path";
@@ -14,19 +14,26 @@ class AntiNuke {
 
     // Track recent admin actions (timestamps) per user ID
     this.adminActionLogs = new Collection();
+    
+    // Track recent messages (timestamps) per user ID for spam detection
+    this.messageSpamLogs = new Collection();
+    
+    // Track channel operations
+    this.channelCreateLogs = new Collection();
+    this.channelDeleteLogs = new Collection();
+    
+    // Track role operations
+    this.roleCreateLogs = new Collection();
+    this.roleDeleteLogs = new Collection();
 
-    // Register slash commands once the bot is ready
-    client.once("ready", () => {
-      this.registerSlashCommands();
-    });
-
-    // Handle incoming interactions (slash commands)
+    // We no longer register commands here - it's handled by CommandRegistry
+    
+    // Handle incoming interactions for admin commands
     this.client.on("interactionCreate", async (interaction) => {
       if (!interaction.isChatInputCommand()) return;
-
-      if (interaction.commandName === "antinuke") {
-        await this.handleAntinukeCommand(interaction);
-      } else {
+      
+      // Handle any admin command that's not antinuke
+      if (interaction.commandName !== "antinuke") {
         await this.handleAdminCommand(interaction);
       }
     });
@@ -40,19 +47,75 @@ class AntiNuke {
     this.client.on("guildMemberRemove", (member) => {
       this.handleKick(member);
     });
+    
+    // Detect message spam
+    this.client.on("messageCreate", (message) => {
+      if (message.author.bot) return;
+      this.handleMessageSpam(message);
+    });
+    
+    // Detect channel creation
+    this.client.on("channelCreate", (channel) => {
+      this.handleChannelCreate(channel);
+    });
+    
+    // Detect channel deletion
+    this.client.on("channelDelete", (channel) => {
+      this.handleChannelDelete(channel);
+    });
+    
+    // Detect role creation
+    this.client.on("roleCreate", (role) => {
+      this.handleRoleCreate(role);
+    });
+    
+    // Detect role deletion
+    this.client.on("roleDelete", (role) => {
+      this.handleRoleDelete(role);
+    });
   }
 
   loadConfig(configPath) {
     try {
       const file = fs.readFileSync(path.resolve(configPath), "utf8");
       const full = yaml.load(file);
-      return full.antiNuke || {
-        whitelist: { users: [], roles: [] },
-        adminRoles: [],
+      const config = full.antiNuke || {};
+      
+      // Ensure all required config sections exist with defaults
+      return {
+        whitelist: config.whitelist || { users: [], roles: [] },
+        adminRoles: config.adminRoles || [],
+        adminUsers: config.adminUsers || [],
+        limits: {
+          commands: config.limits?.commands || { maxActions: 5, timeWindowSeconds: 60 },
+          bans: config.limits?.bans || { maxActions: 3, timeWindowSeconds: 120 },
+          kicks: config.limits?.kicks || { maxActions: 5, timeWindowSeconds: 120 },
+          messages: config.limits?.messages || { maxMessages: 10, timeWindowSeconds: 10, timeoutDuration: "5m" },
+          channelCreate: config.limits?.channelCreate || { maxActions: 3, timeWindowSeconds: 60 },
+          channelDelete: config.limits?.channelDelete || { maxActions: 2, timeWindowSeconds: 60 },
+          roleCreate: config.limits?.roleCreate || { maxActions: 3, timeWindowSeconds: 60 },
+          roleDelete: config.limits?.roleDelete || { maxActions: 2, timeWindowSeconds: 60 }
+        },
+        adminLogChannel: config.adminLogChannel,
+        abuseLogChannel: config.abuseLogChannel
       };
     } catch (e) {
       console.error("[AntiNuke] Failed to load config:", e);
-      return { whitelist: { users: [], roles: [] }, adminRoles: [] };
+      return {
+        whitelist: { users: [], roles: [] },
+        adminRoles: [],
+        adminUsers: [],
+        limits: {
+          commands: { maxActions: 5, timeWindowSeconds: 60 },
+          bans: { maxActions: 3, timeWindowSeconds: 120 },
+          kicks: { maxActions: 5, timeWindowSeconds: 120 },
+          messages: { maxMessages: 10, timeWindowSeconds: 10, timeoutDuration: "5m" },
+          channelCreate: { maxActions: 3, timeWindowSeconds: 60 },
+          channelDelete: { maxActions: 2, timeWindowSeconds: 60 },
+          roleCreate: { maxActions: 3, timeWindowSeconds: 60 },
+          roleDelete: { maxActions: 2, timeWindowSeconds: 60 }
+        }
+      };
     }
   }
 
@@ -60,12 +123,46 @@ class AntiNuke {
     try {
       const fullFile = fs.readFileSync(path.resolve(this.configPath), "utf8");
       const full = yaml.load(fullFile);
-      full.antiNuke = this.config;
+      
+      // Preserve existing structure but update antiNuke section
+      full.antiNuke = {
+        whitelist: this.config.whitelist,
+        adminUsers: this.config.adminUsers,
+        adminRoles: this.config.adminRoles,
+        limits: this.config.limits,
+        adminLogChannel: this.config.adminLogChannel,
+        abuseLogChannel: this.config.abuseLogChannel
+      };
+      
       const output = yaml.dump(full, { lineWidth: -1 });
       fs.writeFileSync(path.resolve(this.configPath), output, "utf8");
     } catch (e) {
       console.error("[AntiNuke] Failed to save config:", e);
     }
+  }
+
+  parseTimeoutDuration(duration) {
+    // Parse "5m" or "60s" format
+    if (typeof duration === 'string') {
+      const match = duration.match(/^(\d+)(m|s)$/);
+      if (match) {
+        const value = parseInt(match[1]);
+        const unit = match[2];
+        return unit === 'm' ? value * 60 * 1000 : value * 1000;
+      }
+    }
+    // Default to 5 minutes if invalid format
+    return 5 * 60 * 1000;
+  }
+
+  formatTimeoutDuration(duration) {
+    // Format milliseconds to human readable
+    if (typeof duration === 'string') return duration;
+    const seconds = Math.floor(duration / 1000);
+    if (seconds >= 60) {
+      return `${Math.floor(seconds / 60)} minute${Math.floor(seconds / 60) > 1 ? 's' : ''}`;
+    }
+    return `${seconds} second${seconds > 1 ? 's' : ''}`;
   }
 
   isWhitelisted(userId, roleIds = []) {
@@ -81,66 +178,16 @@ class AntiNuke {
   }
 
   hasAdminRole(member) {
+    // Check if user is the server owner
+    if (member.guild.ownerId === member.id) return true;
+    
+    // Check if user is in adminUsers list
+    const { adminUsers = [] } = this.config;
+    if (adminUsers.includes(member.id)) return true;
+    
+    // Check if user has an admin role
     const { adminRoles = [] } = this.config;
     return member.roles.cache.some((r) => adminRoles.includes(r.id));
-  }
-
-  async registerSlashCommands() {
-    const clientId = this.client.user.id;
-    const rest = new REST({ version: "10" }).setToken(this.client.token);
-    const guildId = this.client.guilds.cache.first().id;
-
-    const commands = [
-      {
-        name: "antinuke",
-        description: "Manage Anti-Nuke whitelist",
-        options: [
-          {
-            name: "whitelist",
-            type: 2, // Subcommand
-            description: "Allow or remove users/roles",
-            options: [
-              {
-                name: "action",
-                type: 3, // STRING
-                description: "add or remove or list",
-                required: true,
-                choices: [
-                  { name: "add", value: "add" },
-                  { name: "remove", value: "remove" },
-                  { name: "list", value: "list" },
-                ],
-              },
-              {
-                name: "type",
-                type: 3,
-                description: "user or role",
-                required: false,
-                choices: [
-                  { name: "user", value: "user" },
-                  { name: "role", value: "role" },
-                ],
-              },
-              {
-                name: "id",
-                type: 3, // STRING
-                description: "ID of the user or role",
-                required: false,
-              },
-            ],
-          },
-        ],
-      },
-    ];
-
-    try {
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), {
-        body: commands,
-      });
-      console.log("[AntiNuke] Registered /antinuke slash command");
-    } catch (e) {
-      console.error("[AntiNuke] Failed to register slash commands:", e);
-    }
   }
 
   async handleAntinukeCommand(interaction) {
@@ -152,75 +199,91 @@ class AntiNuke {
       });
     }
 
-    const action = interaction.options.getString("action");
-    const type = interaction.options.getString("type");
-    const id = interaction.options.getString("id");
+    const subcommand = interaction.options.getSubcommand();
+    
+    if (subcommand === 'whitelist') {
+      const action = interaction.options.getString("action");
+      const type = interaction.options.getString("type");
+      const id = interaction.options.getString("id");
 
-    if (action === "list") {
-      const usersList = this.config.whitelist.users
-        ?.map((u) => `<@${u}>`)
-        .join(", ") || "None";
-      const rolesList = this.config.whitelist.roles
-        ?.map((r) => `<@&${r}>`)
-        .join(", ") || "None";
-      return interaction.reply({
-        content: `**Whitelisted Users:** ${usersList}\n**Whitelisted Roles:** ${rolesList}`,
-        ephemeral: true,
-      });
-    }
-
-    if (!type || !id) {
-      return interaction.reply({
-        content: "❌ You must provide both type and id for add/remove.",
-        ephemeral: true,
-      });
-    }
-
-    if (action === "add") {
-      if (type === "user") {
-        if (!this.config.whitelist.users.includes(id)) {
-          this.config.whitelist.users.push(id);
-          this.saveConfig();
-          return interaction.reply(`✅ Added user <@${id}> to whitelist.`);
-        }
+      if (action === "list") {
+        const usersList = this.config.whitelist.users
+          ?.map((u) => `<@${u}>`)
+          .join(", ") || "None";
+        const rolesList = this.config.whitelist.roles
+          ?.map((r) => `<@&${r}>`)
+          .join(", ") || "None";
         return interaction.reply({
-          content: "⚠️ User already whitelisted.",
-          ephemeral: true,
-        });
-      } else {
-        if (!this.config.whitelist.roles.includes(id)) {
-          this.config.whitelist.roles.push(id);
-          this.saveConfig();
-          return interaction.reply(`✅ Added role <@&${id}> to whitelist.`);
-        }
-        return interaction.reply({
-          content: "⚠️ Role already whitelisted.",
+          content: `**Whitelisted Users:** ${usersList}\n**Whitelisted Roles:** ${rolesList}`,
           ephemeral: true,
         });
       }
-    } else if (action === "remove") {
-      if (type === "user") {
-        const idx = this.config.whitelist.users.indexOf(id);
-        if (idx > -1) {
-          this.config.whitelist.users.splice(idx, 1);
-          this.saveConfig();
-          return interaction.reply(`✅ Removed user <@${id}> from whitelist.`);
-        }
+
+      if (!type || !id) {
         return interaction.reply({
-          content: "⚠️ User not found in whitelist.",
+          content: "❌ You must provide both **type** and **id** when using add/remove actions.",
           ephemeral: true,
         });
-      } else {
-        const idx = this.config.whitelist.roles.indexOf(id);
-        if (idx > -1) {
-          this.config.whitelist.roles.splice(idx, 1);
-          this.saveConfig();
-          return interaction.reply(`✅ Removed role <@&${id}> from whitelist.`);
+      }
+
+      if (action === "add") {
+        if (type === "user") {
+          if (!this.config.whitelist.users) {
+            this.config.whitelist.users = [];
+          }
+          if (!this.config.whitelist.users.includes(id)) {
+            this.config.whitelist.users.push(id);
+            this.saveConfig();
+            return interaction.reply(`✅ Added user <@${id}> to whitelist.`);
+          }
+          return interaction.reply({
+            content: "⚠️ User already whitelisted.",
+            ephemeral: true,
+          });
+        } else {
+          if (!this.config.whitelist.roles) {
+            this.config.whitelist.roles = [];
+          }
+          if (!this.config.whitelist.roles.includes(id)) {
+            this.config.whitelist.roles.push(id);
+            this.saveConfig();
+            return interaction.reply(`✅ Added role <@&${id}> to whitelist.`);
+          }
+          return interaction.reply({
+            content: "⚠️ Role already whitelisted.",
+            ephemeral: true,
+          });
         }
-        return interaction.reply({
-          content: "⚠️ Role not found in whitelist.",
-          ephemeral: true,
-        });
+      } else if (action === "remove") {
+        if (type === "user") {
+          if (!this.config.whitelist.users) {
+            this.config.whitelist.users = [];
+          }
+          const idx = this.config.whitelist.users.indexOf(id);
+          if (idx > -1) {
+            this.config.whitelist.users.splice(idx, 1);
+            this.saveConfig();
+            return interaction.reply(`✅ Removed user <@${id}> from whitelist.`);
+          }
+          return interaction.reply({
+            content: "⚠️ User not found in whitelist.",
+            ephemeral: true,
+          });
+        } else {
+          if (!this.config.whitelist.roles) {
+            this.config.whitelist.roles = [];
+          }
+          const idx = this.config.whitelist.roles.indexOf(id);
+          if (idx > -1) {
+            this.config.whitelist.roles.splice(idx, 1);
+            this.saveConfig();
+            return interaction.reply(`✅ Removed role <@&${id}> from whitelist.`);
+          }
+          return interaction.reply({
+            content: "⚠️ Role not found in whitelist.",
+            ephemeral: true,
+          });
+        }
       }
     }
 
@@ -249,17 +312,17 @@ class AntiNuke {
 
     const now = Date.now();
     let timestamps = this.adminActionLogs.get(userId) || [];
-    const windowMinutes = this.config.spamThreshold.timeWindowMinutes || 1;
-    const windowMillis = windowMinutes * 60 * 1000;
+    const windowSeconds = this.config.limits?.commands?.timeWindowSeconds || 60;
+    const windowMillis = windowSeconds * 1000;
     timestamps = timestamps.filter((ts) => now - ts < windowMillis);
     timestamps.push(now);
     this.adminActionLogs.set(userId, timestamps);
 
-    if (timestamps.length > (this.config.spamThreshold.maxActions || 5)) {
+    if (timestamps.length > (this.config.limits?.commands?.maxActions || 5)) {
       await this.takeMitigationAction(
         guild,
         userId,
-        `spamming commands`,
+        `spamming commands (${timestamps.length} in ${windowSeconds} seconds)`,
         abuseLogChannelId
       );
       return;
@@ -280,8 +343,11 @@ class AntiNuke {
     const adminLogChannelId = this.config.adminLogChannel;
     const abuseLogChannelId = this.config.abuseLogChannel;
 
+    const member = guild.members.cache.get(userId);
+    if (!member) return;
+
     if (
-      this.isWhitelisted(userId, executor.roles.cache.map((r) => r.id))
+      this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))
     ) {
       this.logAdminAction(
         guild,
@@ -293,17 +359,17 @@ class AntiNuke {
 
     const now = Date.now();
     let timestamps = this.adminActionLogs.get(userId) || [];
-    const windowMinutes = this.config.spamThreshold.timeWindowMinutes || 1;
-    const windowMillis = windowMinutes * 60 * 1000;
+    const windowSeconds = this.config.limits?.bans?.timeWindowSeconds || 120;
+    const windowMillis = windowSeconds * 1000;
     timestamps = timestamps.filter((ts) => now - ts < windowMillis);
     timestamps.push(now);
     this.adminActionLogs.set(userId, timestamps);
 
-    if (timestamps.length > (this.config.spamThreshold.maxActions || 5)) {
+    if (timestamps.length > (this.config.limits?.bans?.maxActions || 3)) {
       await this.takeMitigationAction(
         guild,
         userId,
-        `rapid bans detected`,
+        `rapid bans detected (${timestamps.length} in ${windowSeconds} seconds)`,
         abuseLogChannelId
       );
       return;
@@ -324,8 +390,11 @@ class AntiNuke {
     const adminLogChannelId = this.config.adminLogChannel;
     const abuseLogChannelId = this.config.abuseLogChannel;
 
+    const executorMember = guild.members.cache.get(userId);
+    if (!executorMember) return;
+
     if (
-      this.isWhitelisted(userId, executor.roles.cache.map((r) => r.id))
+      this.isWhitelisted(userId, executorMember.roles.cache.map((r) => r.id))
     ) {
       this.logAdminAction(
         guild,
@@ -337,17 +406,17 @@ class AntiNuke {
 
     const now = Date.now();
     let timestamps = this.adminActionLogs.get(userId) || [];
-    const windowMinutes = this.config.spamThreshold.timeWindowMinutes || 1;
-    const windowMillis = windowMinutes * 60 * 1000;
+    const windowSeconds = this.config.limits?.kicks?.timeWindowSeconds || 120;
+    const windowMillis = windowSeconds * 1000;
     timestamps = timestamps.filter((ts) => now - ts < windowMillis);
     timestamps.push(now);
     this.adminActionLogs.set(userId, timestamps);
 
-    if (timestamps.length > (this.config.spamThreshold.maxActions || 5)) {
+    if (timestamps.length > (this.config.limits?.kicks?.maxActions || 5)) {
       await this.takeMitigationAction(
         guild,
         userId,
-        `rapid kicks detected`,
+        `rapid kicks detected (${timestamps.length} in ${windowSeconds} seconds)`,
         abuseLogChannelId
       );
       return;
@@ -357,6 +426,240 @@ class AntiNuke {
       guild,
       adminLogChannelId,
       `${executor.tag} kicked ${member.user.tag}`
+    );
+  }
+
+  async handleMessageSpam(message) {
+    const userId = message.author.id;
+    const member = message.member;
+    const guild = message.guild;
+    
+    if (!guild || !member) return;
+    
+    // Skip if user is whitelisted
+    if (this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))) return;
+    
+    // Skip if user has admin access (can manage anti-nuke)
+    if (this.hasAdminRole(member)) return;
+    
+    const abuseLogChannelId = this.config.abuseLogChannel;
+    
+    const now = Date.now();
+    let timestamps = this.messageSpamLogs.get(userId) || [];
+    const windowSeconds = this.config.limits?.messages?.timeWindowSeconds || 10;
+    const windowMillis = windowSeconds * 1000;
+    timestamps = timestamps.filter((ts) => now - ts < windowMillis);
+    timestamps.push(now);
+    this.messageSpamLogs.set(userId, timestamps);
+
+    if (timestamps.length > (this.config.limits?.messages?.maxMessages || 10)) {
+      // Different actions based on whether user has admin permissions
+      if (member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        // Admins get roles stripped
+        await this.takeMitigationAction(
+          guild,
+          userId,
+          `message spam detected (${timestamps.length} messages in ${windowSeconds} seconds)`,
+          abuseLogChannelId
+        );
+      } else {
+        // For regular users, timeout with configurable duration
+        try {
+          const timeoutDuration = this.parseTimeoutDuration(this.config.limits?.messages?.timeoutDuration || "5m");
+          await member.timeout(timeoutDuration, "Message spam detected");
+          const abuseChannel = guild.channels.cache.get(abuseLogChannelId);
+          if (abuseChannel?.isTextBased()) {
+            abuseChannel.send(
+              `⚠️ **Message Spam Detected** ⚠️\nUser: ${member.user.tag}\nAction: ${this.formatTimeoutDuration(this.config.limits?.messages?.timeoutDuration || "5m")} timeout\nReason: ${timestamps.length} messages in ${windowSeconds} seconds`
+            );
+          }
+        } catch (e) {
+          console.error("[AntiNuke] Failed to timeout user:", e);
+        }
+      }
+      
+      // Clear the logs after taking action
+      this.messageSpamLogs.delete(userId);
+    }
+  }
+
+  async handleChannelCreate(channel) {
+    const executor = await this.fetchAuditExecutor(channel.guild, "CHANNEL_CREATE");
+    if (!executor) return;
+    const userId = executor.id;
+    const guild = channel.guild;
+    const adminLogChannelId = this.config.adminLogChannel;
+    const abuseLogChannelId = this.config.abuseLogChannel;
+
+    const member = guild.members.cache.get(userId);
+    if (!member) return;
+
+    if (this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))) {
+      this.logAdminAction(
+        guild,
+        adminLogChannelId,
+        `${executor.tag} created channel #${channel.name}`
+      );
+      return;
+    }
+
+    const now = Date.now();
+    let timestamps = this.channelCreateLogs.get(userId) || [];
+    const windowSeconds = this.config.limits?.channelCreate?.timeWindowSeconds || 60;
+    const windowMillis = windowSeconds * 1000;
+    timestamps = timestamps.filter((ts) => now - ts < windowMillis);
+    timestamps.push(now);
+    this.channelCreateLogs.set(userId, timestamps);
+
+    if (timestamps.length > (this.config.limits?.channelCreate?.maxActions || 3)) {
+      await this.takeMitigationAction(
+        guild,
+        userId,
+        `rapid channel creation detected (${timestamps.length} in ${windowSeconds} seconds)`,
+        abuseLogChannelId
+      );
+      return;
+    }
+
+    this.logAdminAction(
+      guild,
+      adminLogChannelId,
+      `${executor.tag} created channel #${channel.name}`
+    );
+  }
+
+  async handleChannelDelete(channel) {
+    const executor = await this.fetchAuditExecutor(channel.guild, "CHANNEL_DELETE");
+    if (!executor) return;
+    const userId = executor.id;
+    const guild = channel.guild;
+    const adminLogChannelId = this.config.adminLogChannel;
+    const abuseLogChannelId = this.config.abuseLogChannel;
+
+    const member = guild.members.cache.get(userId);
+    if (!member) return;
+
+    if (this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))) {
+      this.logAdminAction(
+        guild,
+        adminLogChannelId,
+        `${executor.tag} deleted channel #${channel.name}`
+      );
+      return;
+    }
+
+    const now = Date.now();
+    let timestamps = this.channelDeleteLogs.get(userId) || [];
+    const windowSeconds = this.config.limits?.channelDelete?.timeWindowSeconds || 60;
+    const windowMillis = windowSeconds * 1000;
+    timestamps = timestamps.filter((ts) => now - ts < windowMillis);
+    timestamps.push(now);
+    this.channelDeleteLogs.set(userId, timestamps);
+
+    if (timestamps.length > (this.config.limits?.channelDelete?.maxActions || 2)) {
+      await this.takeMitigationAction(
+        guild,
+        userId,
+        `rapid channel deletion detected (${timestamps.length} in ${windowSeconds} seconds)`,
+        abuseLogChannelId
+      );
+      return;
+    }
+
+    this.logAdminAction(
+      guild,
+      adminLogChannelId,
+      `${executor.tag} deleted channel #${channel.name}`
+    );
+  }
+
+  async handleRoleCreate(role) {
+    const executor = await this.fetchAuditExecutor(role.guild, "ROLE_CREATE");
+    if (!executor) return;
+    const userId = executor.id;
+    const guild = role.guild;
+    const adminLogChannelId = this.config.adminLogChannel;
+    const abuseLogChannelId = this.config.abuseLogChannel;
+
+    const member = guild.members.cache.get(userId);
+    if (!member) return;
+
+    if (this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))) {
+      this.logAdminAction(
+        guild,
+        adminLogChannelId,
+        `${executor.tag} created role @${role.name}`
+      );
+      return;
+    }
+
+    const now = Date.now();
+    let timestamps = this.roleCreateLogs.get(userId) || [];
+    const windowSeconds = this.config.limits?.roleCreate?.timeWindowSeconds || 60;
+    const windowMillis = windowSeconds * 1000;
+    timestamps = timestamps.filter((ts) => now - ts < windowMillis);
+    timestamps.push(now);
+    this.roleCreateLogs.set(userId, timestamps);
+
+    if (timestamps.length > (this.config.limits?.roleCreate?.maxActions || 3)) {
+      await this.takeMitigationAction(
+        guild,
+        userId,
+        `rapid role creation detected (${timestamps.length} in ${windowSeconds} seconds)`,
+        abuseLogChannelId
+      );
+      return;
+    }
+
+    this.logAdminAction(
+      guild,
+      adminLogChannelId,
+      `${executor.tag} created role @${role.name}`
+    );
+  }
+
+  async handleRoleDelete(role) {
+    const executor = await this.fetchAuditExecutor(role.guild, "ROLE_DELETE");
+    if (!executor) return;
+    const userId = executor.id;
+    const guild = role.guild;
+    const adminLogChannelId = this.config.adminLogChannel;
+    const abuseLogChannelId = this.config.abuseLogChannel;
+
+    const member = guild.members.cache.get(userId);
+    if (!member) return;
+
+    if (this.isWhitelisted(userId, member.roles.cache.map((r) => r.id))) {
+      this.logAdminAction(
+        guild,
+        adminLogChannelId,
+        `${executor.tag} deleted role @${role.name}`
+      );
+      return;
+    }
+
+    const now = Date.now();
+    let timestamps = this.roleDeleteLogs.get(userId) || [];
+    const windowSeconds = this.config.limits?.roleDelete?.timeWindowSeconds || 60;
+    const windowMillis = windowSeconds * 1000;
+    timestamps = timestamps.filter((ts) => now - ts < windowMillis);
+    timestamps.push(now);
+    this.roleDeleteLogs.set(userId, timestamps);
+
+    if (timestamps.length > (this.config.limits?.roleDelete?.maxActions || 2)) {
+      await this.takeMitigationAction(
+        guild,
+        userId,
+        `rapid role deletion detected (${timestamps.length} in ${windowSeconds} seconds)`,
+        abuseLogChannelId
+      );
+      return;
+    }
+
+    this.logAdminAction(
+      guild,
+      adminLogChannelId,
+      `${executor.tag} deleted role @${role.name}`
     );
   }
 

@@ -10,6 +10,7 @@ import { CommandRegistry } from './utils/commandRegistry.js';
 import { botIntents } from './intents.js';
 import * as pingCommand from './commands/ping.js';
 import * as rateLimitCommand from './commands/ratelimit.js';
+import * as antiNukeCommand from './commands/antinuke.js';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -37,8 +38,14 @@ async function main() {
   
   const rateLimiter = new RateLimiter(rateLimitCfg);
   
+  // Initialize AntiNuke (but we'll handle command registration differently)
+  const antiNuke = new AntiNuke(client, path.resolve(__dirname, '../config.yaml'));
+  
   // Pass rateLimiter to commands that need it
   rateLimitCommand.setRateLimiter(rateLimiter);
+  
+  // Pass antiNuke instance to the command
+  antiNukeCommand.setAntiNuke(antiNuke);
   
   async function exampleWorker(item) {
     console.log(`Processing item from queue: ${item}`);
@@ -57,16 +64,39 @@ async function main() {
     data: rateLimitCommand.data,
     execute: rateLimitCommand.execute,
   });
+  client.commands.set(antiNukeCommand.data.name, {
+    data: antiNukeCommand.data,
+    execute: antiNukeCommand.execute,
+  });
   
   client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user?.tag}`);
     const clientId = client.user.id;
     
-    // Register all commands at once
+    // Create CommandRegistry and add all commands
     const commandRegistry = new CommandRegistry(token);
     commandRegistry.addCommand(pingCommand);
     commandRegistry.addCommand(rateLimitCommand);
-    await commandRegistry.registerCommands(clientId);
+    commandRegistry.addCommand(antiNukeCommand);
+    
+    // Register all commands at once
+    const guildId = config.get('developmentGuildId');
+    
+    // Debug: Check if bot is in the guild
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) {
+      console.error(`Bot is not in guild ${guildId}. Available guilds:`);
+      client.guilds.cache.forEach(g => {
+        console.log(`- ${g.name} (${g.id})`);
+      });
+      
+      // Try to register globally instead
+      console.log('Attempting to register commands globally instead...');
+      await commandRegistry.registerCommands(clientId);
+    } else {
+      console.log(`Registering commands to guild: ${guild.name} (${guild.id})`);
+      await commandRegistry.registerCommands(clientId, guildId);
+    }
     
     console.log('All slash commands registered successfully.');
   });
@@ -78,16 +108,16 @@ async function main() {
     if (!command) return;
     
     try {
-      // Check rate limit for guild commands
-      if (interaction.guild && interaction.member) {
+      // Check rate limit for guild commands (except antinuke)
+      if (interaction.guild && interaction.member && interaction.commandName !== 'antinuke') {
         const guildMember = interaction.guild.members.cache.get(interaction.user.id);
         if (guildMember) {
           const { allowed, timeLeft } = await rateLimiter.checkLimit(guildMember);
           
           if (!allowed && timeLeft) {
-            await interaction.reply({ 
-              content: rateLimiter.getCooldownMessage(timeLeft), 
-              ephemeral: true 
+            await interaction.reply({
+              content: rateLimiter.getCooldownMessage(timeLeft),
+              ephemeral: true
             });
             return;
           }
