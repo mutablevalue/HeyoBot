@@ -1,6 +1,3 @@
-// antiNuke.js
-// Anti-nuke system for Discord bot with whitelist management commands
-
 import {
   Collection,
   PermissionsBitField,

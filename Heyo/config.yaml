@@ -82,8 +82,8 @@ antiNuke:
       timeWindowSeconds: 60   # Within this time window (in seconds)
  
   # ── Logging Channels ──
-  adminLogChannel: "111111111111111111"  # ← Channel for normal admin actions
-  abuseLogChannel: "222222222222222222"  # ← Channel for abuse alerts & mitigation
+  adminLogChannel: "1380422918017650719"  # ← Channel for normal admin actions
+  abuseLogChannel: "1380422905191731210"  # ← Channel for abuse alerts & mitigation
 # ==================================================================================
 # How Anti-Nuke Works:
 #
@@ -105,3 +105,12 @@ antiNuke:
 # - Admin abuse: All roles removed
 # - Regular user spam: Timeout (configurable duration)
 # ==================================================================================
+j2c:
+  # Optional: Default channel name for J2C
+  defaultChannelName: "➕ Create Voice Channel"
+  
+  # Optional: Log channel for J2C events
+  logChannel: null  # Set to channel ID if you want logging
+  
+  # Optional: Category to create voice channels in (defaults to same as J2C channel)
+  categoryId: null
