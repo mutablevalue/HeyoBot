@@ -1,208 +1,159 @@
-import {
-  Client,
-  Collection,
-  Events,
-} from 'discord.js';
-import { ConfigLoader } from './utils/configLoader.js';
-import { QueueManager } from './utils/queueManager.js';
-import { RateLimiter } from './utils/rateLimiter.js';
-import { CommandRegistry } from './utils/commandRegistry.js';
-import { J2CManager } from './utils/j2cManager.js';
-import { botIntents } from './intents.js';
-import * as pingCommand from './commands/ping.js';
-import * as rateLimitCommand from './commands/ratelimit.js';
-import * as antiNukeCommand from './commands/antinuke.js';
-import * as setupJ2CCommand from './commands/setupj2c.js';
-import * as vcCommand from './commands/vc.js';
-import * as vcLockCommand from './commands/vclock.js';
-import * as vcRejectCommand from './commands/vcreject.js';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import AntiNuke from "./systems/antiNuke.js";
+// src/index.js
+// Entry point for your Discord bot (ESM).
+// This version reflects that vclock.js and vcreject.js have been removed.
+// Only vc.js remains for voice‐channel actions.
 
+import { fileURLToPath, pathToFileURL } from "url";
+import { dirname, resolve } from "path";
+import fs from "fs";
+import { Client, Collection, Events } from "discord.js";
+import { ConfigLoader } from "./utils/configLoader.js";
+import { CommandRegistry } from "./utils/commandRegistry.js";
+import AntiNuke from "./systems/antiNuke.js";
+import { J2CManager } from "./systems/j2cManager.js";
+import { botIntents } from "./intents.js";
+import * as setupJ2CCommand from "./commands/setupj2c.js";
+import * as vcCommand from "./commands/vc.js";     // Only vc.js remains
+import { QueueManager } from "./utils/queueManager.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Polyfill __dirname and __filename for ESM
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname  = dirname(__filename);
+// ─────────────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const config = new ConfigLoader(path.resolve(__dirname, '../config.yaml'));
-  const token = config.get('token');
-  const prefix = config.get('prefix');
-  const queueCfg = config.get('queue');
-  const rateLimitCfg = config.get('rateLimit');
-  
-  const client = new Client({
-    intents: botIntents,
-  });
-  
-  const queueManager = new QueueManager(
-    queueCfg.maxSize,
-    queueCfg.workerCount,
-    queueCfg.retryDelaySeconds
-  );
-  
-  const rateLimiter = new RateLimiter(rateLimitCfg);
-  
-  // Initialize AntiNuke
-  const antiNuke = new AntiNuke(client, path.resolve(__dirname, '../config.yaml'));
-  
-  // Initialize J2C Manager
+  // 1) Load config.yaml via ConfigLoader
+  const configPath = resolve(__dirname, "../config.yaml");
+  const config     = new ConfigLoader(configPath);
+
+  // 2) Create Discord Client with specified intents
+  const client = new Client({ intents: botIntents });
+
+  // 3) Initialize AntiNuke and J2CManager
+  const antiNuke   = new AntiNuke(client, config);
   const j2cManager = new J2CManager(client, config);
-  
-  // Pass rateLimiter to commands that need it
-  rateLimitCommand.setRateLimiter(rateLimiter);
-  
-  // Pass antiNuke instance to the command
-  antiNukeCommand.setAntiNuke(antiNuke);
-  
-  // Pass j2cManager to commands that need it
-  setupJ2CCommand.setJ2CManager(j2cManager);
-  vcCommand.setJ2CManager(j2cManager);
-  vcLockCommand.setJ2CManager(j2cManager);
-  vcRejectCommand.setJ2CManager(j2cManager);
-  
-  async function exampleWorker(item) {
-    console.log(`Processing item from queue: ${item}`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    console.log(`Finished processing item: ${item}`);
-  }
-  
-  queueManager.startWorkers(exampleWorker);
-  
-  client.commands = new Collection();
-  client.commands.set(pingCommand.data.name, {
-    data: pingCommand.data,
-    execute: pingCommand.execute,
-  });
-  client.commands.set(rateLimitCommand.data.name, {
-    data: rateLimitCommand.data,
-    execute: rateLimitCommand.execute,
-  });
-  client.commands.set(antiNukeCommand.data.name, {
-    data: antiNukeCommand.data,
-    execute: antiNukeCommand.execute,
-  });
-  client.commands.set(setupJ2CCommand.data.name, {
-    data: setupJ2CCommand.data,
-    execute: setupJ2CCommand.execute,
-  });
-  client.commands.set(vcCommand.data.name, {
-    data: vcCommand.data,
-    execute: vcCommand.execute,
-  });
-  client.commands.set(vcLockCommand.data.name, {
-    data: vcLockCommand.data,
-    execute: vcLockCommand.execute,
-  });
-  client.commands.set(vcRejectCommand.data.name, {
-    data: vcRejectCommand.data,
-    execute: vcRejectCommand.execute,
-  });
-  
-  // Listen to J2C events for logging
-  j2cManager.on('channelCreated', ({ channel, owner, guild }) => {
-    console.log(`[J2C] Created channel "${channel.name}" for ${owner.user.tag} in ${guild.name}`);
-  });
-  
-  j2cManager.on('channelDeleted', ({ channelId, ownerId }) => {
-    console.log(`[J2C] Deleted empty channel ${channelId} (owner: ${ownerId})`);
-  });
-  
-  j2cManager.on('ownershipTransferred', ({ channel, oldOwner, newOwner }) => {
-    console.log(`[J2C] Transferred ownership of "${channel.name}" from ${oldOwner.user.tag} to ${newOwner.user.tag}`);
-  });
-  
-  client.once(Events.ClientReady, async () => {
-    console.log(`Logged in as ${client.user?.tag}`);
-    const clientId = client.user.id;
-    
-    // Create CommandRegistry and add all commands
-    const commandRegistry = new CommandRegistry(token);
-    commandRegistry.addCommand(pingCommand);
-    commandRegistry.addCommand(rateLimitCommand);
-    commandRegistry.addCommand(antiNukeCommand);
-    commandRegistry.addCommand(setupJ2CCommand);
-    commandRegistry.addCommand(vcCommand);
-    commandRegistry.addCommand(vcLockCommand);
-    commandRegistry.addCommand(vcRejectCommand);
-    
-    // Register all commands at once
-    const guildId = config.get('developmentGuildId');
-    
-    // Debug: Check if bot is in the guild
-    const guild = client.guilds.cache.get(guildId);
-    if (!guild) {
-      console.error(`Bot is not in guild ${guildId}. Available guilds:`);
-      client.guilds.cache.forEach(g => {
-        console.log(`- ${g.name} (${g.id})`);
-      });
-      
-      // Try to register globally instead
-      console.log('Attempting to register commands globally instead...');
-      await commandRegistry.registerCommands(clientId);
-    } else {
-      console.log(`Registering commands to guild: ${guild.name} (${guild.id})`);
-      await commandRegistry.registerCommands(clientId, guildId);
+
+  // 4) Pass J2CManager into any commands that need it
+  import("./commands/antinuke.js").then(mod => {
+    if (typeof mod.setAntiNuke === "function") {
+      mod.setAntiNuke(antiNuke);
     }
-    
-    console.log('All slash commands registered successfully.');
   });
-  
+  setupJ2CCommand.setJ2CManager(j2cManager);
+
+  // Only vc.js remains—no vclock or vcreject
+  vcCommand.setJ2CManager(j2cManager);
+
+  // 5) Prepare client.commands collection
+  client.commands = new Collection();
+
+  // 6) Dynamically load all .js files in /commands
+  const commandsDir  = resolve(__dirname, "commands");
+  const commandFiles = fs
+    .readdirSync(commandsDir)
+    .filter((file) => file.endsWith(".js"));
+
+  for (const file of commandFiles) {
+    const filePath      = resolve(commandsDir, file);
+    const moduleUrl     = pathToFileURL(filePath).href;
+    const commandModule = await import(moduleUrl);
+
+    if (!commandModule.data || typeof commandModule.execute !== "function") {
+      console.warn(`Skipping ${file} – it does not export both 'data' and 'execute'.`);
+      continue;
+    }
+
+    client.commands.set(commandModule.data.name, {
+      data: commandModule.data,
+      execute: commandModule.execute
+    });
+  }
+
+  // 7) Initialize and start QueueManager
+  const queueCfg     = config.get("queue") || {};
+  const queueManager = new QueueManager(
+    queueCfg.maxSize        ?? 100,
+    queueCfg.workerCount    ?? 3,
+    queueCfg.retryDelaySeconds ?? 5
+  );
+  const workerFn = async (item) => {
+    console.log(`Processing queue item: ${item}`);
+    await new Promise((res) => setTimeout(res, 1000));
+    console.log(`Finished processing: ${item}`);
+  };
+  queueManager.startWorkers(workerFn);
+
+  // 8) On ready, register slash commands via CommandRegistry
+  client.once(Events.ClientReady, async () => {
+    console.log(`Logged in as ${client.user.tag}`);
+
+    const registry = new CommandRegistry(config.get("token"));
+    for (const [, cmd] of client.commands) {
+      registry.addCommand(cmd);
+    }
+
+    const guildId = config.get("developmentGuildId");
+    const guild   = client.guilds.cache.get(guildId);
+
+    try {
+      if (guild) {
+        await registry.registerCommands(client.user.id, guildId);
+        console.log(`Registered ${client.commands.size} commands to guild ${guild.name}.`);
+      } else {
+        await registry.registerCommands(client.user.id);
+        console.log(`Registered ${client.commands.size} commands globally.`);
+      }
+    } catch (err) {
+      console.error("Error registering slash commands:", err);
+    }
+  });
+
+  // 9) Handle slash command interactions
   client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-    
+
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
-    
+
     try {
-      // Check rate limit for guild commands (except antinuke and vc commands)
-      const exemptCommands = ['antinuke', 'setupj2c', 'vc', 'vclock', 'vcreject'];
-      
-      if (interaction.guild && interaction.member && !exemptCommands.includes(interaction.commandName)) {
-        const guildMember = interaction.guild.members.cache.get(interaction.user.id);
-        if (guildMember) {
-          const { allowed, timeLeft } = await rateLimiter.checkLimit(guildMember);
-          
-          if (!allowed && timeLeft) {
-            await interaction.reply({
-              content: rateLimiter.getCooldownMessage(timeLeft),
-              ephemeral: true
-            });
-            return;
-          }
-        }
-      }
-      
       await command.execute(interaction);
-    } catch (error) {
-      console.error(error);
+    } catch (err) {
+      console.error(`Error executing /${interaction.commandName}:`, err);
       if (interaction.isRepliable()) {
-        await interaction.reply({ content: 'There was an error executing that command.', ephemeral: true });
+        await interaction.reply({
+          content: "There was an error while executing this command.",
+          ephemeral: true
+        });
       }
     }
   });
-  
-  client.on('messageCreate', async (message) => {
+
+  // 10) Example prefix-based “enqueue” listener
+  client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+    const prefix = config.get("prefix") || "";
     if (!message.content.startsWith(prefix)) return;
-    
+
     const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const cmd = args.shift()?.toLowerCase();
-    
-    if (cmd === 'enqueue') {
-      const item = args.join(' ');
+    const cmd  = args.shift()?.toLowerCase();
+    if (cmd === "enqueue") {
+      const item = args.join(" ");
       if (item) {
         const success = queueManager.enqueue(item);
         if (success) {
           await message.reply(`Enqueued: ${item}`);
         } else {
-          await message.reply('Queue is full.');
+          await message.reply("Queue is full.");
         }
       }
     }
   });
-  
-  await client.login(token);
+
+  // 11) Finally, log in
+  await client.login(config.get("token"));
 }
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error("Fatal error in main():", err);
+});
