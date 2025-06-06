@@ -47,7 +47,7 @@ async function main() {
   const antiNuke = new AntiNuke(client, path.resolve(__dirname, '../config.yaml'));
   
   // Initialize J2C Manager
-  const j2cManager = new J2CManager(client, config.get('j2c') || {});
+  const j2cManager = new J2CManager(client, config);
   
   // Pass rateLimiter to commands that need it
   rateLimitCommand.setRateLimiter(rateLimiter);

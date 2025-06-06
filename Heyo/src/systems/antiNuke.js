@@ -664,23 +664,58 @@ class AntiNuke {
     );
   }
 
-  async takeMitigationAction(guild, userId, reason, abuseLogChannelId) {
-    try {
-      const member = await guild.members.fetch(userId);
-      const rolesToRemove = member.roles.cache
-        .filter((r) => r.id !== guild.id)
-        .map((r) => r.id);
-      await member.roles.remove(rolesToRemove, "Anti-nuke mitigation");
+async takeMitigationAction(guild, userId, reason, abuseLogChannelId) {
+  try {
+    // Fetch the offending member
+    const member = await guild.members.fetch(userId);
+    if (!member) return;
+
+    // Fetch the bot's own GuildMember instance
+    const botMember = await guild.members.fetch(guild.client.user.id);
+
+    // Filter out @everyone (guild.id) and any roles the bot cannot manage
+    const rolesToRemove = member.roles.cache
+      .filter(r => {
+        // skip @everyone
+        if (r.id === guild.id) return false;
+
+        // only include roles strictly lower than the bot's highest role
+        // (so we don't try to remove roles the bot can't manage)
+        return botMember.roles.highest.position > r.position;
+      })
+      .map(r => r.id);
+
+    // If there's nothing manageable to remove, bail out early
+    if (rolesToRemove.length === 0) {
       const abuseChannel = guild.channels.cache.get(abuseLogChannelId);
       if (abuseChannel?.isTextBased()) {
         abuseChannel.send(
-          `⚠️ **Admin Abuse Detected** ⚠️\nUser: ${member.user.tag}\nReason: ${reason}\nAction: Roles stripped`
+          `⚠️ **Admin Abuse Detected** ⚠️\n` +
+          `User: ${member.user.tag}\n` +
+          `Reason: ${reason}\n` +
+          `Action: (no removable roles found — check bot’s role hierarchy)`
         );
       }
-    } catch (e) {
-      console.error("[AntiNuke] Mitigation failed:", e);
+      return;
     }
+
+    // Strip all removable roles
+    await member.roles.remove(rolesToRemove, "Anti-nuke mitigation");
+
+    // Log into the abuse channel
+    const abuseChannel = guild.channels.cache.get(abuseLogChannelId);
+    if (abuseChannel?.isTextBased()) {
+      abuseChannel.send(
+        `⚠️ **Admin Abuse Detected** ⚠️\n` +
+        `User: ${member.user.tag}\n` +
+        `Reason: ${reason}\n` +
+        `Action: Stripped roles: ${rolesToRemove.map(id => `<@&${id}>`).join(", ")}`
+      );
+    }
+  } catch (e) {
+    console.error("[AntiNuke] Mitigation failed:", e);
   }
+}
 
   logAdminAction(guild, channelId, message) {
     const channel = guild.channels.cache.get(channelId);
