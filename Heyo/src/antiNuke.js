@@ -1,7 +1,11 @@
 // antiNuke.js
 // Anti-nuke system for Discord bot with whitelist management commands
 
-import { Collection, PermissionsBitField } from "discord.js";
+import {
+  Collection,
+  PermissionsBitField,
+  AuditLogEvent
+} from "discord.js";
 import yaml from "js-yaml";
 import fs from "fs";
 import path from "path";
@@ -688,11 +692,43 @@ class AntiNuke {
     }
   }
 
-  async fetchAuditExecutor(guild, actionType) {
+  /**
+   * Fetches the user who performed the most recent audit-log action of the given type.
+   * @param {Guild} guild
+   * @param {string} actionKey  A string such as "ROLE_CREATE", "CHANNEL_DELETE", etc.
+   * @returns {Promise<User|null>}
+   */
+  async fetchAuditExecutor(guild, actionKey) {
     try {
-      const logs = await guild.fetchAuditLogs({ limit: 1, type: actionType });
+      let auditType;
+
+      switch (actionKey) {
+        case "ROLE_CREATE":
+          auditType = AuditLogEvent.RoleCreate;
+          break;
+        case "ROLE_DELETE":
+          auditType = AuditLogEvent.RoleDelete;
+          break;
+        case "CHANNEL_CREATE":
+          auditType = AuditLogEvent.ChannelCreate;
+          break;
+        case "CHANNEL_DELETE":
+          auditType = AuditLogEvent.ChannelDelete;
+          break;
+        case "MEMBER_KICK":
+          auditType = AuditLogEvent.MemberKick;
+          break;
+        case "BAN_ADD":
+          auditType = AuditLogEvent.MemberBanAdd;
+          break;
+        default:
+          console.error(`[AntiNuke] Unknown audit‐log action key: ${actionKey}`);
+          return null;
+      }
+
+      const logs = await guild.fetchAuditLogs({ limit: 1, type: auditType });
       const entry = logs.entries.first();
-      return entry?.executor || null;
+      return entry?.executor ?? null;
     } catch (e) {
       console.error("[AntiNuke] Fetch audit executor failed:", e);
       return null;
