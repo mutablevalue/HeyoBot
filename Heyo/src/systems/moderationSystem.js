@@ -1,4 +1,4 @@
-// src/systems/moderationSystem.js
+
 import { PermissionFlagsBits } from 'discord.js';
 
 export class ModerationSystem {

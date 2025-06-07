@@ -1,4 +1,3 @@
-// commands/moderation.js
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
@@ -931,8 +930,6 @@ function parseDuration(duration) {
   return value * multipliers[unit];
 }
 
-// Export all command data for registration
-// OPTION 1: Only individual commands (no /mod compound command)
 export const commands = [
   { data: lockChannelData, execute: executeLockChannel },
   { data: unlockChannelData, execute: executeUnlockChannel },
@@ -944,26 +941,3 @@ export const commands = [
   { data: roleData, execute: executeRole },
   { data: setupPermsData, execute: executeSetupPerms }
 ];
-
-// OPTION 2: If you want to include both, uncomment this instead:
-/*
-export const commands = [
-  { data, execute },  // This is the /mod compound command
-  { data: lockChannelData, execute: executeLockChannel },
-  { data: unlockChannelData, execute: executeUnlockChannel },
-  { data: nukeData, execute: executeNuke },
-  { data: banData, execute: executeBan },
-  { data: kickData, execute: executeKick },
-  { data: unbanData, execute: executeUnban },
-  { data: timeoutData, execute: executeTimeout },
-  { data: roleData, execute: executeRole },
-  { data: setupPermsData, execute: executeSetupPerms }
-];
-*/
-
-// OPTION 3: Only compound command (no individual commands)
-/*
-export const commands = [
-  { data, execute }  // Only /mod with subcommands
-];
-*/

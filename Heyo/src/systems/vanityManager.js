@@ -1,4 +1,4 @@
-// src/systems/vanityManager.js
+
 export class VanityManager {
   /**
    * @param {import("discord.js").Client} client
