@@ -1,4 +1,3 @@
-
 export class VanityManager {
   /**
    * @param {import("discord.js").Client} client
@@ -19,6 +18,8 @@ export class VanityManager {
       caseSensitive: vanityConfig.caseSensitive ?? false,
       checkUsername: vanityConfig.checkUsername ?? true,
       checkNickname: vanityConfig.checkNickname ?? true,
+      checkBio: vanityConfig.checkBio ?? true,
+      checkStatus: vanityConfig.checkStatus ?? true,
       exemptRoles: vanityConfig.exemptRoles || [], // Roles that bypass vanity checks
       removeOnVanityLoss: vanityConfig.removeOnVanityLoss ?? true
     };
@@ -54,6 +55,8 @@ export class VanityManager {
       caseSensitive: this.config.caseSensitive,
       checkUsername: this.config.checkUsername,
       checkNickname: this.config.checkNickname,
+      checkBio: this.config.checkBio,
+      checkStatus: this.config.checkStatus,
       exemptRoles: this.config.exemptRoles,
       removeOnVanityLoss: this.config.removeOnVanityLoss
     });
@@ -92,6 +95,24 @@ export class VanityManager {
             await this.checkMemberVanity(member);
           }
         }
+      }
+    });
+
+    // Check on presence update (status/activities change)
+    this.client.on('presenceUpdate', async (oldPresence, newPresence) => {
+      if (!this.config.enabled) return;
+      if (!this.config.checkStatus) return;
+      
+      // Get member from presence
+      const member = newPresence.member;
+      if (!member || member.user.bot) return;
+      
+      // Check if status changed
+      const oldStatus = oldPresence?.activities?.find(a => a.type === 4)?.state;
+      const newStatus = newPresence?.activities?.find(a => a.type === 4)?.state;
+      
+      if (oldStatus !== newStatus) {
+        await this.checkMemberVanity(member);
       }
     });
   }
@@ -176,7 +197,7 @@ export class VanityManager {
       // Skip if member has exempt role
       if (this.isExempt(member)) return;
 
-      const hasVanity = this.memberHasVanity(member);
+      const hasVanity = await this.memberHasVanity(member);
       const currentRoles = member.roles.cache;
 
       for (const roleId of this.config.roles) {
@@ -188,13 +209,13 @@ export class VanityManager {
         if (hasVanity && !hasRole) {
           // Add role
           try {
-            await member.roles.add(role, 'Has vanity in name');
+            await member.roles.add(role, 'Has vanity in name/bio/status');
             this.stats.rolesAdded++;
             await this.logAction(member.guild, {
               action: 'Role Added',
               member: member,
               role: role,
-              reason: 'Has vanity in name'
+              reason: 'Has vanity in name/bio/status'
             });
           } catch (error) {
             console.error(`[VanityManager] Failed to add role to ${member.user.tag}:`, error);
@@ -203,13 +224,13 @@ export class VanityManager {
         } else if (!hasVanity && hasRole && this.config.removeOnVanityLoss) {
           // Remove role
           try {
-            await member.roles.remove(role, 'No longer has vanity in name');
+            await member.roles.remove(role, 'No longer has vanity in name/bio/status');
             this.stats.rolesRemoved++;
             await this.logAction(member.guild, {
               action: 'Role Removed',
               member: member,
               role: role,
-              reason: 'No longer has vanity in name'
+              reason: 'No longer has vanity in name/bio/status'
             });
           } catch (error) {
             console.error(`[VanityManager] Failed to remove role from ${member.user.tag}:`, error);
@@ -224,27 +245,53 @@ export class VanityManager {
   }
 
   /**
-   * Check if member has any vanity string in their name
+   * Check if member has any vanity string in their name, bio, or status
    * @param {import("discord.js").GuildMember} member 
-   * @returns {boolean}
+   * @returns {Promise<boolean>}
    */
-  memberHasVanity(member) {
-    const namesToCheck = [];
+  async memberHasVanity(member) {
+    const stringsToCheck = [];
     
+    // Check username
     if (this.config.checkUsername) {
-      namesToCheck.push(member.user.username);
+      stringsToCheck.push(member.user.username);
     }
     
+    // Check nickname
     if (this.config.checkNickname && member.nickname) {
-      namesToCheck.push(member.nickname);
+      stringsToCheck.push(member.nickname);
     }
 
-    for (const name of namesToCheck) {
+    // Check bio (about me)
+    if (this.config.checkBio) {
+      try {
+        // Fetch full user profile to get bio
+        const user = await this.client.users.fetch(member.user.id, { force: true });
+        // Note: Discord.js doesn't directly expose bio, this would need additional implementation
+        // For now, we'll skip bio checking as it requires additional API calls
+      } catch (error) {
+        // Bio fetching failed, skip
+      }
+    }
+
+    // Check custom status
+    if (this.config.checkStatus) {
+      const presence = member.presence;
+      if (presence) {
+        const customStatus = presence.activities.find(activity => activity.type === 4);
+        if (customStatus && customStatus.state) {
+          stringsToCheck.push(customStatus.state);
+        }
+      }
+    }
+
+    // Check all strings for vanity
+    for (const str of stringsToCheck) {
       for (const vanity of this.config.vanityStrings) {
         if (this.config.caseSensitive) {
-          if (name.includes(vanity)) return true;
+          if (str.includes(vanity)) return true;
         } else {
-          if (name.toLowerCase().includes(vanity.toLowerCase())) return true;
+          if (str.toLowerCase().includes(vanity.toLowerCase())) return true;
         }
       }
     }

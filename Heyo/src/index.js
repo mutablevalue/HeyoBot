@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include ModerationSystem, VanityManager, AfkManager, and LinkProtection
+// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, and FunCommands
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -18,9 +18,9 @@ import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
 import * as moderationCommands from "./commands/moderation.js";
-import * as rootCommand from "./commands/root.js";
 import * as vanityCommand from "./commands/vanity.js";
 import * as afkCommand from "./commands/afk.js";
+import * as funCommands from "./commands/funcommands.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,9 +55,11 @@ async function main() {
   setupJ2CCommand.setJ2CManager(j2cManager);
   vcCommand.setJ2CManager(j2cManager);
   moderationCommands.setModerationSystem(moderationSystem);
-  rootCommand.setModerationSystem(moderationSystem);
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
+
+  // Setup username tracking for fun commands
+  funCommands.setupUsernameTracking(client);
 
   // 5) Prepare client.commands collection
   client.commands = new Collection();
@@ -68,13 +70,22 @@ async function main() {
     .readdirSync(commandsDir)
     .filter((file) => file.endsWith(".js"));
 
+  // Exclude root.js from loading
+  const excludedFiles = ['root.js'];
+
   for (const file of commandFiles) {
+    // Skip excluded files
+    if (excludedFiles.includes(file)) {
+      console.log(`Skipping ${file} (temporarily disabled)`);
+      continue;
+    }
+
     const filePath      = resolve(commandsDir, file);
     const moduleUrl     = pathToFileURL(filePath).href;
     const commandModule = await import(moduleUrl);
 
-    // Special handling for moderation.js which exports multiple commands
-    if (file === 'moderation.js' && commandModule.commands) {
+    // Special handling for files that export multiple commands
+    if ((file === 'moderation.js' || file === 'funcommands.js') && commandModule.commands) {
       for (const cmd of commandModule.commands) {
         if (!cmd.data || typeof cmd.execute !== "function") {
           console.warn(`Skipping command in ${file} – missing 'data' or 'execute'.`);
@@ -86,10 +97,9 @@ async function main() {
         });
       }
     } 
-    // Special handling for root.js and vanity.js
-    else if (file === 'root.js' || file === 'vanity.js') {
-      // root.js exports directly, vanity.js exports vanityCommand
-      const cmd = file === 'vanity.js' ? commandModule.vanityCommand : commandModule;
+    // Special handling for vanity.js
+    else if (file === 'vanity.js') {
+      const cmd = commandModule.vanityCommand;
       if (cmd && cmd.data && typeof cmd.execute === "function") {
         client.commands.set(cmd.data.name, {
           data: cmd.data,
@@ -154,6 +164,7 @@ async function main() {
     console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log('Fun Commands: Active');
     console.log('====================\n');
   });
 

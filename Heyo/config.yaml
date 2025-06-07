@@ -2,17 +2,11 @@ token: MTM3OTkzNzIyNDI1NDI5NjE2NA.GXlWom.zaKMFAKN9qABWfGAuldzRkCgtE0EoQdrfAkhPQ
 prefix: ''
 logging:
   level: info
-
-# Development guild ID for testing (optional)
 developmentGuildId: '1379953422241103943'
-
-# Queue system configuration
 queue:
   maxSize: 100
   workerCount: 3
   retryDelaySeconds: 5
-
-# Rate limiting configuration
 rateLimit:
   windowMs: 60000
   limits:
@@ -21,8 +15,6 @@ rateLimit:
     default: 5
   customRoles: null
   message: You're sending commands too quickly! Please wait {time} seconds.
-
-# Moderation system configuration
 moderation:
   permissions:
     administrator:
@@ -51,64 +43,47 @@ moderation:
         - lockchannel
         - unlockchannel
         - timeout
-  # Permission roles created by setupperms command
   permRoles:
     vc: '1380755737906647060'
     pic: '1380755738950893658'
     link: '1380755739672313866'
-  # Channel to log moderation actions
   logChannel: '1380422918017650719'
-  # Command cooldowns in seconds
   cooldowns:
     default: 3
     nuke: 30
     setupperms: 60
     forcenickname: 5
     unforcenickname: 5
-  # Forced nickname configuration
   forcedNicknames:
     dataFile: forced_nicknames.json
-    checkInterval: 5000  # Check every 5 seconds
-
-# AFK system configuration
+    checkInterval: 5000
+    roleId: '1381019724371984485'
 afk:
   enabled: true
   dataFile: afk_data.json
-  embedColor: 0x808080
+  embedColor: 8421504
   removeOnMessage: true
   mentionResponse:
     showTimestamp: true
     showReason: true
-
-# Link protection configuration
 linkProtection:
   enabled: true
-  # URL patterns to detect (regex strings)
   patterns:
-    - 'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)'
-    - 'discord\.gg\/[a-zA-Z0-9]+'
-    - 'discordapp\.com\/invite\/[a-zA-Z0-9]+'
-  # Who is allowed to post links
+    - https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)
+    - discord\.gg\/[a-zA-Z0-9]+
+    - discordapp\.com\/invite\/[a-zA-Z0-9]+
   allowed:
-    # Specific users who can always post links
     users:
       - '123456789012345678'
-    # Roles that can post links
     roles:
       - '789012345678901234'
-    # Use the link permission role from moderation system
     useLinkPermRole: true
-  # Channels where link protection is disabled
   exemptChannels:
     - '1234567890123456789'
-  # Log channel for deleted links
   logChannel: '1380422905191731210'
-  # Delete message settings
   deleteMessage: true
-  warningMessage: '❌ You do not have permission to send links in this channel.'
+  warningMessage: ❌ You do not have permission to send links in this channel.
   ephemeralWarning: true
-
-# Vanity detection configuration
 vanity:
   enabled: false
   checkIntervalSeconds: 120
@@ -122,11 +97,11 @@ vanity:
   caseSensitive: false
   checkUsername: true
   checkNickname: true
+  checkBio: true
+  checkStatus: true
   exemptRoles:
     - '901234567890123456'
   removeOnVanityLoss: true
-
-# Anti-Nuke configuration
 antiNuke:
   whitelist:
     users:
@@ -166,8 +141,6 @@ antiNuke:
       timeWindowSeconds: 60
   adminLogChannel: '1380422918017650719'
   abuseLogChannel: '1380422905191731210'
-
-# Join to Create (J2C) Voice Channel configuration
 j2c:
   defaultChannelName: ➕ Create Voice Channel
   logChannel: null

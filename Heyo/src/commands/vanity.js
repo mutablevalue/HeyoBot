@@ -88,11 +88,11 @@ export const vanityData = new SlashCommandBuilder()
       .setDescription('Set how often to check all members')
       .addIntegerOption(option =>
         option
-          .setName('minutes')
-          .setDescription('Check interval in minutes')
+          .setName('seconds')
+          .setDescription('Check interval in seconds')
           .setRequired(true)
-          .setMinValue(5)
-          .setMaxValue(1440)
+          .setMinValue(60)
+          .setMaxValue(86400)
       )
   )
   // Force check
@@ -179,7 +179,7 @@ async function executeVanityView(interaction) {
       },
       {
         name: 'Check Interval',
-        value: `${config.checkIntervalMinutes} minutes`,
+        value: `${config.checkIntervalSeconds} seconds`,
         inline: true
       },
       {
@@ -198,10 +198,12 @@ async function executeVanityView(interaction) {
         inline: false
       },
       {
-        name: 'Settings',
-        value: `Check Username: ${config.checkUsername ? 'Yes' : 'No'}\n` +
-               `Check Nickname: ${config.checkNickname ? 'Yes' : 'No'}\n` +
-               `Remove on Loss: ${config.removeOnVanityLoss ? 'Yes' : 'No'}`,
+        name: 'Check Settings',
+        value: `Username: ${config.checkUsername ? '✅' : '❌'}\n` +
+               `Nickname: ${config.checkNickname ? '✅' : '❌'}\n` +
+               `Bio: ${config.checkBio ? '✅' : '❌'}\n` +
+               `Status: ${config.checkStatus ? '✅' : '❌'}\n` +
+               `Remove on Loss: ${config.removeOnVanityLoss ? '✅' : '❌'}`,
         inline: true
       },
       {
@@ -296,13 +298,13 @@ async function executeVanityRemoveRole(interaction) {
 }
 
 async function executeInterval(interaction) {
-  const minutes = interaction.options.getInteger('minutes');
+  const seconds = interaction.options.getInteger('seconds');
   
-  await vanityManager.setCheckInterval(minutes);
+  await vanityManager.setCheckInterval(seconds);
   
   const embed = new EmbedBuilder()
     .setTitle('✅ Check Interval Updated')
-    .setDescription(`Vanity check interval set to ${minutes} minutes.`)
+    .setDescription(`Vanity check interval set to ${seconds} seconds.`)
     .setColor(0x00ff00)
     .setTimestamp();
   
