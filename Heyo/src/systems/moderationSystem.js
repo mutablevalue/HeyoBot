@@ -26,17 +26,19 @@ export class ModerationSystem {
           users: modConfig.permissions?.administrator?.users || [],
           roles: modConfig.permissions?.administrator?.roles || [],
           commands: modConfig.permissions?.administrator?.commands || [
-            'ban', 'unban', 'kick', 'timeout', 'role', 'nuke', 'setupperms', 'forcenickname', 'unforcenickname'
+            'ban', 'unban', 'kick', 'timeout', 'mute', 'unmute', 'role', 'nuke', 'setupperms', 'forcenickname', 'unforcenickname', 'purge'
           ]
         },
         moderator: {
           users: modConfig.permissions?.moderator?.users || [],
           roles: modConfig.permissions?.moderator?.roles || [],
           commands: modConfig.permissions?.moderator?.commands || [
-            'lockchannel', 'unlockchannel', 'timeout'
+            'lockchannel', 'unlockchannel', 'timeout', 'mute', 'unmute', 'purge'
           ]
         }
       },
+      // Owner bypass setting
+      ownerBypass: modConfig.ownerBypass ?? true,
       // Created permission roles
       permRoles: modConfig.permRoles || {
         vc: null,
@@ -51,7 +53,10 @@ export class ModerationSystem {
         nuke: 30,
         setupperms: 60,
         forcenickname: 5,
-        unforcenickname: 5
+        unforcenickname: 5,
+        mute: 5,
+        unmute: 5,
+        purge: 10
       },
       // Forced nicknames configuration
       forcedNicknames: modConfig.forcedNicknames || {
@@ -296,6 +301,7 @@ export class ModerationSystem {
   async saveConfig() {
     this.configLoader.set('moderation', {
       permissions: this.config.permissions,
+      ownerBypass: this.config.ownerBypass,
       permRoles: this.config.permRoles,
       logChannel: this.config.logChannel,
       cooldowns: this.config.cooldowns,
@@ -311,9 +317,9 @@ export class ModerationSystem {
    * @returns {{allowed: boolean, level: string|null, reason: string}}
    */
   checkPermission(member, commandName) {
-    // Server owner always has permission
-    if (member.id === member.guild.ownerId) {
-      return { allowed: true, level: 'owner', reason: 'Server owner' };
+    // Server owner always has permission if ownerBypass is enabled
+    if (this.config.ownerBypass && member.id === member.guild.ownerId) {
+      return { allowed: true, level: 'owner', reason: 'Server owner (bypass enabled)' };
     }
 
     // Check Discord Administrator permission

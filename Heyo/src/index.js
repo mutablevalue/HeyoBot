@@ -1,11 +1,11 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, and FunCommands
+// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, WelcomeSystem, and FunCommands
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
 import fs from "fs";
-import { Client, Collection, Events } from "discord.js";
+import { Client, Collection, Events, ActivityType } from "discord.js";
 import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import AntiNuke from "./systems/antiNuke.js";
@@ -14,6 +14,7 @@ import { ModerationSystem } from "./systems/moderationSystem.js";
 import { VanityManager } from "./systems/vanityManager.js";
 import { AfkManager } from "./systems/afkManager.js";
 import { LinkProtection } from "./systems/linkProtection.js";
+import { WelcomeSystem } from "./systems/welcomeSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -21,6 +22,7 @@ import * as moderationCommands from "./commands/moderation.js";
 import * as vanityCommand from "./commands/vanity.js";
 import * as afkCommand from "./commands/afk.js";
 import * as funCommands from "./commands/funcommands.js";
+import * as welcomeCommand from "./commands/welcome.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ async function main() {
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
   const linkProtection = new LinkProtection(client, config);
+  const welcomeSystem = new WelcomeSystem(client, config);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -57,6 +60,7 @@ async function main() {
   moderationCommands.setModerationSystem(moderationSystem);
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
+  welcomeCommand.setWelcomeSystem(welcomeSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -97,9 +101,9 @@ async function main() {
         });
       }
     } 
-    // Special handling for vanity.js
-    else if (file === 'vanity.js') {
-      const cmd = commandModule.vanityCommand;
+    // Special handling for vanity.js and welcome.js
+    else if (file === 'vanity.js' || file === 'welcome.js') {
+      const cmd = file === 'vanity.js' ? commandModule.vanityCommand : commandModule;
       if (cmd && cmd.data && typeof cmd.execute === "function") {
         client.commands.set(cmd.data.name, {
           data: cmd.data,
@@ -136,6 +140,30 @@ async function main() {
   client.once(Events.ClientReady, async () => {
     console.log(`Logged in as ${client.user.tag}`);
 
+    // Set bot status from config
+    const botConfig = config.get("bot") || {};
+    if (botConfig.status) {
+      const activityTypes = {
+        'PLAYING': ActivityType.Playing,
+        'WATCHING': ActivityType.Watching,
+        'LISTENING': ActivityType.Listening,
+        'STREAMING': ActivityType.Streaming,
+        'COMPETING': ActivityType.Competing
+      };
+
+      const activityType = activityTypes[botConfig.status.type] || ActivityType.Playing;
+      const activityOptions = {
+        name: botConfig.status.text || 'with commands',
+        type: activityType
+      };
+
+      if (botConfig.status.url && activityType === ActivityType.Streaming) {
+        activityOptions.url = botConfig.status.url;
+      }
+
+      client.user.setActivity(activityOptions);
+    }
+
     const registry = new CommandRegistry(config.get("token"));
     for (const [, cmd] of client.commands) {
       registry.addCommand(cmd);
@@ -164,6 +192,7 @@ async function main() {
     console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
