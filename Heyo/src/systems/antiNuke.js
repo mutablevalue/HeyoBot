@@ -66,7 +66,7 @@ class AntiNuke {
    * If config needs to change on‐disk, call saveConfig().
    */
   saveConfig() {
-    // Overwrite just the "antiNuke" block in the root of configLoader’s data,
+    // Overwrite just the "antiNuke" block in the root of configLoader's data,
     // then write YAML back to disk.
     this.configLoader.set("antiNuke", {
       whitelist: this.config.whitelist,
@@ -323,6 +323,7 @@ class AntiNuke {
   }
 
   // ────────────────────────────────────────────────────────────────────
+  // FIXED: Message spam should ONLY timeout, never strip roles
   async handleMessageSpam(message) {
     const uid    = message.author.id;
     const member = message.member;
@@ -343,28 +344,21 @@ class AntiNuke {
     this.messageSpamLogs.set(uid, timestamps);
 
     if (timestamps.length > this.config.limits.messages.maxMessages) {
-      // If the user is an administrator, strip roles; else timeout
-      if (member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        await this.takeMitigationAction(
-          guild,
-          uid,
-          `message spam (${timestamps.length} in ${windowSec}s)`,
-          abuseId
-        );
-      } else {
-        try {
-          const timeoutDur = this.parseTimeoutDuration(this.config.limits.messages.timeoutDuration);
-          await member.timeout(timeoutDur, "Message spam detected");
-          const abuseChannel = guild.channels.cache.get(abuseId);
-          if (abuseChannel?.isTextBased()) {
-            abuseChannel.send(
-              `⚠️ **Message Spam Detected** ⚠️\nUser: ${member.user.tag}\nAction: ${this.formatTimeoutDuration(this.config.limits.messages.timeoutDuration)} timeout\nReason: ${timestamps.length} messages in ${windowSec}s`
-            );
-          }
-        } catch (e) {
-          console.error("[AntiNuke] Failed to timeout user:", e);
+      // FIXED: Always timeout for message spam, regardless of permissions
+      try {
+        const timeoutDur = this.parseTimeoutDuration(this.config.limits.messages.timeoutDuration);
+        await member.timeout(timeoutDur, "Message spam detected");
+        
+        const abuseChannel = guild.channels.cache.get(abuseId);
+        if (abuseChannel?.isTextBased()) {
+          abuseChannel.send(
+            `⚠️ **Message Spam Detected** ⚠️\nUser: ${member.user.tag}\nAction: ${this.formatTimeoutDuration(this.config.limits.messages.timeoutDuration)} timeout\nReason: ${timestamps.length} messages in ${windowSec}s`
+          );
         }
+      } catch (e) {
+        console.error("[AntiNuke] Failed to timeout user:", e);
       }
+      
       this.messageSpamLogs.delete(uid);
     }
   }
@@ -531,7 +525,7 @@ class AntiNuke {
 
   // ────────────────────────────────────────────────────────────────────
   /**
-   * Called whenever we detect “admin abuse” (too many actions in a short time).
+   * Called whenever we detect "admin abuse" (too many actions in a short time).
    * We strip all roles that the bot can manage (i.e. botHighestRole.position > role.position).
    */
   async takeMitigationAction(guild, userId, reason, abuseLogChannelId) {
@@ -541,7 +535,7 @@ class AntiNuke {
 
       const botMember = await guild.members.fetch(guild.client.user.id);
 
-      // Build a list of role IDs that are strictly lower than the bot’s top role
+      // Build a list of role IDs that are strictly lower than the bot's top role
       const rolesToRemove = member.roles.cache
         .filter((r) => {
           if (r.id === guild.id) return false; 
@@ -557,7 +551,7 @@ class AntiNuke {
             `⚠️ **Admin Abuse Detected** ⚠️\n` +
             `User: ${member.user.tag}\n` +
             `Reason: ${reason}\n` +
-            `Action: (no removable roles found—check bot’s role hierarchy)`
+            `Action: (no removable roles found—check bot's role hierarchy)`
           );
         }
         return;

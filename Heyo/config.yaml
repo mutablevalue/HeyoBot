@@ -2,7 +2,7 @@ token: MTM3OTkzNzIyNDI1NDI5NjE2NA.GXlWom.zaKMFAKN9qABWfGAuldzRkCgtE0EoQdrfAkhPQ
 prefix: ''
 logging:
   level: info
-developmentGuildId: 1379953422241104000
+developmentGuildId: 1379953422241103943
 queue:
   maxSize: 100
   workerCount: 3
@@ -15,6 +15,56 @@ rateLimit:
     default: 5
   customRoles: null
   message: You're sending commands too quickly! Please wait {time} seconds.
+moderation:
+  permissions:
+    administrator:
+      users:
+        - '987654321098765432'
+        - '234567890123456789'
+        - '1162730217895379025'
+      roles:
+        - '1235002473698299956'
+      commands:
+        - ban
+        - unban
+        - kick
+        - nuke
+        - setupperms
+        - role
+    moderator:
+      users:
+        - '345678901234567890'
+      roles:
+        - '456789012345678901'
+      commands:
+        - lockchannel
+        - unlockchannel
+        - timeout
+  permRoles:
+    vc: '1380755737906647060'
+    pic: '1380755738950893658'
+    link: '1380755739672313866'
+  logChannel: '1380422918017650719'
+  cooldowns:
+    default: 3
+    nuke: 30
+    setupperms: 60
+vanity:
+  enabled: false
+  checkIntervalSeconds: 120
+  vanityStrings:
+    - YourServer
+    - .gg/yourserver
+  roles:
+    - '789012345678901234'
+    - '890123456789012345'
+  logChannel: '1380422905191731210'
+  caseSensitive: false
+  checkUsername: true
+  checkNickname: true
+  exemptRoles:
+    - '901234567890123456'
+  removeOnVanityLoss: true
 antiNuke:
   whitelist:
     users:
