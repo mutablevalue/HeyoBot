@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include ModerationSystem and VanityManager
+// Updated to include ModerationSystem, VanityManager, AfkManager, and LinkProtection
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -12,12 +12,15 @@ import AntiNuke from "./systems/antiNuke.js";
 import { J2CManager } from "./systems/j2cManager.js";
 import { ModerationSystem } from "./systems/moderationSystem.js";
 import { VanityManager } from "./systems/vanityManager.js";
+import { AfkManager } from "./systems/afkManager.js";
+import { LinkProtection } from "./systems/linkProtection.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
 import * as moderationCommands from "./commands/moderation.js";
 import * as rootCommand from "./commands/root.js";
 import * as vanityCommand from "./commands/vanity.js";
+import * as afkCommand from "./commands/afk.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -39,6 +42,8 @@ async function main() {
   const j2cManager = new J2CManager(client, config);
   const moderationSystem = new ModerationSystem(client, config);
   const vanityManager = new VanityManager(client, config);
+  const afkManager = new AfkManager(client, config);
+  const linkProtection = new LinkProtection(client, config);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -52,6 +57,7 @@ async function main() {
   moderationCommands.setModerationSystem(moderationSystem);
   rootCommand.setModerationSystem(moderationSystem);
   vanityCommand.setVanityManager(vanityManager);
+  afkCommand.setAfkManager(afkManager);
 
   // 5) Prepare client.commands collection
   client.commands = new Collection();
@@ -146,6 +152,8 @@ async function main() {
     console.log('J2C Manager: Active');
     console.log('Moderation System: Active');
     console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('====================\n');
   });
 

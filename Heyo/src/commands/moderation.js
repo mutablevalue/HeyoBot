@@ -139,6 +139,36 @@ export const data = new SlashCommandBuilder()
           )
       )
   )
+  // Force nickname subcommand
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('forcenickname')
+      .setDescription('Force a nickname on a user that they cannot change')
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to force nickname on')
+          .setRequired(true)
+      )
+      .addStringOption(option =>
+        option
+          .setName('nickname')
+          .setDescription('Nickname to force (32 chars max)')
+          .setRequired(true)
+      )
+  )
+  // Unforce nickname subcommand
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('unforcenickname')
+      .setDescription('Remove forced nickname from a user')
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to remove forced nickname from')
+          .setRequired(true)
+      )
+  )
   // Setup permissions subcommand
   .addSubcommand(subcommand =>
     subcommand
@@ -255,6 +285,32 @@ export const roleData = new SlashCommandBuilder()
       )
   );
 
+export const forceNicknameData = new SlashCommandBuilder()
+  .setName('forcenickname')
+  .setDescription('Force a nickname on a user that they cannot change')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to force nickname on')
+      .setRequired(true)
+  )
+  .addStringOption(option =>
+    option
+      .setName('nickname')
+      .setDescription('Nickname to force (32 chars max)')
+      .setRequired(true)
+  );
+
+export const unforceNicknameData = new SlashCommandBuilder()
+  .setName('unforcenickname')
+  .setDescription('Remove forced nickname from a user')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to remove forced nickname from')
+      .setRequired(true)
+  );
+
 export const setupPermsData = new SlashCommandBuilder()
   .setName('setupperms')
   .setDescription('Create moderation roles with specific permissions');
@@ -302,6 +358,10 @@ export async function execute(interaction) {
       return executeTimeout(interaction);
     case 'role':
       return executeRole(interaction);
+    case 'forcenickname':
+      return executeForceNickname(interaction);
+    case 'unforcenickname':
+      return executeUnforceNickname(interaction);
     case 'setupperms':
       return executeSetupPerms(interaction);
   }
@@ -815,6 +875,138 @@ export async function executeRole(interaction) {
   }
 }
 
+export async function executeForceNickname(interaction) {
+  if (!interaction.options._subcommand) {
+    if (!await checkPermissionAndCooldown(interaction, 'forcenickname')) return;
+  }
+
+  const user = interaction.options.getUser('user');
+  const nickname = interaction.options.getString('nickname');
+
+  // Validate nickname length
+  if (nickname.length > 32) {
+    return interaction.reply({ 
+      content: '❌ Nickname must be 32 characters or less.', 
+      ephemeral: true 
+    });
+  }
+
+  try {
+    const member = await interaction.guild.members.fetch(user.id);
+    
+    // Check if bot can manage the member
+    if (!member.manageable) {
+      return interaction.reply({ 
+        content: '❌ I cannot manage this user\'s nickname. They may have higher permissions than me.', 
+        ephemeral: true 
+      });
+    }
+
+    // Check role hierarchy
+    if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+      return interaction.reply({ 
+        content: '❌ You cannot force a nickname on someone with an equal or higher role.', 
+        ephemeral: true 
+      });
+    }
+
+    // Force the nickname
+    const success = await moderationSystem.forceNickname(interaction.guild.id, user.id, nickname);
+
+    if (!success) {
+      return interaction.reply({ 
+        content: '❌ Failed to force nickname.', 
+        ephemeral: true 
+      });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('📝 Nickname Forced')
+      .setDescription(`Forced nickname on ${user.tag}`)
+      .addFields(
+        { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
+        { name: 'Forced Nickname', value: nickname, inline: true },
+        { name: 'Moderator', value: interaction.user.tag, inline: true }
+      )
+      .setColor(0x9b59b6)
+      .setFooter({ text: 'User cannot change this nickname - permission removed' })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    await moderationSystem.logAction(interaction.guild, {
+      action: 'Force Nickname',
+      moderator: interaction.user,
+      target: `${user.tag} (${user.id})`,
+      additional: `Nickname: ${nickname} - Change nickname permission removed`,
+      color: 0x9b59b6
+    });
+  } catch (error) {
+    console.error('Error forcing nickname:', error);
+    await interaction.reply({ 
+      content: '❌ Failed to force nickname.', 
+      ephemeral: true 
+    });
+  }
+}
+
+export async function executeUnforceNickname(interaction) {
+  if (!interaction.options._subcommand) {
+    if (!await checkPermissionAndCooldown(interaction, 'unforcenickname')) return;
+  }
+
+  const user = interaction.options.getUser('user');
+
+  try {
+    // Check if user has a forced nickname
+    const forcedNickname = moderationSystem.getForcedNickname(user.id);
+    if (!forcedNickname) {
+      return interaction.reply({ 
+        content: '❌ This user does not have a forced nickname.', 
+        ephemeral: true 
+      });
+    }
+
+    // Remove the forced nickname
+    const success = await moderationSystem.removeForcedNickname(interaction.guild.id, user.id);
+
+    if (!success) {
+      return interaction.reply({ 
+        content: '❌ Failed to remove forced nickname.', 
+        ephemeral: true 
+      });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Forced Nickname Removed')
+      .setDescription(`Removed forced nickname from ${user.tag}`)
+      .addFields(
+        { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
+        { name: 'Previous Forced Nickname', value: forcedNickname, inline: true },
+        { name: 'Moderator', value: interaction.user.tag, inline: true }
+      )
+      .setColor(0x00ff00)
+      .setFooter({ text: 'User can now change their nickname freely - permissions restored' })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    await moderationSystem.logAction(interaction.guild, {
+      action: 'Unforce Nickname',
+      moderator: interaction.user,
+      target: `${user.tag} (${user.id})`,
+      additional: `Previous nickname: ${forcedNickname} - Change nickname permission restored`,
+      color: 0x00ff00
+    });
+  } catch (error) {
+    console.error('Error removing forced nickname:', error);
+    await interaction.reply({ 
+      content: '❌ Failed to remove forced nickname.', 
+      ephemeral: true 
+    });
+  }
+}
+
 export async function executeSetupPerms(interaction) {
   if (!interaction.options._subcommand) {
     if (!await checkPermissionAndCooldown(interaction, 'setupperms')) return;
@@ -939,5 +1131,7 @@ export const commands = [
   { data: unbanData, execute: executeUnban },
   { data: timeoutData, execute: executeTimeout },
   { data: roleData, execute: executeRole },
+  { data: forceNicknameData, execute: executeForceNickname },
+  { data: unforceNicknameData, execute: executeUnforceNickname },
   { data: setupPermsData, execute: executeSetupPerms }
 ];

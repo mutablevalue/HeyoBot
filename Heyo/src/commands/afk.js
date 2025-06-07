@@ -1,37 +1,39 @@
-import { EmbedBuilder } from 'discord.js';
+// src/commands/afk.js
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
-  client.on('messageCreate', async message => {
-  if (message.author.bot) return;
-  if (afkMap.has(message.author.id)) {
-    const { timestamp } = afkMap.get(message.author.id);
-    const timeAway = Date.now() - timestamp;
+let afkManager = null;
 
-    const hours = Math.floor(timeAway / (1000 * 60 * 60));
-    const minutes = Math.floor((timeAway % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((timeAway % (1000 * 60)) / 1000);
+export function setAfkManager(manager) {
+  afkManager = manager;
+}
 
-    const durationParts = [];
-    if (hours > 0) durationParts.push(`${hours} hour${hours !== 1 ? 's' : ''}`);
-    if (minutes > 0) durationParts.push(`${minutes} minute${minutes !== 1 ? 's' : ''}`);
-    if (seconds > 0 || durationParts.length === 0)
-      durationParts.push(`${seconds} second${seconds !== 1 ? 's' : ''}`);
+export const data = new SlashCommandBuilder()
+  .setName('afk')
+  .setDescription('Set your AFK status')
+  .addStringOption(option =>
+    option
+      .setName('reason')
+      .setDescription('Reason for being AFK')
+      .setRequired(false)
+  );
 
-    const embed = new EmbedBuilder()
-      .setColor('#00000')
-      .setDescription(`<@${message.author.id}>, welcome back! You were away for **${durationParts.join(', ')}**.`);
-
-    afkMap.delete(message.author.id);
-    saveAfkData();
-    message.reply({ embeds: [embed] });
+export async function execute(interaction) {
+  if (!afkManager) {
+    return interaction.reply({
+      content: '❌ AFK system is not initialized.',
+      ephemeral: true
+    });
   }
 
-  for (const [id] of message.mentions.users) {
-    if (afkMap.has(id)) {
-      const { reason } = afkMap.get(id);
-      const embed = new EmbedBuilder()
-        .setColor('#00000')
-        .setDescription(`<@${id}> is currently AFK: **${reason}**`);
-      message.reply({ embeds: [embed] });
-    }
-  }
-});
+  const reason = interaction.options.getString('reason') || 'AFK';
+  
+  // Set user as AFK
+  afkManager.setAfk(interaction.user.id, reason);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x808080)
+    .setDescription(`✅ You are now AFK: **${reason}**`)
+    .setFooter({ text: 'I\'ll notify anyone who mentions you' });
+
+  await interaction.reply({ embeds: [embed] });
+}

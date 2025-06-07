@@ -1,5 +1,12 @@
-
+// src/systems/moderationSystem.js
 import { PermissionFlagsBits } from 'discord.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export class ModerationSystem {
   /**
@@ -19,7 +26,7 @@ export class ModerationSystem {
           users: modConfig.permissions?.administrator?.users || [],
           roles: modConfig.permissions?.administrator?.roles || [],
           commands: modConfig.permissions?.administrator?.commands || [
-            'ban', 'unban', 'kick', 'timeout', 'role', 'nuke', 'setupperms'
+            'ban', 'unban', 'kick', 'timeout', 'role', 'nuke', 'setupperms', 'forcenickname', 'unforcenickname'
           ]
         },
         moderator: {
@@ -42,12 +49,216 @@ export class ModerationSystem {
       cooldowns: modConfig.cooldowns || {
         default: 3,
         nuke: 30,
-        setupperms: 60
+        setupperms: 60,
+        forcenickname: 5,
+        unforcenickname: 5
+      },
+      // Forced nicknames configuration
+      forcedNicknames: modConfig.forcedNicknames || {
+        dataFile: 'forced_nicknames.json',
+        checkInterval: 5000 // Check every 5 seconds
       }
     };
 
     // Cooldown tracking
     this.cooldowns = new Map();
+    
+    // Forced nicknames tracking
+    this.forcedNicknamesMap = new Map();
+    this.forcedNicknamesPath = path.join(__dirname, '../../data', this.config.forcedNicknames.dataFile);
+    this.loadForcedNicknames();
+    
+    // Set up event listeners for nickname changes
+    this.setupNicknameMonitoring();
+  }
+
+  /**
+   * Load forced nicknames from file
+   */
+  loadForcedNicknames() {
+    try {
+      if (fs.existsSync(this.forcedNicknamesPath)) {
+        const data = JSON.parse(fs.readFileSync(this.forcedNicknamesPath, 'utf8'));
+        for (const [userId, value] of Object.entries(data)) {
+          // Handle both old format (string) and new format (object)
+          if (typeof value === 'string') {
+            // Old format - convert to new format
+            this.forcedNicknamesMap.set(userId, {
+              nickname: value,
+              roleId: null
+            });
+          } else {
+            // New format
+            this.forcedNicknamesMap.set(userId, value);
+          }
+        }
+        console.log(`[ModerationSystem] Loaded ${this.forcedNicknamesMap.size} forced nicknames`);
+      }
+    } catch (error) {
+      console.error('[ModerationSystem] Error loading forced nicknames:', error);
+    }
+  }
+
+  /**
+   * Save forced nicknames to file
+   */
+  saveForcedNicknames() {
+    try {
+      const data = Object.fromEntries(this.forcedNicknamesMap);
+      const dir = path.dirname(this.forcedNicknamesPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(this.forcedNicknamesPath, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('[ModerationSystem] Error saving forced nicknames:', error);
+    }
+  }
+
+  /**
+   * Set up nickname monitoring
+   */
+  setupNicknameMonitoring() {
+    // Monitor member updates for nickname changes
+    this.client.on('guildMemberUpdate', async (oldMember, newMember) => {
+      const forcedData = this.forcedNicknamesMap.get(newMember.id);
+      if (!forcedData) return;
+
+      // Check if nickname was changed
+      if (newMember.nickname !== forcedData.nickname) {
+        try {
+          await newMember.setNickname(forcedData.nickname, 'Forced nickname - user attempted to change');
+          
+          // Log the attempt
+          await this.logAction(newMember.guild, {
+            action: 'Forced Nickname Revert',
+            moderator: this.client.user,
+            target: `${newMember.user.tag} (${newMember.id})`,
+            additional: `Attempted to change from "${forcedData.nickname}" to "${newMember.nickname}"`,
+            color: 0xffa500
+          });
+        } catch (error) {
+          console.error('[ModerationSystem] Failed to revert nickname:', error);
+        }
+      }
+    });
+
+    // Periodic check to ensure nicknames haven't been changed
+    setInterval(() => {
+      this.checkForcedNicknames();
+    }, this.config.forcedNicknames.checkInterval);
+  }
+
+  /**
+   * Check all forced nicknames
+   */
+  async checkForcedNicknames() {
+    for (const [userId, forcedData] of this.forcedNicknamesMap) {
+      for (const guild of this.client.guilds.cache.values()) {
+        try {
+          const member = await guild.members.fetch(userId).catch(() => null);
+          if (member && member.nickname !== forcedData.nickname) {
+            await member.setNickname(forcedData.nickname, 'Periodic forced nickname check');
+          }
+        } catch (error) {
+          // Member might not be in this guild
+        }
+      }
+    }
+  }
+
+  /**
+   * Force a nickname on a user
+   * @param {string} guildId 
+   * @param {string} userId 
+   * @param {string} nickname 
+   * @returns {Promise<boolean>}
+   */
+  async forceNickname(guildId, userId, nickname) {
+    try {
+      const guild = this.client.guilds.cache.get(guildId);
+      if (!guild) return false;
+
+      const member = await guild.members.fetch(userId);
+      if (!member) return false;
+
+      // Set the nickname
+      await member.setNickname(nickname, 'Forced nickname by moderator');
+      
+      // Create or get the "Forced Nickname" role
+      let forcedNicknameRole = guild.roles.cache.find(r => r.name === ' ');
+      
+      if (!forcedNicknameRole) {
+        forcedNicknameRole = await guild.roles.create({
+          name: ' ',
+          color: 0x000000,
+          permissions: [],
+          reason: 'Role for users with forced nicknames'
+        });
+      }
+      
+      // Add the role to the member
+      await member.roles.add(forcedNicknameRole, 'Forced nickname applied');
+      
+      // Save to forced nicknames
+      this.forcedNicknamesMap.set(userId, {
+        nickname: nickname,
+        roleId: forcedNicknameRole.id,
+        guildId: guildId
+      });
+      this.saveForcedNicknames();
+
+      return true;
+    } catch (error) {
+      console.error('[ModerationSystem] Error forcing nickname:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Remove forced nickname from a user
+   * @param {string} guildId 
+   * @param {string} userId 
+   * @returns {Promise<boolean>}
+   */
+  async removeForcedNickname(guildId, userId) {
+    try {
+      const forcedData = this.forcedNicknamesMap.get(userId);
+      if (!forcedData) return false;
+
+      const guild = this.client.guilds.cache.get(guildId);
+      if (guild) {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (member) {
+          // Remove the forced nickname role
+          const forcedNicknameRole = guild.roles.cache.find(r => r.name === ' ');
+          if (forcedNicknameRole && member.roles.cache.has(forcedNicknameRole.id)) {
+            await member.roles.remove(forcedNicknameRole, 'Forced nickname removed by moderator');
+          }
+          
+          // Reset their nickname
+          await member.setNickname(null, 'Forced nickname removed by moderator');
+        }
+      }
+
+      this.forcedNicknamesMap.delete(userId);
+      this.saveForcedNicknames();
+
+      return true;
+    } catch (error) {
+      console.error('[ModerationSystem] Error removing forced nickname:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get forced nickname for a user
+   * @param {string} userId 
+   * @returns {string|null}
+   */
+  getForcedNickname(userId) {
+    const data = this.forcedNicknamesMap.get(userId);
+    return data ? data.nickname : null;
   }
 
   /**
@@ -58,7 +269,8 @@ export class ModerationSystem {
       permissions: this.config.permissions,
       permRoles: this.config.permRoles,
       logChannel: this.config.logChannel,
-      cooldowns: this.config.cooldowns
+      cooldowns: this.config.cooldowns,
+      forcedNicknames: this.config.forcedNicknames
     });
     return this.configLoader.save();
   }
@@ -306,7 +518,8 @@ export class ModerationSystem {
         configured: Object.values(this.config.permRoles).filter(id => id !== null).length,
         total: Object.keys(this.config.permRoles).length
       },
-      activeCooldowns: this.cooldowns.size
+      activeCooldowns: this.cooldowns.size,
+      forcedNicknames: this.forcedNicknamesMap.size
     };
   }
 }
