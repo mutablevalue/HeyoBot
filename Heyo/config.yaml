@@ -197,6 +197,8 @@ welcome:
   roleOnJoin: null
   pingUser: false
   deleteAfter: null
+
+
 roleTracker:
   enabled: true
   dataFile: role_history.json
@@ -204,3 +206,64 @@ roleTracker:
   trackBots: false
   exemptRoles: []
   logChannel: null
+# Leaderboard System configuration
+leaderboard:
+  enabled: true
+  trackMessages: true
+  trackVoice: true
+  dataFile: 'leaderboard_data.json'
+  resetSchedule:
+    weekly: 'Monday'  # Day of week to reset weekly stats
+    monthly: 1  # Day of month to reset monthly stats
+  minimumVCTime: 60  # Minimum seconds in VC to count
+  excludedChannels: []  # Channel IDs to exclude from tracking
+  excludedRoles: []  # Role IDs to exclude from tracking
+  trackBots: false
+
+# Event Hosting System configuration
+events:
+  enabled: true
+  dataFile: 'events_data.json'
+  announcementChannel: null  # Channel ID for event announcements
+  logChannel: null  # Channel ID for event logs
+  pingRole: null  # Role ID to ping for event announcements
+  dmWinners: true  # DM winners their rewards
+  
+personalSystem:
+  # General
+  enabled: true                    # Enable or disable the entire personal system
+  dataFile: 'personal_data.json'   # Where to persist user items
+
+  # Requirements
+  requireBooster: true             # Must be a server booster
+  requiredRoles: []                # IDs of roles required to use the system
+  blacklistedRoles: []             # IDs of roles that are forbidden from using it
+
+  # Voice Channel Settings
+  vcEnabled: true                  # Enable personal VCs
+  vcCategory: null                 # Category ID in which to create VCs (null = top level)
+  vcNameFormat: "{username}'s Channel"  # Channel name template
+  vcUserLimit: 10                  # User limit per voice channel
+  vcBitrate: 64000                 # Bitrate in bits/sec
+  vcPermissions:
+    manage: true                   # Allow owner to Manage Channel
+    moveMembers: true              # Allow owner to Move Members
+    muteMembers: true              # Allow owner to Mute Members
+    deafenMembers: true            # Allow owner to Deafen Members
+
+  # Role Settings
+  roleEnabled: true                # Enable personal roles
+  rolePosition: null               # Position to insert role (null = at bottom)
+  roleNameFormat: "{username}'s Role" # Role name template
+  roleColor: 'Random'              # 'Random' or hex string (e.g. '#FF0000')
+  rolePermissions: []              # Additional permissions bitwise array
+  roleHoist: false                 # Should the role be hoisted?
+  roleMentionable: false           # Should the role be mentionable?
+
+  # Limits & cleanup
+  maxPerUser: 1                    # Max channels _and_ max roles per user
+  deleteOnBoostEnd: true           # Remove items when boost ends
+  deleteOnLeave: true              # Remove items when user leaves
+
+  # Logging
+  logChannel: null                 # ID of a text channel for audit logs

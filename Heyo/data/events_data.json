@@ -1,0 +1,32 @@
+{
+  "activeEvents": [
+    {
+      "id": "event_1749397628809_9hy8yen13",
+      "type": "last_to_leave_vc",
+      "name": "Last to Leave General",
+      "description": "Be the last person to leave General to win!",
+      "guildId": "1379953422241103943",
+      "channelId": "1379953422685573191",
+      "createdBy": "1235002473698299956",
+      "createdAt": "2025-06-08T15:47:08.809Z",
+      "startTime": "2025-06-08T15:47:08.809Z",
+      "endTime": null,
+      "status": "active",
+      "requirements": {
+        "minMessages": 200,
+        "mustBeBooster": true
+      },
+      "rewards": [
+        "Classic Nitro 2x"
+      ],
+      "participants": [],
+      "winners": [],
+      "data": {
+        "participants": [],
+        "originalCount": 0
+      },
+      "startedAt": "2025-06-08T15:47:08.815Z"
+    }
+  ],
+  "history": []
+}

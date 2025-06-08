@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, WelcomeSystem, RoleTracker, and FunCommands
+// Updated to include all systems including LeaderboardSystem and EventHostingSystem
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -16,6 +16,8 @@ import { AfkManager } from "./systems/afkManager.js";
 import { LinkProtection } from "./systems/linkProtection.js";
 import { WelcomeSystem } from "./systems/welcomeSystem.js";
 import { RoleTracker } from "./systems/roleTracker.js";
+import { LeaderboardSystem } from "./systems/leaderboardSystem.js";
+import { EventHostingSystem } from "./systems/eventHostingSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -25,6 +27,8 @@ import * as afkCommand from "./commands/afk.js";
 import * as funCommands from "./commands/funcommands.js";
 import * as welcomeCommand from "./commands/welcome.js";
 import * as channelCommands from "./commands/channels.js";
+import * as leaderboardCommands from "./commands/leaderboard.js";
+import * as eventCommands from "./commands/events.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +54,8 @@ async function main() {
   const linkProtection = new LinkProtection(client, config);
   const welcomeSystem = new WelcomeSystem(client, config);
   const roleTracker = new RoleTracker(client, config);
+  const leaderboardSystem = new LeaderboardSystem(client, config);
+  const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -66,6 +72,9 @@ async function main() {
   welcomeCommand.setWelcomeSystem(welcomeSystem);
   channelCommands.setModerationSystem(moderationSystem);
   channelCommands.setRoleTracker(roleTracker);
+  leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
+  eventCommands.setEventHostingSystem(eventHostingSystem);
+  eventCommands.setLeaderboardSystem(leaderboardSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -94,7 +103,7 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js') && commandModule.commands) {
+    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js' || file === 'leaderboard.js' || file === 'events.js') && commandModule.commands) {
       for (const cmd of commandModule.commands) {
         if (!cmd.data || typeof cmd.execute !== "function") {
           console.warn(`Skipping command in ${file} – missing 'data' or 'execute'.`);
@@ -199,26 +208,35 @@ async function main() {
     console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Leaderboard System: ${leaderboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Event Hosting: ${eventHostingSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
 
   // 9) Handle slash command interactions
   client.on(Events.InteractionCreate, async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+    if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
 
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-
-    try {
-      await command.execute(interaction);
-    } catch (err) {
-      console.error(`Error executing /${interaction.commandName}:`, err);
-      if (interaction.isRepliable()) {
-        await interaction.reply({
-          content: "There was an error while executing this command.",
-          ephemeral: true
-        });
+      try {
+        await command.execute(interaction);
+      } catch (err) {
+        console.error(`Error executing /${interaction.commandName}:`, err);
+        if (interaction.isRepliable()) {
+          await interaction.reply({
+            content: "There was an error while executing this command.",
+            ephemeral: true
+          });
+        }
+      }
+    } else if (interaction.isButton()) {
+      // Handle button interactions
+      if (interaction.customId.startsWith('lb_')) {
+        // Leaderboard button interactions
+        const { handleButtonInteraction } = await import('./commands/leaderboard.js');
+        await handleButtonInteraction(interaction);
       }
     }
   });

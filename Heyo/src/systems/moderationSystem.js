@@ -17,40 +17,46 @@ export class ModerationSystem {
     this.client = client;
     this.configLoader = configLoader;
     
-    // Load moderation config
+    // Load moderation config with proper defaults
     const modConfig = this.configLoader.get('moderation') || {};
+    
+    // Initialize config with defaults first
     this.config = {
-      // Permission levels
+      // Owner bypass setting
+      ownerBypass: true,
+      
+      // Permission levels with full defaults
       permissions: {
         administrator: {
-          users: modConfig.permissions?.administrator?.users || [],
-          roles: modConfig.permissions?.administrator?.roles || [],
-          commands: modConfig.permissions?.administrator?.commands || [
+          users: [],
+          roles: [],
+          commands: [
             'ban', 'unban', 'kick', 'timeout', 'mute', 'unmute', 'role', 'nuke', 'setupperms', 
             'forcenickname', 'unforcenickname', 'purge', 'createchannel', 'deletechannel', 
             'restoreroles'
           ]
         },
         moderator: {
-          users: modConfig.permissions?.moderator?.users || [],
-          roles: modConfig.permissions?.moderator?.roles || [],
-          commands: modConfig.permissions?.moderator?.commands || [
+          users: [],
+          roles: [],
+          commands: [
             'lockchannel', 'unlockchannel', 'timeout', 'mute', 'unmute', 'purge'
           ]
         }
       },
-      // Owner bypass setting
-      ownerBypass: modConfig.ownerBypass ?? true,
+      
       // Created permission roles
-      permRoles: modConfig.permRoles || {
+      permRoles: {
         vc: null,
         pic: null,
         link: null
       },
+      
       // Logging
-      logChannel: modConfig.logChannel || null,
+      logChannel: null,
+      
       // Command cooldowns (in seconds)
-      cooldowns: modConfig.cooldowns || {
+      cooldowns: {
         default: 3,
         nuke: 30,
         setupperms: 60,
@@ -63,20 +69,67 @@ export class ModerationSystem {
         deletechannel: 15,
         restoreroles: 10
       },
-
-          // permanent‐mute role config (defaults if missing in YAML)
-      permMuteRole: modConfig.permMuteRole || {
-         roleId:      null,
-    defaultName: 'Muted',
-    defaultColor: 0x808080
-  },
-     // Forced nicknames configuration
-      forcedNicknames: modConfig.forcedNicknames || {
+      
+      // Forced nicknames configuration
+      forcedNicknames: {
         dataFile: 'forced_nicknames.json',
         checkInterval: 5000, // Check every 5 seconds
-        roleId: modConfig.forcedNicknames?.roleId || null // Role ID for forced nickname users
+        roleId: null // Role ID for forced nickname users
       }
     };
+
+    // Now merge with loaded config
+    if (modConfig!== undefined) {
+      this.config= modConfig;
+    }
+
+    // Merge permissions
+    if (modConfig.permissions) {
+      if (modConfig.permissions.administrator) {
+        this.config.permissions.administrator = {
+          users: modConfig.permissions.administrator.users || this.config.permissions.administrator.users,
+          roles: modConfig.permissions.administrator.roles || this.config.permissions.administrator.roles,
+          commands: modConfig.permissions.administrator.commands || this.config.permissions.administrator.commands
+        };
+      }
+      
+      if (modConfig.permissions.moderator) {
+        this.config.permissions.moderator = {
+          users: modConfig.permissions.moderator.users || this.config.permissions.moderator.users,
+          roles: modConfig.permissions.moderator.roles || this.config.permissions.moderator.roles,
+          commands: modConfig.permissions.moderator.commands || this.config.permissions.moderator.commands
+        };
+      }
+    }
+
+    // Merge permRoles
+    if (modConfig.permRoles) {
+      this.config.permRoles = {
+        ...this.config.permRoles,
+        ...modConfig.permRoles
+      };
+    }
+
+    // Set log channel
+    if (modConfig.logChannel) {
+      this.config.logChannel = modConfig.logChannel;
+    }
+
+    // Merge cooldowns
+    if (modConfig.cooldowns) {
+      this.config.cooldowns = {
+        ...this.config.cooldowns,
+        ...modConfig.cooldowns
+      };
+    }
+
+    // Merge forced nicknames config
+    if (modConfig.forcedNicknames) {
+      this.config.forcedNicknames = {
+        ...this.config.forcedNicknames,
+        ...modConfig.forcedNicknames
+      };
+    }
 
     // Cooldown tracking
     this.cooldowns = new Map();
@@ -317,8 +370,7 @@ export class ModerationSystem {
       permRoles: this.config.permRoles,
       logChannel: this.config.logChannel,
       cooldowns: this.config.cooldowns,
-      forcedNicknames: this.config.forcedNicknames,
-      permMuteRole:    this.config.permMuteRole  
+      forcedNicknames: this.config.forcedNicknames
     });
     return this.configLoader.save();
   }
