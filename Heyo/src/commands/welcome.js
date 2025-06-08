@@ -191,8 +191,6 @@ async function executeSetChannel(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-// Export for index.js
-
 async function executeSetMessage(interaction) {
   const title = interaction.options.getString('title');
   const description = interaction.options.getString('description');

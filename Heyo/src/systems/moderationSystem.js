@@ -26,7 +26,9 @@ export class ModerationSystem {
           users: modConfig.permissions?.administrator?.users || [],
           roles: modConfig.permissions?.administrator?.roles || [],
           commands: modConfig.permissions?.administrator?.commands || [
-            'ban', 'unban', 'kick', 'timeout', 'mute', 'unmute', 'role', 'nuke', 'setupperms', 'forcenickname', 'unforcenickname', 'purge'
+            'ban', 'unban', 'kick', 'timeout', 'mute', 'unmute', 'role', 'nuke', 'setupperms', 
+            'forcenickname', 'unforcenickname', 'purge', 'createchannel', 'deletechannel', 
+            'restoreroles'
           ]
         },
         moderator: {
@@ -56,9 +58,19 @@ export class ModerationSystem {
         unforcenickname: 5,
         mute: 5,
         unmute: 5,
-        purge: 10
+        purge: 10,
+        createchannel: 10,
+        deletechannel: 15,
+        restoreroles: 10
       },
-      // Forced nicknames configuration
+
+          // permanent‐mute role config (defaults if missing in YAML)
+      permMuteRole: modConfig.permMuteRole || {
+         roleId:      null,
+    defaultName: 'Muted',
+    defaultColor: 0x808080
+  },
+     // Forced nicknames configuration
       forcedNicknames: modConfig.forcedNicknames || {
         dataFile: 'forced_nicknames.json',
         checkInterval: 5000, // Check every 5 seconds
@@ -305,7 +317,8 @@ export class ModerationSystem {
       permRoles: this.config.permRoles,
       logChannel: this.config.logChannel,
       cooldowns: this.config.cooldowns,
-      forcedNicknames: this.config.forcedNicknames
+      forcedNicknames: this.config.forcedNicknames,
+      permMuteRole:    this.config.permMuteRole  
     });
     return this.configLoader.save();
   }

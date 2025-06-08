@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, WelcomeSystem, and FunCommands
+// Updated to include ModerationSystem, VanityManager, AfkManager, LinkProtection, WelcomeSystem, RoleTracker, and FunCommands
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -15,6 +15,7 @@ import { VanityManager } from "./systems/vanityManager.js";
 import { AfkManager } from "./systems/afkManager.js";
 import { LinkProtection } from "./systems/linkProtection.js";
 import { WelcomeSystem } from "./systems/welcomeSystem.js";
+import { RoleTracker } from "./systems/roleTracker.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -23,6 +24,7 @@ import * as vanityCommand from "./commands/vanity.js";
 import * as afkCommand from "./commands/afk.js";
 import * as funCommands from "./commands/funcommands.js";
 import * as welcomeCommand from "./commands/welcome.js";
+import * as channelCommands from "./commands/channels.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ async function main() {
   const afkManager = new AfkManager(client, config);
   const linkProtection = new LinkProtection(client, config);
   const welcomeSystem = new WelcomeSystem(client, config);
+  const roleTracker = new RoleTracker(client, config);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -61,6 +64,8 @@ async function main() {
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
   welcomeCommand.setWelcomeSystem(welcomeSystem);
+  channelCommands.setModerationSystem(moderationSystem);
+  channelCommands.setRoleTracker(roleTracker);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -89,7 +94,7 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-    if ((file === 'moderation.js' || file === 'funcommands.js') && commandModule.commands) {
+    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js') && commandModule.commands) {
       for (const cmd of commandModule.commands) {
         if (!cmd.data || typeof cmd.execute !== "function") {
           console.warn(`Skipping command in ${file} – missing 'data' or 'execute'.`);
@@ -193,6 +198,7 @@ async function main() {
     console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });

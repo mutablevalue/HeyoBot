@@ -137,7 +137,7 @@ export async function executeNames(interaction) {
     .setTimestamp();
 
   if (!userHistory || userHistory.history.length === 0) {
-    embed.setDescription(`No previous usernames recorded for ${user.username}.`);
+    embed.setDescription(`No previous usernames recorded for ${user.username}.\n\n*Note: Username tracking starts from when the bot first sees a user.*`);
   } else {
     // Current username
     embed.addFields({

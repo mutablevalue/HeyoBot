@@ -1,3 +1,4 @@
+// src/commands/moderation.js
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
@@ -108,6 +109,57 @@ export const data = new SlashCommandBuilder()
         option
           .setName('reason')
           .setDescription('Reason for timeout')
+          .setRequired(false)
+      )
+  )
+  // Mute subcommand
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('mute')
+      .setDescription('Mute a user (timeout alias)')
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to mute')
+          .setRequired(true)
+      )
+
+      .addStringOption(option =>
+        option
+          .setName('reason')
+          .setDescription('Reason for mute')
+          .setRequired(false)
+      )
+  )
+  // Unmute subcommand
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('unmute')
+      .setDescription('Unmute a user (remove timeout)')
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to unmute')
+          .setRequired(true)
+      )
+  )
+  // Purge subcommand
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('purge')
+      .setDescription('Delete multiple messages at once')
+      .addIntegerOption(option =>
+        option
+          .setName('amount')
+          .setDescription('Number of messages to delete (1-100)')
+          .setRequired(true)
+          .setMinValue(1)
+          .setMaxValue(100)
+      )
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('Only delete messages from this user')
           .setRequired(false)
       )
   )
@@ -259,6 +311,50 @@ export const timeoutData = new SlashCommandBuilder()
       .setRequired(false)
   );
 
+export const muteData = new SlashCommandBuilder()
+  .setName('mute')
+  .setDescription('Mute a user (timeout alias)')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to mute')
+      .setRequired(true)
+  )
+  .addStringOption(option =>
+    option
+      .setName('reason')
+      .setDescription('Reason for mute')
+      .setRequired(false)
+  );
+
+export const unmuteData = new SlashCommandBuilder()
+  .setName('unmute')
+  .setDescription('Unmute a user (remove timeout)')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to unmute')
+      .setRequired(true)
+  );
+
+export const purgeData = new SlashCommandBuilder()
+  .setName('purge')
+  .setDescription('Delete multiple messages at once')
+  .addIntegerOption(option =>
+    option
+      .setName('amount')
+      .setDescription('Number of messages to delete (1-100)')
+      .setRequired(true)
+      .setMinValue(1)
+      .setMaxValue(100)
+  )
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('Only delete messages from this user')
+      .setRequired(false)
+  );
+
 export const roleData = new SlashCommandBuilder()
   .setName('role')
   .setDescription('Give or remove a role from a user')
@@ -356,6 +452,12 @@ export async function execute(interaction) {
       return executeUnban(interaction);
     case 'timeout':
       return executeTimeout(interaction);
+    case 'mute':
+      return executeMute(interaction);
+    case 'unmute':
+      return executeUnmute(interaction);
+    case 'purge':
+      return executePurge(interaction);
     case 'role':
       return executeRole(interaction);
     case 'forcenickname':
@@ -776,6 +878,243 @@ export async function executeTimeout(interaction) {
   }
 }
 
+/**
+ * Returns:
+ *  - cfg: the { roleId, defaultName, defaultColor } object
+ *  - updateKey: the dotted path to write back when saving roleId
+ */
+function locateMuteConfig() {
+  const top    = moderationSystem.config;
+  const nested = moderationSystem.config.moderation;
+
+  if (top.permMuteRole) {
+    return { cfg: top.permMuteRole, updateKey: 'permMuteRole.roleId' };
+  }
+  if (nested && nested.permMuteRole) {
+    return {
+      cfg: nested.permMuteRole,
+      updateKey: 'moderation.permMuteRole.roleId'
+    };
+  }
+
+  console.error('❌ Could not find permMuteRole in config:', moderationSystem.config);
+  throw new Error('Configuration error: missing permMuteRole');
+}
+
+
+async function ensureMuteRole(interaction) {
+  const { roleId, defaultName, defaultColor } = moderationSystem.config.permMuteRole;
+
+  // Find existing role by ID
+  let role = roleId && interaction.guild.roles.cache.get(roleId);
+  if (!role) {
+    // Create the Muted role
+    role = await interaction.guild.roles.create({
+      name: defaultName,
+      color: defaultColor,
+      permissions: []  // block everything
+    });
+
+    // Persist its ID
+    moderationSystem.config.permMuteRole.roleId = role.id;
+    await moderationSystem.saveConfig();
+
+    // Lock it out of every channel
+    for (const channel of interaction.guild.channels.cache.values()) {
+      // text‐based channels (text, announcement, threads, etc.)
+      if (channel.isTextBased && channel.isTextBased()) {
+        await channel.permissionOverwrites.edit(role, {
+          SendMessages:  false,
+          AddReactions:  false,
+          ViewChannel:   true
+        });
+      }
+      // voice channels
+      else if (channel.isVoiceBased && channel.isVoiceBased()) {
+        await channel.permissionOverwrites.edit(role, {
+          Connect: false,
+          Speak:   false
+        });
+      }
+      // category channels? you can add more branches if needed
+    }
+  }
+
+  return role;
+}
+
+
+export async function executeMute(interaction) {
+  if (!interaction.options._subcommand) {
+    if (!await checkPermissionAndCooldown(interaction, 'mute')) return;
+  }
+  const user = interaction.options.getUser('user');
+  const reason = interaction.options.getString('reason') || 'No reason provided';
+
+  try {
+    const { cfg } = locateMuteConfig();
+    
+    const member = await interaction.guild.members.fetch(user.id);
+    if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+      return interaction.reply({ content: '❌ Cannot mute someone with equal/higher role.', ephemeral: true });
+    }
+
+    const muteRole = await ensureMuteRole(interaction);
+
+    if (member.roles.cache.has(muteRole.id)) {
+      return interaction.reply({ content: '❌ User is already muted.', ephemeral: true });
+    }
+
+    await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🔇 User Muted')
+      .addFields(
+        { name: 'User',      value: `${user.tag} (${user.id})`, inline: true },
+        { name: 'Moderator', value: interaction.user.tag,       inline: true },
+        { name: 'Reason',    value: reason }
+      )
+      .setColor(cfg.defaultColor)
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+    await moderationSystem.logAction(interaction.guild, {
+      action: 'Mute', moderator: interaction.user, target: `${user.tag} (${user.id})`,
+      reason, color: cfg.defaultColor
+    });
+
+  } catch (error) {
+    console.error('Error muting user:', error);
+    await interaction.reply({ content: '❌ Failed to mute user.', ephemeral: true });
+  }
+}
+
+
+export async function executeUnmute(interaction) {
+  // permission & cooldown check (same as before)
+  if (!interaction.options._subcommand) {
+    if (!await checkPermissionAndCooldown(interaction, 'unmute')) return;
+  }
+
+  const user = interaction.options.getUser('user');
+
+  try {
+    const member = await interaction.guild.members.fetch(user.id);
+
+    // locate the mute‐role config & path
+    const { cfg } = locateMuteConfig();
+
+    // grab the role instance
+    const muteRole = cfg.roleId && interaction.guild.roles.cache.get(cfg.roleId);
+    if (!muteRole) {
+      return interaction.reply({ content: '❌ No “Muted” role found in this server.', ephemeral: true });
+    }
+
+    // check if the member actually has it
+    if (!member.roles.cache.has(muteRole.id)) {
+      return interaction.reply({ content: '❌ This user is not muted.', ephemeral: true });
+    }
+
+    // remove the role
+    await member.roles.remove(muteRole, `Unmuted by ${interaction.user.tag}`);
+
+    // build the embed
+    const embed = new EmbedBuilder()
+      .setTitle('🔊 User Unmuted')
+      .addFields(
+        { name: 'User',      value: `${user.tag} (${user.id})`, inline: true },
+        { name: 'Moderator', value: interaction.user.tag,       inline: true }
+      )
+      .setColor(0x00ff00)
+      .setTimestamp();
+
+    // reply & log
+    await interaction.reply({ embeds: [embed] });
+    await moderationSystem.logAction(interaction.guild, {
+      action: 'Unmute',
+      moderator: interaction.user,
+      target: `${user.tag} (${user.id})`,
+      color: 0x00ff00
+    });
+
+  } catch (error) {
+    console.error('Error unmuting user:', error);
+    await interaction.reply({ content: '❌ Failed to unmute user.', ephemeral: true });
+  }
+}
+
+
+export async function executePurge(interaction) {
+  if (!interaction.options._subcommand) {
+    if (!await checkPermissionAndCooldown(interaction, 'purge')) return;
+  }
+
+  const amount = interaction.options.getInteger('amount');
+  const targetUser = interaction.options.getUser('user');
+
+  try {
+    // Defer reply first for purge commands
+    await interaction.deferReply({ ephemeral: true });
+
+    // Fetch messages
+    const messages = await interaction.channel.messages.fetch({ limit: 100 });
+
+    // Filter messages
+    let messagesToDelete = Array.from(messages.values());
+    
+    if (targetUser) {
+      messagesToDelete = messagesToDelete.filter(msg => msg.author.id === targetUser.id);
+    }
+
+    // Take only the requested amount
+    messagesToDelete = messagesToDelete.slice(0, amount);
+
+    // Filter out messages older than 14 days (Discord limitation)
+    const twoWeeksAgo = Date.now() - (14 * 24 * 60 * 60 * 1000);
+    messagesToDelete = messagesToDelete.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+
+    if (messagesToDelete.length === 0) {
+      return interaction.editReply({ 
+        content: '❌ No messages found to delete.', 
+        ephemeral: true 
+      });
+    }
+
+    // Delete messages
+    const deleted = await interaction.channel.bulkDelete(messagesToDelete, true);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🧹 Messages Purged')
+      .setDescription(`Successfully deleted ${deleted.size} messages.`)
+      .addFields(
+        { name: 'Channel', value: `${interaction.channel}`, inline: true },
+        { name: 'Moderator', value: interaction.user.tag, inline: true }
+      )
+      .setColor(0x00ff00)
+      .setTimestamp();
+
+    if (targetUser) {
+      embed.addFields({ name: 'Target User', value: `${targetUser.tag}`, inline: true });
+    }
+
+    await interaction.editReply({ embeds: [embed], ephemeral: true });
+
+    await moderationSystem.logAction(interaction.guild, {
+      action: 'Purge',
+      moderator: interaction.user,
+      target: `${interaction.channel} (${interaction.channel.id})`,
+      additional: `Deleted ${deleted.size} messages${targetUser ? ` from ${targetUser.tag}` : ''}`,
+      color: 0x00ff00
+    });
+  } catch (error) {
+    console.error('Error purging messages:', error);
+    await interaction.editReply({ 
+      content: '❌ Failed to purge messages. Messages older than 14 days cannot be bulk deleted.', 
+      ephemeral: true 
+    });
+  }
+}
+
 export async function executeRole(interaction) {
   if (!interaction.options._subcommand) {
     if (!await checkPermissionAndCooldown(interaction, 'role')) return;
@@ -929,7 +1268,7 @@ export async function executeForceNickname(interaction) {
         { name: 'Moderator', value: interaction.user.tag, inline: true }
       )
       .setColor(0x9b59b6)
-      .setFooter({ text: 'User cannot change this nickname - permission removed' })
+      .setFooter({ text: 'User cannot change this nickname' })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
@@ -938,7 +1277,7 @@ export async function executeForceNickname(interaction) {
       action: 'Force Nickname',
       moderator: interaction.user,
       target: `${user.tag} (${user.id})`,
-      additional: `Nickname: ${nickname} - Change nickname permission removed`,
+      additional: `Nickname: ${nickname}`,
       color: 0x9b59b6
     });
   } catch (error) {
@@ -986,7 +1325,7 @@ export async function executeUnforceNickname(interaction) {
         { name: 'Moderator', value: interaction.user.tag, inline: true }
       )
       .setColor(0x00ff00)
-      .setFooter({ text: 'User can now change their nickname freely - permissions restored' })
+      .setFooter({ text: 'User can now change their nickname freely' })
       .setTimestamp();
 
     await interaction.reply({ embeds: [embed] });
@@ -995,7 +1334,7 @@ export async function executeUnforceNickname(interaction) {
       action: 'Unforce Nickname',
       moderator: interaction.user,
       target: `${user.tag} (${user.id})`,
-      additional: `Previous nickname: ${forcedNickname} - Change nickname permission restored`,
+      additional: `Previous nickname: ${forcedNickname}`,
       color: 0x00ff00
     });
   } catch (error) {
@@ -1122,6 +1461,7 @@ function parseDuration(duration) {
   return value * multipliers[unit];
 }
 
+// Export all commands
 export const commands = [
   { data: lockChannelData, execute: executeLockChannel },
   { data: unlockChannelData, execute: executeUnlockChannel },
@@ -1130,6 +1470,9 @@ export const commands = [
   { data: kickData, execute: executeKick },
   { data: unbanData, execute: executeUnban },
   { data: timeoutData, execute: executeTimeout },
+  { data: muteData, execute: executeMute },
+  { data: unmuteData, execute: executeUnmute },
+  { data: purgeData, execute: executePurge },
   { data: roleData, execute: executeRole },
   { data: forceNicknameData, execute: executeForceNickname },
   { data: unforceNicknameData, execute: executeUnforceNickname },
