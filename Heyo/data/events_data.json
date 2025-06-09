@@ -26,6 +26,30 @@
         "originalCount": 0
       },
       "startedAt": "2025-06-08T15:47:08.815Z"
+    },
+    {
+      "id": "event_1749411033876_o4t1gfp",
+      "type": "last_to_leave_vc",
+      "name": "Last to Leave testj2c",
+      "description": "Be the last person to leave the voice channel to win!",
+      "guildId": "1379953422241103943",
+      "channelId": "1380618466557558786",
+      "startTime": "2025-06-08T19:30:33.876Z",
+      "endTime": null,
+      "status": "active",
+      "createdBy": "1235002473698299956",
+      "createdAt": "2025-06-08T19:30:33.876Z",
+      "requirements": {},
+      "rewards": [
+        "a"
+      ],
+      "participants": [],
+      "winners": [],
+      "data": {
+        "participants": [],
+        "originalCount": 0
+      },
+      "startedAt": "2025-06-08T19:30:33.877Z"
     }
   ],
   "history": []

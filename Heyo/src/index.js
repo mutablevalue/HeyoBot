@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include all systems including LeaderboardSystem and EventHostingSystem
+// Updated to include all systems including LeaderboardSystem, EventHostingSystem, BoosterSystem, FilterSystem, and BanAppealSystem
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -18,6 +18,10 @@ import { WelcomeSystem } from "./systems/welcomeSystem.js";
 import { RoleTracker } from "./systems/roleTracker.js";
 import { LeaderboardSystem } from "./systems/leaderboardSystem.js";
 import { EventHostingSystem } from "./systems/eventHostingSystem.js";
+import { BoosterSystem } from "./systems/boosterSystem.js";
+import { FilterSystem } from "./systems/filterSystem.js";
+import { BanAppealSystem } from "./systems/banAppealSystem.js";
+import { TicketSystem } from "./systems/ticketSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -29,6 +33,10 @@ import * as welcomeCommand from "./commands/welcome.js";
 import * as channelCommands from "./commands/channels.js";
 import * as leaderboardCommands from "./commands/leaderboard.js";
 import * as eventCommands from "./commands/events.js";
+import * as boosterCommands from "./commands/booster.js";
+import * as filterCommands from "./commands/filter.js";
+import * as banAppealCommands from "./commands/banappeal.js";
+import * as ticketCommands from "./commands/ticket.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +64,10 @@ async function main() {
   const roleTracker = new RoleTracker(client, config);
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
+  const boosterSystem = new BoosterSystem(client, config, moderationSystem);
+  const filterSystem = new FilterSystem(client, config);
+  const banAppealSystem = new BanAppealSystem(client, config);
+  const ticketSystem = new TicketSystem(client, config);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -75,6 +87,10 @@ async function main() {
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
   eventCommands.setEventHostingSystem(eventHostingSystem);
   eventCommands.setLeaderboardSystem(leaderboardSystem);
+  boosterCommands.setBoosterSystem(boosterSystem);
+  filterCommands.setFilterSystem(filterSystem);
+  banAppealCommands.setBanAppealSystem(banAppealSystem);
+  ticketCommands.setTicketSystem(ticketSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -103,7 +119,7 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js' || file === 'leaderboard.js' || file === 'events.js') && commandModule.commands) {
+    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js' || file === 'leaderboard.js' || file === 'events.js' || file === 'booster.js' || file === 'filter.js' || file === 'banappeal.js' || file === 'ticket.js') && commandModule.commands) {
       for (const cmd of commandModule.commands) {
         if (!cmd.data || typeof cmd.execute !== "function") {
           console.warn(`Skipping command in ${file} – missing 'data' or 'execute'.`);
@@ -210,6 +226,10 @@ async function main() {
     console.log(`Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Leaderboard System: ${leaderboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Event Hosting: ${eventHostingSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Booster System: ${boosterSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Filter System: ${filterSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Ban Appeal System: ${banAppealSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
@@ -237,6 +257,17 @@ async function main() {
         // Leaderboard button interactions
         const { handleButtonInteraction } = await import('./commands/leaderboard.js');
         await handleButtonInteraction(interaction);
+      } else if (interaction.customId.startsWith('appeal_')) {
+        // Ban appeal button interactions
+        await banAppealSystem.handleButtonInteraction(interaction);
+      } else if (interaction.customId.startsWith('ticket_')) {
+        // Ticket system interactions are handled by the system's own listener
+        // No need to handle here as TicketSystem sets up its own listeners
+      }
+    } else if (interaction.isModalSubmit()) {
+      // Handle modal submissions
+      if (interaction.customId.startsWith('appeal_modal_')) {
+        await banAppealSystem.handleModalSubmit(interaction);
       }
     }
   });

@@ -17,120 +17,18 @@ export class ModerationSystem {
     this.client = client;
     this.configLoader = configLoader;
     
-    // Load moderation config with proper defaults
-    const modConfig = this.configLoader.get('moderation') || {};
+    // Get moderation config from config loader
+    // Config loader should provide complete config with all values
+    this.config = this.configLoader.get('moderation');
     
-    // Initialize config with defaults first
-    this.config = {
-      // Owner bypass setting
-      ownerBypass: true,
-      
-      // Permission levels with full defaults
-      permissions: {
-        administrator: {
-          users: [],
-          roles: [],
-          commands: [
-            'ban', 'unban', 'kick', 'timeout', 'mute', 'unmute', 'role', 'nuke', 'setupperms', 
-            'forcenickname', 'unforcenickname', 'purge', 'createchannel', 'deletechannel', 
-            'restoreroles'
-          ]
-        },
-        moderator: {
-          users: [],
-          roles: [],
-          commands: [
-            'lockchannel', 'unlockchannel', 'timeout', 'mute', 'unmute', 'purge'
-          ]
-        }
-      },
-      
-      // Created permission roles
-      permRoles: {
-        vc: null,
-        pic: null,
-        link: null
-      },
-      
-      // Logging
-      logChannel: null,
-      
-      // Command cooldowns (in seconds)
-      cooldowns: {
-        default: 3,
-        nuke: 30,
-        setupperms: 60,
-        forcenickname: 5,
-        unforcenickname: 5,
-        mute: 5,
-        unmute: 5,
-        purge: 10,
-        createchannel: 10,
-        deletechannel: 15,
-        restoreroles: 10
-      },
-      
-      // Forced nicknames configuration
-      forcedNicknames: {
-        dataFile: 'forced_nicknames.json',
-        checkInterval: 5000, // Check every 5 seconds
-        roleId: null // Role ID for forced nickname users
-      }
-    };
-
-    // Now merge with loaded config
-    if (modConfig!== undefined) {
-      this.config= modConfig;
+    // Validate required config exists
+    if (!this.config) {
+      throw new Error('[ModerationSystem] Moderation configuration not found in config.yaml');
     }
-
-    // Merge permissions
-    if (modConfig.permissions) {
-      if (modConfig.permissions.administrator) {
-        this.config.permissions.administrator = {
-          users: modConfig.permissions.administrator.users || this.config.permissions.administrator.users,
-          roles: modConfig.permissions.administrator.roles || this.config.permissions.administrator.roles,
-          commands: modConfig.permissions.administrator.commands || this.config.permissions.administrator.commands
-        };
-      }
-      
-      if (modConfig.permissions.moderator) {
-        this.config.permissions.moderator = {
-          users: modConfig.permissions.moderator.users || this.config.permissions.moderator.users,
-          roles: modConfig.permissions.moderator.roles || this.config.permissions.moderator.roles,
-          commands: modConfig.permissions.moderator.commands || this.config.permissions.moderator.commands
-        };
-      }
-    }
-
-    // Merge permRoles
-    if (modConfig.permRoles) {
-      this.config.permRoles = {
-        ...this.config.permRoles,
-        ...modConfig.permRoles
-      };
-    }
-
-    // Set log channel
-    if (modConfig.logChannel) {
-      this.config.logChannel = modConfig.logChannel;
-    }
-
-    // Merge cooldowns
-    if (modConfig.cooldowns) {
-      this.config.cooldowns = {
-        ...this.config.cooldowns,
-        ...modConfig.cooldowns
-      };
-    }
-
-    // Merge forced nicknames config
-    if (modConfig.forcedNicknames) {
-      this.config.forcedNicknames = {
-        ...this.config.forcedNicknames,
-        ...modConfig.forcedNicknames
-      };
-    }
-
+    
+    // Validate config structure
+    this.validateConfig();
+    
     // Cooldown tracking
     this.cooldowns = new Map();
     
@@ -139,8 +37,33 @@ export class ModerationSystem {
     this.forcedNicknamesPath = path.join(__dirname, '../../data', this.config.forcedNicknames.dataFile);
     this.loadForcedNicknames();
     
+    // Mute role tracking for each guild
+    this.muteRoles = new Map(); // guildId -> roleId
+    
     // Set up event listeners for nickname changes
     this.setupNicknameMonitoring();
+  }
+
+  /**
+   * Validate configuration structure
+   */
+  validateConfig() {
+    const required = [
+      'ownerBypass',
+      'permissions',
+      'permissions.administrator',
+      'permissions.moderator',
+      'permRoles',
+      'cooldowns',
+      'forcedNicknames'
+    ];
+
+    for (const path of required) {
+      const value = path.split('.').reduce((obj, key) => obj?.[key], this.config);
+      if (value === undefined) {
+        throw new Error(`[ModerationSystem] Missing required config: moderation.${path}`);
+      }
+    }
   }
 
   /**
@@ -273,6 +196,69 @@ export class ModerationSystem {
   }
 
   /**
+   * Get or create mute role for a guild
+   * @param {import("discord.js").Guild} guild
+   * @returns {Promise<import("discord.js").Role>}
+   */
+  async getOrCreateMuteRole(guild) {
+    // Check if we have a cached mute role for this guild
+    let muteRoleId = this.muteRoles.get(guild.id);
+    
+    // If not cached, check if configured role exists
+    if (!muteRoleId && this.config.permMuteRole?.roleId) {
+      const configuredRole = guild.roles.cache.get(this.config.permMuteRole.roleId);
+      if (configuredRole) {
+        this.muteRoles.set(guild.id, configuredRole.id);
+        return configuredRole;
+      }
+    }
+    
+    // Check if cached role still exists
+    if (muteRoleId) {
+      const existingRole = guild.roles.cache.get(muteRoleId);
+      if (existingRole) return existingRole;
+    }
+    
+    // Create new mute role
+    try {
+      const muteRole = await guild.roles.create({
+        name: this.config.permMuteRole?.defaultName || 'Muted',
+        color: this.config.permMuteRole?.defaultColor || 0x808080,
+        permissions: [],
+        reason: 'Mute role for moderation'
+      });
+      
+      // Set up channel overwrites
+      for (const channel of guild.channels.cache.values()) {
+        if (channel.isTextBased() || channel.isVoiceBased()) {
+          try {
+            await channel.permissionOverwrites.create(muteRole, {
+              SendMessages: false,
+              SendMessagesInThreads: false,
+              CreatePublicThreads: false,
+              CreatePrivateThreads: false,
+              AddReactions: false,
+              Speak: false,
+              Stream: false,
+              UseVAD: false
+            });
+          } catch (error) {
+            console.error(`[ModerationSystem] Failed to set mute permissions for channel ${channel.name}:`, error);
+          }
+        }
+      }
+      
+      // Cache the role
+      this.muteRoles.set(guild.id, muteRole.id);
+      
+      return muteRole;
+    } catch (error) {
+      console.error('[ModerationSystem] Error creating mute role:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Force a nickname on a user
    * @param {string} guildId 
    * @param {string} userId 
@@ -364,14 +350,7 @@ export class ModerationSystem {
    * Save configuration back to disk
    */
   async saveConfig() {
-    this.configLoader.set('moderation', {
-      permissions: this.config.permissions,
-      ownerBypass: this.config.ownerBypass,
-      permRoles: this.config.permRoles,
-      logChannel: this.config.logChannel,
-      cooldowns: this.config.cooldowns,
-      forcedNicknames: this.config.forcedNicknames
-    });
+    this.configLoader.set('moderation', this.config);
     return this.configLoader.save();
   }
 

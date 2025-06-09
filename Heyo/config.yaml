@@ -14,10 +14,14 @@ bot:
 
     Use /help to see my commands.
 developmentGuildId: '1379953422241103943'
+
+# Queue System Configuration
 queue:
   maxSize: 100
   workerCount: 3
   retryDelaySeconds: 5
+
+# Rate Limiting Configuration
 rateLimit:
   windowMs: 60000
   limits:
@@ -26,6 +30,8 @@ rateLimit:
     default: 5
   customRoles: null
   message: You're sending commands too quickly! Please wait {time} seconds.
+
+# Moderation System Configuration
 moderation:
   permissions:
     administrator:
@@ -89,6 +95,8 @@ moderation:
     roleId: '1381115435885264896'
     defaultName: Muted
     defaultColor: 8421504
+
+# AFK System Configuration
 afk:
   enabled: true
   dataFile: afk_data.json
@@ -97,6 +105,8 @@ afk:
   mentionResponse:
     showTimestamp: true
     showReason: true
+
+# Link Protection Configuration
 linkProtection:
   enabled: true
   patterns:
@@ -115,9 +125,11 @@ linkProtection:
   deleteMessage: true
   warningMessage: ❌ You do not have permission to send links in this channel.
   ephemeralWarning: true
+
+# Vanity System Configuration
 vanity:
   enabled: false
-  checkIntervalSeconds: 120
+  checkIntervalSeconds: 1800  # 30 minutes
   vanityStrings:
     - YourServer
     - .gg/yourserver
@@ -125,6 +137,7 @@ vanity:
     - '789012345678901234'
     - '890123456789012345'
   logChannel: '1380422905191731210'
+  enableLogging: false  # Vanity doesn't need logging
   caseSensitive: false
   checkUsername: true
   checkNickname: true
@@ -133,6 +146,8 @@ vanity:
   exemptRoles:
     - '901234567890123456'
   removeOnVanityLoss: true
+
+# Anti-Nuke Configuration
 antiNuke:
   whitelist:
     users:
@@ -172,11 +187,15 @@ antiNuke:
       timeWindowSeconds: 60
   adminLogChannel: '1380422918017650719'
   abuseLogChannel: '1380422905191731210'
+
+# Join to Create Configuration
 j2c:
   defaultChannelName: ➕ Create Voice Channel
   logChannel: null
   categoryId: null
   j2cChannelId: '1380618466557558786'
+
+# Welcome System Configuration
 welcome:
   enabled: false
   channel: null
@@ -198,7 +217,7 @@ welcome:
   pingUser: false
   deleteAfter: null
 
-
+# Role Tracker Configuration
 roleTracker:
   enabled: true
   dataFile: role_history.json
@@ -206,7 +225,8 @@ roleTracker:
   trackBots: false
   exemptRoles: []
   logChannel: null
-# Leaderboard System configuration
+
+# Leaderboard System Configuration
 leaderboard:
   enabled: true
   trackMessages: true
@@ -220,7 +240,7 @@ leaderboard:
   excludedRoles: []  # Role IDs to exclude from tracking
   trackBots: false
 
-# Event Hosting System configuration
+# Event Hosting System Configuration
 events:
   enabled: true
   dataFile: 'events_data.json'
@@ -228,42 +248,145 @@ events:
   logChannel: null  # Channel ID for event logs
   pingRole: null  # Role ID to ping for event announcements
   dmWinners: true  # DM winners their rewards
+  enableLogging: true
+  # Last to Leave VC defaults
+  lastToLeave:
+    defaultCountdownMinutes: 5
+    defaultDurationMinutes: 60
+    maxCountdownMinutes: 60
+    maxDurationMinutes: 1440  # 24 hours
+
+# Booster System Configuration
+boosterSystem:
+  enabled: true
+  dataFile: 'booster_data.json'
+  boostMessageChannel: null  # Channel ID where boost messages appear
   
-personalSystem:
-  # General
-  enabled: true                    # Enable or disable the entire personal system
-  dataFile: 'personal_data.json'   # Where to persist user items
-
-  # Requirements
-  requireBooster: true             # Must be a server booster
-  requiredRoles: []                # IDs of roles required to use the system
-  blacklistedRoles: []             # IDs of roles that are forbidden from using it
-
   # Voice Channel Settings
-  vcEnabled: true                  # Enable personal VCs
-  vcCategory: null                 # Category ID in which to create VCs (null = top level)
-  vcNameFormat: "{username}'s Channel"  # Channel name template
-  vcUserLimit: 10                  # User limit per voice channel
-  vcBitrate: 64000                 # Bitrate in bits/sec
-  vcPermissions:
-    manage: true                   # Allow owner to Manage Channel
-    moveMembers: true              # Allow owner to Move Members
-    muteMembers: true              # Allow owner to Mute Members
-    deafenMembers: true            # Allow owner to Deafen Members
-
-  # Role Settings
-  roleEnabled: true                # Enable personal roles
-  rolePosition: null               # Position to insert role (null = at bottom)
-  roleNameFormat: "{username}'s Role" # Role name template
-  roleColor: 'Random'              # 'Random' or hex string (e.g. '#FF0000')
-  rolePermissions: []              # Additional permissions bitwise array
-  roleHoist: false                 # Should the role be hoisted?
-  roleMentionable: false           # Should the role be mentionable?
-
-  # Limits & cleanup
-  maxPerUser: 1                    # Max channels _and_ max roles per user
-  deleteOnBoostEnd: true           # Remove items when boost ends
-  deleteOnLeave: true              # Remove items when user leaves
-
+  vcNameFormat: "{username}'s Channel"
+  vcUserLimit: 10
+  vcBitrate: 64000
+  vcCategory: null  # Category ID for booster VCs
+  
+  # Role Settings  
+  roleNameFormat: "{username}'s Role"
+  roleColor: 'Random'  # 'Random' or hex color like '#FF0000'
+  rolePosition: null  # Position to place role (null = bottom)
+  roleHoist: false
+  roleMentionable: false
+  
+  # Cleanup
+  checkInterval: 86400000  # 24 hours in milliseconds
+  
   # Logging
-  logChannel: null                 # ID of a text channel for audit logs
+  logChannel: null
+  enableLogging: true
+
+# Filter System Configuration
+filter:
+  enabled: true
+  dataFile: 'filter_data.json'
+  
+  # Word filter settings
+  wordFilter:
+    enabled: true
+    defaultWords:  # These cannot be removed via commands
+      - 'nigger'
+      - 'nigga'
+      - 'faggot'
+      - 'fag'
+      - 'retard'
+      - 'kys'
+    customWords: []  # Added via commands
+    exemptRoles: []
+    exemptChannels: []
+    action: 'delete'  # 'delete', 'warn', 'timeout'
+    timeoutDuration: 300  # 5 minutes in seconds
+    warningMessage: '⚠️ Your message contains prohibited words.'
+    caseSensitive: false
+    checkVariations: true  # Check l33t speak, spacing, etc.
+  
+  # Image filter settings
+  imageFilter:
+    enabled: false  # Disabled by default as it requires API
+    nsfwThreshold: 0.7  # 0-1, higher = stricter
+    exemptRoles: []
+    exemptChannels: []
+    nsfwChannels: []  # Allow NSFW in these channels
+    action: 'delete'  # 'delete', 'spoiler', 'warn'
+    warningMessage: '⚠️ Your image appears to contain NSFW content.'
+    apiUrl: null  # External NSFW detection API URL
+    maxFileSize: 8388608  # 8MB in bytes
+  
+  # Logging
+  logChannel: null
+  enableLogging: true
+  
+  # Statistics
+  trackStats: true
+
+# Ban Appeal System Configuration
+banAppeal:
+  enabled: true
+  dataFile: 'ban_appeals.json'
+  
+  # Appeal settings
+  appealChannel: null  # Channel to send appeals to
+  dmMessage:
+    enabled: true
+    delay: 5000  # 5 seconds delay after ban in milliseconds
+    content: 'You have been banned from **{server}**. If you believe this was a mistake, you can submit an appeal.'
+    embedTitle: 'Ban Appeal'
+    embedDescription: 'Click the button below to submit a ban appeal. Please be honest and provide as much detail as possible.'
+    embedColor: 0xff0000
+    buttonLabel: 'Submit Appeal'
+    buttonEmoji: '📝'
+  
+  # Appeal form fields
+  appealForm:
+    reasonField:
+      label: 'Why were you banned?'
+      placeholder: 'Please explain what led to your ban'
+      style: 'paragraph'
+      minLength: 20
+      maxLength: 500
+      required: true
+    explanationField:
+      label: 'Why should you be unbanned?'
+      placeholder: 'Explain why you deserve a second chance'
+      style: 'paragraph'
+      minLength: 50
+      maxLength: 1000
+      required: true
+    changesField:
+      label: 'What will you do differently?'
+      placeholder: 'How will you ensure this doesn''t happen again?'
+      style: 'paragraph'
+      minLength: 30
+      maxLength: 500
+      required: true
+    additionalField:
+      label: 'Additional information'
+      placeholder: 'Any other information you''d like to add (optional)'
+      style: 'paragraph'
+      minLength: 0
+      maxLength: 500
+      required: false
+  
+  # Cooldowns
+  appealCooldown: 604800000  # 7 days in milliseconds
+  maxAppeals: 3  # Max appeals per user
+  
+  # Notifications
+  notifyRole: null  # Role to ping for new appeals
+  
+  # Auto responses
+  autoResponses:
+    submitted: 'Your appeal has been submitted successfully. You will be notified when a decision is made.'
+    cooldown: 'You must wait {time} before submitting another appeal.'
+    maxReached: 'You have reached the maximum number of appeals allowed.'
+    error: 'An error occurred while submitting your appeal. Please try again later.'
+  
+  # Logging
+  logChannel: null
+  enableLogging: true
