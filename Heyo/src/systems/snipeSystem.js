@@ -1,230 +1,340 @@
 // src/systems/snipeSystem.js
-import { 
-  EmbedBuilder,
-  AttachmentBuilder,
-  Collection
-} from 'discord.js';
+import { PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 
 export class SnipeSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
-    this.config = this.configLoader.get('snipe');
+    this.config = this.configLoader.get('snipe') || {};
     
-    if (!this.config.enabled) {
-      console.log('[SnipeSystem] System is disabled in config');
-      return;
+    // Default configuration
+    this.config = {
+      enabled: true,
+      maxSnipesPerChannel: 5,
+      messageExpiry: 3600, // 1 hour
+      trackEdits: true,
+      includeBots: false,
+      excludedChannels: [],
+      ephemeral: false,
+      requirePermission: false,
+      allowedRoles: [],
+      moderatorRoles: [],
+      embedColor: 0x2f3136,
+      logDeleted: false,
+      logChannel: null,
+      ...this.config
+    };
+    
+    // Snipe storage: channelId -> array of snipes
+    this.snipes = new Map();
+    
+    // Setup event listeners
+    if (this.config.enabled) {
+      this.setupEventListeners();
     }
     
-    // Store deleted messages by channel
-    this.deletedMessages = new Map(); // channelId -> array of deleted messages
-    this.editedMessages = new Map(); // messageId -> array of edit history
-    
-    this.setupListeners();
+    // Cleanup interval
+    setInterval(() => this.cleanup(), 60000); // Every minute
   }
   
-  setupListeners() {
-    // Listen for deleted messages
+  setupEventListeners() {
+    // Track deleted messages
     this.client.on('messageDelete', async (message) => {
-      if (message.author?.bot && !this.config.includeBots) return;
-      if (this.config.excludedChannels.includes(message.channel.id)) return;
-      if (message.content?.length === 0 && message.attachments.size === 0) return;
-      
-      await this.handleDeletedMessage(message);
+      if (!message.partial && message.guild) {
+        await this.handleMessageDelete(message);
+      }
     });
     
-    // Listen for edited messages if enabled
+    // Track edited messages if enabled
     if (this.config.trackEdits) {
       this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-        if (oldMessage.author?.bot && !this.config.includeBots) return;
-        if (this.config.excludedChannels.includes(oldMessage.channel.id)) return;
-        if (oldMessage.content === newMessage.content) return;
-        
-        await this.handleEditedMessage(oldMessage, newMessage);
+        if (!oldMessage.partial && oldMessage.guild && oldMessage.content !== newMessage.content) {
+          await this.handleMessageEdit(oldMessage, newMessage);
+        }
       });
     }
-    
-    // Clean up old messages periodically
-    setInterval(() => this.cleanupOldMessages(), 60000); // Every minute
   }
   
-  async handleDeletedMessage(message) {
-    const channelId = message.channel.id;
+  async handleMessageDelete(message) {
+    // Skip if in excluded channel
+    if (this.config.excludedChannels.includes(message.channel.id)) return;
     
-    // Get or create array for this channel
-    if (!this.deletedMessages.has(channelId)) {
-      this.deletedMessages.set(channelId, []);
-    }
+    // Skip bots if configured
+    if (message.author.bot && !this.config.includeBots) return;
     
-    const channelDeleted = this.deletedMessages.get(channelId);
-    
-    // Create snipe data
-    const snipeData = {
-      id: message.id,
-      content: message.content,
+    // Create snipe object
+    const snipe = {
       author: {
         id: message.author.id,
         tag: message.author.tag,
-        avatar: message.author.displayAvatarURL({ dynamic: true })
+        avatar: message.author.displayAvatarURL()
       },
-      attachments: Array.from(message.attachments.values()).map(att => ({
+      content: message.content,
+      attachments: message.attachments.map(att => ({
         name: att.name,
         url: att.url,
-        size: att.size,
-        contentType: att.contentType,
-        spoiler: att.spoiler
+        size: att.size
       })),
       embeds: message.embeds.map(embed => embed.toJSON()),
-      timestamp: message.createdTimestamp,
+      channelId: message.channel.id,
+      guildId: message.guild.id,
       deletedAt: Date.now(),
-      channel: {
-        id: message.channel.id,
-        name: message.channel.name
-      }
+      type: 'delete'
     };
     
-    // Add to beginning of array
-    channelDeleted.unshift(snipeData);
-    
-    // Keep only configured number of messages
-    if (channelDeleted.length > this.config.maxSnipesPerChannel) {
-      channelDeleted.pop();
-    }
+    // Add to snipes
+    this.addSnipe(message.channel.id, snipe);
     
     // Log if enabled
     if (this.config.logDeleted && this.config.logChannel) {
-      await this.logDeletedMessage(message);
+      await this.logSnipe(message.guild, snipe, 'Message Deleted');
     }
   }
   
-  async handleEditedMessage(oldMessage, newMessage) {
-    const messageId = oldMessage.id;
+  async handleMessageEdit(oldMessage, newMessage) {
+    // Skip if in excluded channel
+    if (this.config.excludedChannels.includes(oldMessage.channel.id)) return;
     
-    // Get or create edit history for this message
-    if (!this.editedMessages.has(messageId)) {
-      this.editedMessages.set(messageId, []);
+    // Skip bots if configured
+    if (oldMessage.author.bot && !this.config.includeBots) return;
+    
+    // Create edit snipe
+    const snipe = {
+      author: {
+        id: oldMessage.author.id,
+        tag: oldMessage.author.tag,
+        avatar: oldMessage.author.displayAvatarURL()
+      },
+      content: newMessage.content,
+      oldContent: oldMessage.content,
+      attachments: newMessage.attachments.map(att => ({
+        name: att.name,
+        url: att.url,
+        size: att.size
+      })),
+      embeds: newMessage.embeds.map(embed => embed.toJSON()),
+      channelId: oldMessage.channel.id,
+      guildId: oldMessage.guild.id,
+      deletedAt: Date.now(),
+      type: 'edit'
+    };
+    
+    // Add to snipes
+    this.addSnipe(oldMessage.channel.id, snipe);
+  }
+  
+  addSnipe(channelId, snipe) {
+    if (!this.snipes.has(channelId)) {
+      this.snipes.set(channelId, []);
     }
     
-    const editHistory = this.editedMessages.get(messageId);
+    const channelSnipes = this.snipes.get(channelId);
     
-    // Add old version to history
-    editHistory.push({
-      content: oldMessage.content,
-      editedAt: Date.now()
-    });
+    // Add to beginning (newest first)
+    channelSnipes.unshift(snipe);
     
-    // Keep only last few edits
-    if (editHistory.length > 5) {
-      editHistory.shift();
+    // Limit number of snipes per channel
+    if (channelSnipes.length > this.config.maxSnipesPerChannel) {
+      channelSnipes.pop();
     }
   }
   
-  async getSnipes(channelId, count = 1) {
-    const channelDeleted = this.deletedMessages.get(channelId) || [];
-    return channelDeleted.slice(0, Math.min(count, this.config.maxSnipesPerChannel));
+  getSnipes(channelId, limit = 1) {
+    const channelSnipes = this.snipes.get(channelId) || [];
+    return channelSnipes.slice(0, limit);
   }
   
-  async getEditHistory(messageId) {
-    return this.editedMessages.get(messageId) || [];
-  }
-  
-  clearSnipes(channelId = null) {
-    if (channelId) {
-      this.deletedMessages.delete(channelId);
-    } else {
-      this.deletedMessages.clear();
-    }
+  clearSnipes() {
+    this.snipes.clear();
   }
   
   clearChannelSnipes(channelId) {
-    this.deletedMessages.delete(channelId);
-    
-    // Also clear edit history for messages in this channel
-    for (const [messageId, history] of this.editedMessages.entries()) {
-      // We'd need to track channel info in edit history to properly clear this
-      // For now, we'll leave edit history intact
-    }
+    this.snipes.delete(channelId);
   }
   
-  cleanupOldMessages() {
-    const maxAge = this.config.messageExpiry * 1000; // Convert to milliseconds
+  cleanup() {
     const now = Date.now();
+    const expiryTime = this.config.messageExpiry * 1000;
     
-    // Clean deleted messages
-    for (const [channelId, messages] of this.deletedMessages.entries()) {
-      const filtered = messages.filter(msg => now - msg.deletedAt < maxAge);
+    for (const [channelId, snipes] of this.snipes) {
+      const filtered = snipes.filter(snipe => 
+        now - snipe.deletedAt < expiryTime
+      );
       
       if (filtered.length === 0) {
-        this.deletedMessages.delete(channelId);
-      } else if (filtered.length < messages.length) {
-        this.deletedMessages.set(channelId, filtered);
-      }
-    }
-    
-    // Clean edit history
-    const editMaxAge = 3600000; // 1 hour for edit history
-    for (const [messageId, history] of this.editedMessages.entries()) {
-      const filtered = history.filter(edit => now - edit.editedAt < editMaxAge);
-      
-      if (filtered.length === 0) {
-        this.editedMessages.delete(messageId);
-      } else if (filtered.length < history.length) {
-        this.editedMessages.set(messageId, filtered);
+        this.snipes.delete(channelId);
+      } else {
+        this.snipes.set(channelId, filtered);
       }
     }
   }
   
-  async createSnipeEmbed(snipeData, index = 0, total = 1) {
+  async logSnipe(guild, snipe, title) {
+    const channel = guild.channels.cache.get(this.config.logChannel);
+    if (!channel?.isTextBased()) return;
+    
     const embed = new EmbedBuilder()
+      .setTitle(title)
       .setAuthor({
-        name: snipeData.author.tag,
-        iconURL: snipeData.author.avatar
+        name: snipe.author.tag,
+        iconURL: snipe.author.avatar
       })
-      .setFooter({ 
-        text: `Deleted ${this.getTimeAgo(snipeData.deletedAt)} | Message ${index + 1}/${total}` 
-      })
-      .setTimestamp(snipeData.timestamp)
-      .setColor(this.config.embedColor);
+      .setDescription(snipe.content || 'No content')
+      .setColor(this.config.embedColor)
+      .setTimestamp(snipe.deletedAt);
+    
+    if (snipe.attachments.length > 0) {
+      embed.addFields({
+        name: 'Attachments',
+        value: snipe.attachments.map(att => att.name).join(', ')
+      });
+    }
+    
+    try {
+      await channel.send({ embeds: [embed] });
+    } catch (error) {
+      console.error('[SnipeSystem] Error logging snipe:', error);
+    }
+  }
+  
+  // NEW METHODS TO ADD:
+  
+  /**
+   * Get the number of snipes for a specific channel
+   * @param {string} channelId 
+   * @returns {number}
+   */
+  getChannelSnipeCount(channelId) {
+    return this.snipes.get(channelId)?.length || 0;
+  }
+
+  /**
+   * Get the total number of snipes across all channels
+   * @returns {number}
+   */
+  getTotalSnipeCount() {
+    let total = 0;
+    for (const channelSnipes of this.snipes.values()) {
+      total += channelSnipes.length;
+    }
+    return total;
+  }
+
+  /**
+   * Check if a member has permission to use snipe commands
+   * @param {import('discord.js').GuildMember} member 
+   * @param {string} command - 'snipe' or 'clearsnipes'
+   * @returns {boolean}
+   */
+  hasPermission(member, command) {
+    // If permission checking is disabled, allow everyone
+    if (!this.config.requirePermission && command === 'snipe') {
+      return true;
+    }
+    
+    // Admins always have permission
+    if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return true;
+    }
+    
+    // For clearsnipes, check moderator roles
+    if (command === 'clearsnipes') {
+      return member.roles.cache.some(role => 
+        this.config.moderatorRoles.includes(role.id)
+      );
+    }
+    
+    // For snipe command with permission requirement
+    if (this.config.requirePermission && command === 'snipe') {
+      return member.roles.cache.some(role => 
+        this.config.allowedRoles.includes(role.id)
+      );
+    }
+    
+    return false;
+  }
+
+  /**
+   * Create a snipe embed with consistent formatting
+   * @param {Object} snipe 
+   * @param {number} index 
+   * @param {number} total 
+   * @returns {EmbedBuilder}
+   */
+  async createSnipeEmbed(snipe, index, total) {
+    const embed = new EmbedBuilder()
+      .setColor(this.config.embedColor || 0x2f3136)
+      .setTimestamp(snipe.deletedAt);
+    
+    // Get user info
+    try {
+      const user = await this.client.users.fetch(snipe.author.id);
+      embed.setAuthor({
+        name: user.tag,
+        iconURL: user.displayAvatarURL()
+      });
+    } catch {
+      embed.setAuthor({
+        name: snipe.author.tag || 'Unknown User'
+      });
+    }
     
     // Add content
-    if (snipeData.content) {
-      embed.setDescription(snipeData.content.slice(0, 4000));
+    if (snipe.content) {
+      embed.setDescription(snipe.content);
     }
     
     // Add attachments info
-    if (snipeData.attachments.length > 0) {
-      const attachmentList = snipeData.attachments.map(att => {
-        const sizeInMB = (att.size / 1024 / 1024).toFixed(2);
-        return `• [${att.name}](${att.url}) (${sizeInMB} MB)`;
-      }).join('\n');
-      
+    if (snipe.attachments && snipe.attachments.length > 0) {
+      const attachmentList = snipe.attachments
+        .map(att => `[${att.name || 'Attachment'}](${att.url})`)
+        .join('\n');
       embed.addFields({
-        name: `Attachments (${snipeData.attachments.length})`,
-        value: attachmentList.slice(0, 1024),
-        inline: false
+        name: 'Attachments',
+        value: attachmentList.slice(0, 1024)
       });
-      
-      // Add first image as embed image
-      const imageAttachment = snipeData.attachments.find(att => 
-        att.contentType?.startsWith('image/')
-      );
-      if (imageAttachment) {
-        embed.setImage(imageAttachment.url);
-      }
     }
     
-    // Add embeds count
-    if (snipeData.embeds.length > 0) {
+    // Add embeds info
+    if (snipe.embeds && snipe.embeds.length > 0) {
       embed.addFields({
         name: 'Embeds',
-        value: `Message contained ${snipeData.embeds.length} embed(s)`,
-        inline: false
+        value: `Message contained ${snipe.embeds.length} embed(s)`
       });
     }
+    
+    // Add edit info if this is an edited message
+    if (snipe.type === 'edit' && snipe.oldContent) {
+      embed.addFields({
+        name: 'Original Content',
+        value: snipe.oldContent.slice(0, 1024)
+      });
+      embed.setTitle('Message Edit');
+    }
+    
+    // Add channel info
+    embed.addFields({
+      name: 'Channel',
+      value: `<#${snipe.channelId}>`,
+      inline: true
+    });
+    
+    // Add deletion time
+    const deletedAgo = this.getTimeAgo(snipe.deletedAt);
+    embed.addFields({
+      name: 'Deleted',
+      value: deletedAgo,
+      inline: true
+    });
     
     return embed;
   }
-  
+
+  /**
+   * Get human-readable time ago string
+   * @param {number} timestamp 
+   * @returns {string}
+   */
   getTimeAgo(timestamp) {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     
@@ -235,67 +345,5 @@ export class SnipeSystem {
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
-  }
-  
-  async logDeletedMessage(message) {
-    const logChannelId = this.config.logChannel;
-    if (!logChannelId) return;
-    
-    const logChannel = this.client.channels.cache.get(logChannelId);
-    if (!logChannel || !logChannel.isTextBased()) return;
-    
-    const embed = new EmbedBuilder()
-      .setTitle('🗑️ Message Deleted')
-      .setAuthor({
-        name: message.author.tag,
-        iconURL: message.author.displayAvatarURL({ dynamic: true })
-      })
-      .addFields(
-        { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-        { name: 'Author', value: `<@${message.author.id}>`, inline: true },
-        { name: 'Message ID', value: message.id, inline: true }
-      )
-      .setColor(0xff0000)
-      .setTimestamp();
-    
-    if (message.content) {
-      embed.setDescription(message.content.slice(0, 2000));
-    }
-    
-    if (message.attachments.size > 0) {
-      embed.addFields({
-        name: 'Attachments',
-        value: `${message.attachments.size} attachment(s)`,
-        inline: false
-      });
-    }
-    
-    await logChannel.send({ embeds: [embed] }).catch(console.error);
-  }
-  
-  hasPermission(member, command) {
-    // Check if user has moderation permissions for clearsnipes
-    if (command === 'clearsnipes' || command === 'cs') {
-      return member.permissions.has('ManageMessages') || 
-             this.config.moderatorRoles.some(roleId => member.roles.cache.has(roleId));
-    }
-    
-    // Regular snipe is available to everyone (unless configured otherwise)
-    return !this.config.requirePermission || 
-           member.permissions.has('ManageMessages') ||
-           this.config.allowedRoles.some(roleId => member.roles.cache.has(roleId));
-  }
-  
-  getStats() {
-    let totalSniped = 0;
-    for (const messages of this.deletedMessages.values()) {
-      totalSniped += messages.length;
-    }
-    
-    return {
-      totalChannels: this.deletedMessages.size,
-      totalMessages: totalSniped,
-      editHistoryCount: this.editedMessages.size
-    };
   }
 }

@@ -216,6 +216,13 @@ async function main() {
       client.user.setActivity(activityOptions);
     }
 
+    // ADD CLEANUP INTERVAL FOR ANTINUKE CONTENT MODERATION
+    setInterval(() => {
+      if (antiNuke.contentTracking) {
+        antiNuke.cleanup();
+      }
+    }, 60000); // Run cleanup every minute
+
     const registry = new CommandRegistry(config.get("token"));
     for (const [, cmd] of client.commands) {
       registry.addCommand(cmd);
@@ -238,7 +245,7 @@ async function main() {
 
     // Log system status
     console.log('\n=== System Status ===');
-    console.log('AntiNuke: Active');
+    console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
     console.log('J2C Manager: Active');
     console.log('Moderation System: Active');
     console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);

@@ -185,6 +185,49 @@ antiNuke:
     roleDelete:
       maxActions: 2
       timeWindowSeconds: 60
+  
+  # Content Moderation Features (NEW)
+  contentModeration:
+    enabled: true
+    
+    # Mass mention detection
+    massMention:
+      enabled: true
+      threshold: 5  # Number of mentions to trigger
+      action: 'delete'  # delete, timeout
+    
+    # Mass emoji detection
+    massEmoji:
+      enabled: true
+      threshold: 10  # Number of emojis to trigger
+      action: 'delete'
+    
+    # Caps spam detection
+    capsSpam:
+      enabled: true
+      percentage: 70  # Percentage of caps to trigger
+      minLength: 10  # Minimum message length to check
+      action: 'delete'
+    
+    # Duplicate message detection
+    duplicateMessages:
+      enabled: true
+      threshold: 3  # Number of duplicates to trigger
+      timeWindow: 30000  # Time window in milliseconds
+      action: 'delete'
+    
+    # Anti-raid settings
+    antiRaid:
+      enabled: true
+      joinThreshold: 10  # Number of joins to trigger raid mode
+      timeWindow: 30000  # Time window in milliseconds
+      lockdownEnabled: true  # Whether to lockdown server during raids
+    
+    # General settings
+    timeoutDuration: 300000  # 5 minutes in milliseconds
+    exemptRoles:  # Roles exempt from content moderation
+      - '1235002473698299956'  # Admin role
+  
   adminLogChannel: '1380422918017650719'
   abuseLogChannel: '1380422905191731210'
 
