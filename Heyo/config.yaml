@@ -390,3 +390,76 @@ banAppeal:
   # Logging
   logChannel: null
   enableLogging: true
+
+confess:
+  enabled: true
+  dataFile: 'confess_data.json'
+  channels: {}  # Will be populated with guildId -> channelId mappings
+  cooldown: 300  # 5 minutes
+  minLength: 10
+  maxLength: 2000
+  embedTitle: '🤫 Anonymous Confession'
+  embedColor: 0x2f3136
+  showConfessionNumber: true
+  filterBannedWords: true
+  bannedWords:
+    - 'nigger'
+    - 'nigga'
+    - 'faggot'
+    - 'fag'
+    - 'retard'
+    - 'kys'
+  successMessage: '✅ Your confession has been sent! ID: {id}'
+  logChannel: null
+  setupMessage:
+    enabled: true
+    title: '🤫 Anonymous Confessions'
+    description: |
+      Use `/confess` command to send an anonymous confession to this channel.
+      
+      All confessions are anonymous, but moderators can see who sent them in the logs.
+    color: 0x2f3136
+    footer: 'Think before you confess!'
+
+# Skullboard System Configuration  
+skullboard:
+  enabled: true
+  dataFile: 'skullboard_data.json'
+  emoji: '💀'  # Can use custom emoji like <:skull:123456789>
+  defaultThreshold: 5
+  guilds: {}  # Will be populated with guildId -> {channelId, threshold}
+  excludedChannels: []
+  allowSelfStar: false
+  removeOnBelowThreshold: true
+  removeOnMessageDelete: true
+  logChannel: null
+
+# Snipe System Configuration
+snipe:
+  enabled: true
+  maxSnipesPerChannel: 5
+  messageExpiry: 3600  # 1 hour
+  trackEdits: true
+  includeBots: false
+  excludedChannels: []
+  ephemeral: false
+  requirePermission: false
+  allowedRoles: []  # If requirePermission is true
+  moderatorRoles: []  # Can use /clearsnipes
+  embedColor: 0x2f3136
+  logDeleted: false
+  logChannel: null
+
+# Social Lookup System Configuration
+socialLookup:
+  enabled: true
+  cacheExpiry: 3600  # 1 hour
+  rateLimitMs: 30000  # 30 seconds
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+  platforms:
+    tiktok:
+      enabled: true
+      baseUrl: 'https://www.tiktok.com/@'
+    instagram:
+      enabled: true
+      baseUrl: 'https://www.instagram.com/'

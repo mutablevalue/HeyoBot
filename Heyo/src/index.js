@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Updated to include all systems including LeaderboardSystem, EventHostingSystem, BoosterSystem, FilterSystem, and BanAppealSystem
+// Complete file with all systems integrated
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -22,6 +22,10 @@ import { BoosterSystem } from "./systems/boosterSystem.js";
 import { FilterSystem } from "./systems/filterSystem.js";
 import { BanAppealSystem } from "./systems/banAppealSystem.js";
 import { TicketSystem } from "./systems/ticketSystem.js";
+import { ConfessSystem } from "./systems/confessSystem.js";
+import { SkullboardSystem } from "./systems/skullboardSystem.js";
+import { SnipeSystem } from "./systems/snipeSystem.js";
+import { SocialLookupSystem } from "./systems/socialLookupSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -37,6 +41,10 @@ import * as boosterCommands from "./commands/booster.js";
 import * as filterCommands from "./commands/filter.js";
 import * as banAppealCommands from "./commands/banappeal.js";
 import * as ticketCommands from "./commands/ticket.js";
+import * as confessCommands from "./commands/confess.js";
+import * as skullboardCommands from "./commands/skullboard.js";
+import * as snipeCommands from "./commands/snipe.js";
+import * as socialCommands from "./commands/social.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -68,6 +76,10 @@ async function main() {
   const filterSystem = new FilterSystem(client, config);
   const banAppealSystem = new BanAppealSystem(client, config);
   const ticketSystem = new TicketSystem(client, config);
+  const confessSystem = new ConfessSystem(client, config);
+  const skullboardSystem = new SkullboardSystem(client, config);
+  const snipeSystem = new SnipeSystem(client, config);
+  const socialLookupSystem = new SocialLookupSystem(client, config);
 
   // 4) Pass systems into commands that need them
   import("./commands/antinuke.js").then(mod => {
@@ -91,6 +103,10 @@ async function main() {
   filterCommands.setFilterSystem(filterSystem);
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   ticketCommands.setTicketSystem(ticketSystem);
+  confessCommands.setConfessSystem(confessSystem);
+  skullboardCommands.setSkullboardSystem(skullboardSystem);
+  snipeCommands.setSnipeSystem(snipeSystem);
+  socialCommands.setSocialLookupSystem(socialLookupSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -119,7 +135,13 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-    if ((file === 'moderation.js' || file === 'funcommands.js' || file === 'channels.js' || file === 'leaderboard.js' || file === 'events.js' || file === 'booster.js' || file === 'filter.js' || file === 'banappeal.js' || file === 'ticket.js') && commandModule.commands) {
+    const multiCommandFiles = [
+      'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
+      'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
+      'confess.js', 'skullboard.js', 'snipe.js', 'social.js'
+    ];
+    
+    if (multiCommandFiles.includes(file) && commandModule.commands) {
       for (const cmd of commandModule.commands) {
         if (!cmd.data || typeof cmd.execute !== "function") {
           console.warn(`Skipping command in ${file} – missing 'data' or 'execute'.`);
@@ -230,6 +252,10 @@ async function main() {
     console.log(`Filter System: ${filterSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Ban Appeal System: ${banAppealSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Confess System: ${confessSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Skullboard System: ${skullboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
@@ -263,11 +289,15 @@ async function main() {
       } else if (interaction.customId.startsWith('ticket_')) {
         // Ticket system interactions are handled by the system's own listener
         // No need to handle here as TicketSystem sets up its own listeners
+      } else if (interaction.customId.startsWith('snipe_')) {
+        // Snipe pagination buttons are handled within the command
       }
     } else if (interaction.isModalSubmit()) {
       // Handle modal submissions
       if (interaction.customId.startsWith('appeal_modal_')) {
         await banAppealSystem.handleModalSubmit(interaction);
+      } else if (interaction.customId.startsWith('confess_modal_')) {
+        // Confession modals are handled by the system's own listener
       }
     }
   });
