@@ -375,8 +375,10 @@ const multiCommandFiles = [
         // Ticket system interactions are handled by the system's own listener
         // No need to handle here as TicketSystem sets up its own listeners
       } else if (interaction.customId.startsWith('snipe_')) {
-        // Snipe pagination buttons are handled within the command
-      } else if (interaction.customId.startsWith('entrance_')) {
+  // Snipe pagination buttons are handled within the command
+} else if (interaction.customId.startsWith('rs_')) {
+  // Reaction snipe pagination buttons are handled within the command
+} else if (interaction.customId.startsWith('entrance_')) {
         // Entrance system buttons are handled within the command
       }
     } else if (interaction.isModalSubmit()) {

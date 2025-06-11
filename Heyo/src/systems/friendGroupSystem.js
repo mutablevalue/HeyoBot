@@ -82,6 +82,7 @@ export class FriendGroupSystem {
   initializeDefaultConfig() {
     // Always reload from config first
     const currentConfig = this.configLoader.get('friendGroup') || {};
+    console.log(`[FriendGroupSystem] Loading config, current minMembers: ${currentConfig.minMembers}`);
     
     const defaults = {
       enabled: true,
@@ -133,7 +134,7 @@ export class FriendGroupSystem {
       this.config.guilds = {};
     }
     
-    console.log(`[FriendGroupSystem] Config initialized. MinMembers: ${this.config.minMembers}`);
+    console.log(`[FriendGroupSystem] Config initialized. Final minMembers: ${this.config.minMembers}`);
   }
 
   /**
@@ -248,6 +249,9 @@ export class FriendGroupSystem {
    */
   async setupFriendGroup(guild, options = {}) {
     try {
+      // Check if already setup
+      const existingSetup = this.config.guilds?.[guild.id];
+      
       // Create or get the review category
       const reviewCategory = await this.createOrGetCategory(guild,
         options.reviewCategoryName || this.config.reviewCategory
@@ -265,7 +269,8 @@ export class FriendGroupSystem {
           review: reviewCategory.id,
           friendGroups: fgCategory.id
         },
-        createdAt: new Date().toISOString()
+        createdAt: existingSetup?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       // Store in config
@@ -281,7 +286,8 @@ export class FriendGroupSystem {
       return {
         success: true,
         setup: setupData,
-        message: 'Friend group system has been set up successfully!'
+        message: existingSetup ? 'Friend group system has been updated!' : 'Friend group system has been set up successfully!',
+        wasUpdate: !!existingSetup
       };
 
     } catch (error) {
@@ -355,8 +361,47 @@ export class FriendGroupSystem {
       // Update config with fresh values
       this.config = { ...currentConfig, guilds };
       
-      console.log(`[FriendGroupSystem] Config reloaded. MinMembers: ${this.config.minMembers}`);
+      console.log(`[FriendGroupSystem] Config reloaded. MinMembers from file: ${currentConfig.minMembers}, Using: ${this.config.minMembers}`);
+    } else {
+      console.log('[FriendGroupSystem] No friendGroup config found in file, using defaults');
     }
+  }
+
+  /**
+   * Verify and fix guild setup
+   */
+  async verifyAndFixSetup(guild) {
+    const guildSetup = this.config.guilds?.[guild.id];
+    if (!guildSetup) {
+      return false;
+    }
+
+    let fixed = false;
+
+    // Check review category
+    if (!guild.channels.cache.get(guildSetup.categories.review)) {
+      console.log('[FriendGroupSystem] Review category missing, recreating...');
+      const reviewCategory = await this.createOrGetCategory(guild, this.config.reviewCategory);
+      guildSetup.categories.review = reviewCategory.id;
+      fixed = true;
+    }
+
+    // Check friend groups category
+    if (!guild.channels.cache.get(guildSetup.categories.friendGroups)) {
+      console.log('[FriendGroupSystem] Friend groups category missing, recreating...');
+      const fgCategory = await this.createOrGetCategory(guild, this.config.friendGroupCategory);
+      guildSetup.categories.friendGroups = fgCategory.id;
+      fixed = true;
+    }
+
+    if (fixed) {
+      guildSetup.updatedAt = new Date().toISOString();
+      this.saveGroupData();
+      await this.saveConfig();
+      console.log('[FriendGroupSystem] Guild setup fixed and saved');
+    }
+
+    return true;
   }
 
   /**
@@ -373,6 +418,9 @@ export class FriendGroupSystem {
     if (!guildSetup) {
       throw new Error(this.config.messages.setupRequired);
     }
+
+    // Verify and fix setup if needed
+    await this.verifyAndFixSetup(guild);
 
     // Check if user already has a friend group
     if (this.acceptedGroups.has(user.id)) {
@@ -395,17 +443,35 @@ export class FriendGroupSystem {
     }
 
     // Validate member count
+    console.log(`[FriendGroupSystem] Validating members: ${members.length} provided, ${this.config.minMembers} required`);
     if (members.length < this.config.minMembers) {
-      throw new Error(this.config.messages.notEnoughMembers.replace('{min}', String(this.config.minMembers)));
+      const errorMsg = this.config.messages.notEnoughMembers.replace('{min}', String(this.config.minMembers));
+      console.log(`[FriendGroupSystem] Validation failed: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
     // Create application
     const applicationId = Date.now().toString();
     
     // Get the review category
-    const reviewCategory = guild.channels.cache.get(guildSetup.categories.review);
+    let reviewCategory = guild.channels.cache.get(guildSetup.categories.review);
+    
+    // If review category doesn't exist, create it
     if (!reviewCategory) {
-      throw new Error('Review category not found. Please run /setupfg again.');
+      console.log('[FriendGroupSystem] Review category not found, creating...');
+      try {
+        reviewCategory = await this.createOrGetCategory(guild, this.config.reviewCategory);
+        
+        // Update the guild setup with new category ID
+        guildSetup.categories.review = reviewCategory.id;
+        this.saveGroupData();
+        await this.saveConfig();
+        
+        console.log(`[FriendGroupSystem] Created review category: ${reviewCategory.id}`);
+      } catch (error) {
+        console.error('[FriendGroupSystem] Failed to create review category:', error);
+        throw new Error('Failed to create review category. Please run /setupfg again.');
+      }
     }
 
     // Create review channel
@@ -901,9 +967,24 @@ export class FriendGroupSystem {
       }
     }
 
-    const category = guild.channels.cache.get(guildSetup.categories.friendGroups);
+    let category = guild.channels.cache.get(guildSetup.categories.friendGroups);
+    
+    // If category doesn't exist, create it
     if (!category) {
-      throw new Error('Friend groups category not found');
+      console.log('[FriendGroupSystem] Friend groups category not found, creating...');
+      try {
+        category = await this.createOrGetCategory(guild, this.config.friendGroupCategory);
+        
+        // Update the guild setup with new category ID
+        guildSetup.categories.friendGroups = category.id;
+        this.saveGroupData();
+        await this.saveConfig();
+        
+        console.log(`[FriendGroupSystem] Created friend groups category: ${category.id}`);
+      } catch (error) {
+        console.error('[FriendGroupSystem] Failed to create friend groups category:', error);
+        throw new Error('Failed to create friend groups category');
+      }
     }
 
     // Create voice channel

@@ -142,6 +142,7 @@ export const commands = [
       try {
         // Force reload config to get latest values
         friendGroupSystem.reloadConfig();
+        console.log(`[FriendGroup] Current minMembers setting: ${friendGroupSystem.config.minMembers}`);
         
         // Parse member mentions
         const memberString = interaction.options.getString('members');
@@ -853,7 +854,7 @@ export const commands = [
           } catch (error) {
             console.log('[FriendGroup] Could not DM user about disbanding');
           }
-        }
+        }   
 
       } catch (error) {
         console.error('[FriendGroup] Error disbanding group:', error);

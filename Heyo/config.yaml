@@ -645,6 +645,7 @@ snipe:
   maxSnipesPerChannel: 5
   messageExpiry: 3600
   trackEdits: true
+  trackReactions: true  # NEW: Enable reaction sniper
   includeBots: false
   excludedChannels: []
   ephemeral: false

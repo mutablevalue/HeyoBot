@@ -1,7 +1,8 @@
 // src/commands/funcommands.js
 import {
   SlashCommandBuilder,
-  EmbedBuilder
+  EmbedBuilder,
+  PermissionFlagsBits
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
@@ -67,7 +68,6 @@ export function trackUsernameChange(userId, username) {
 }
 
 // PFP Command
-// PFP Command
 export const pfpData = new SlashCommandBuilder()
   .setName('pfp')
   .setDescription('Shows a user\'s profile picture')
@@ -106,6 +106,251 @@ export async function executePfp(interaction) {
     value: formats.join(' • '),
     inline: false
   });
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// Banner Command
+export const bannerData = new SlashCommandBuilder()
+  .setName('banner')
+  .setDescription('Shows a user\'s profile banner')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to get profile banner of')
+      .setRequired(false)
+  );
+
+export async function executeBanner(interaction) {
+  const user = interaction.options.getUser('user') || interaction.user;
+  
+  // Fetch user to get banner data
+  const fetchedUser = await user.fetch({ force: true });
+  
+  if (!fetchedUser.banner) {
+    const embed = new EmbedBuilder()
+      .setTitle(`${fetchedUser.username}'s Banner`)
+      .setDescription(`${fetchedUser.username} doesn't have a banner set.`)
+      .setColor(0x2b2d31)
+      .setThumbnail(fetchedUser.displayAvatarURL({ dynamic: true }))
+      .setFooter({ text: `Requested by ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+      .setTimestamp();
+
+    return await interaction.reply({ embeds: [embed] });
+  }
+
+  const bannerUrl = fetchedUser.bannerURL({ dynamic: true, size: 4096 });
+  
+  const embed = new EmbedBuilder()
+    .setTitle(`${fetchedUser.username}'s Profile Banner`)
+    .setImage(bannerUrl)
+    .setColor(fetchedUser.hexAccentColor || 0x2b2d31)
+    .setFooter({ text: `Requested by ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+    .setTimestamp();
+
+  // Add download links
+  const formats = [];
+  if (bannerUrl.includes('.gif')) {
+    formats.push(`[GIF](${fetchedUser.bannerURL({ extension: 'gif', size: 4096 })})`);
+  }
+  formats.push(
+    `[PNG](${fetchedUser.bannerURL({ extension: 'png', size: 4096 })})`,
+    `[JPG](${fetchedUser.bannerURL({ extension: 'jpg', size: 4096 })})`,
+    `[WEBP](${fetchedUser.bannerURL({ extension: 'webp', size: 4096 })})`
+  );
+  
+  embed.addFields({
+    name: 'Download Links',
+    value: formats.join(' • '),
+    inline: false
+  });
+
+  if (fetchedUser.hexAccentColor) {
+    embed.addFields({
+      name: 'Accent Color',
+      value: fetchedUser.hexAccentColor,
+      inline: true
+    });
+  }
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+// Whois Command
+export const whoisData = new SlashCommandBuilder()
+  .setName('whois')
+  .setDescription('Shows detailed information about a user')
+  .addUserOption(option =>
+    option
+      .setName('user')
+      .setDescription('User to get information about')
+      .setRequired(false)
+  );
+
+export async function executeWhois(interaction) {
+  const user = interaction.options.getUser('user') || interaction.user;
+  const member = interaction.guild.members.cache.get(user.id);
+  
+  // Fetch user to get full data
+  const fetchedUser = await user.fetch({ force: true });
+  
+  const embed = new EmbedBuilder()
+    .setTitle(`Who is ${fetchedUser.username}?`)
+    .setThumbnail(fetchedUser.displayAvatarURL({ dynamic: true, size: 512 }))
+    .setColor(member?.displayHexColor || fetchedUser.hexAccentColor || 0x2b2d31)
+    .setFooter({ text: `Requested by ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+    .setTimestamp();
+
+  // User Information
+  const userFlags = fetchedUser.flags?.toArray() || [];
+  const badges = userFlags.length > 0 ? userFlags.map(flag => {
+    const flagEmojis = {
+      'Staff': '👷',
+      'Partner': '🤝',
+      'Hypesquad': '🏘️',
+      'BugHunterLevel1': '🐛',
+      'BugHunterLevel2': '🐛',
+      'HypeSquadOnlineHouse1': '🟣',
+      'HypeSquadOnlineHouse2': '🟢',
+      'HypeSquadOnlineHouse3': '🟠',
+      'PremiumEarlySupporter': '💎',
+      'VerifiedBot': '✅',
+      'VerifiedDeveloper': '👨‍💻',
+      'CertifiedModerator': '🛡️',
+      'ActiveDeveloper': '⚙️'
+    };
+    return `${flagEmojis[flag] || ''} ${flag.replace(/([A-Z])/g, ' $1').trim()}`;
+  }).join('\n') : 'None';
+
+  embed.addFields(
+    {
+      name: '👤 User Information',
+      value: `**Username:** ${fetchedUser.username}\n**Display Name:** ${fetchedUser.displayName}\n**User ID:** \`${fetchedUser.id}\`\n**Bot:** ${fetchedUser.bot ? 'Yes' : 'No'}\n**Badges:** ${badges}`,
+      inline: false
+    },
+    {
+      name: '📅 Account Created',
+      value: `<t:${Math.floor(fetchedUser.createdTimestamp / 1000)}:F>\n<t:${Math.floor(fetchedUser.createdTimestamp / 1000)}:R>`,
+      inline: true
+    }
+  );
+
+  // If user has banner or accent color
+  if (fetchedUser.banner) {
+    embed.addFields({
+      name: '🎨 Customization',
+      value: `Has custom banner\nAccent Color: ${fetchedUser.hexAccentColor || 'None'}`,
+      inline: true
+    });
+  }
+
+  // Server-specific information if member exists
+  if (member) {
+    // Join date
+    embed.addFields({
+      name: '📥 Joined Server',
+      value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:F>\n<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
+      inline: true
+    });
+
+    // Roles
+    const roles = member.roles.cache
+      .filter(role => role.id !== interaction.guild.id)
+      .sort((a, b) => b.position - a.position)
+      .map(role => role.toString());
+    
+    if (roles.length > 0) {
+      const displayRoles = roles.length > 20 ? roles.slice(0, 20).join(', ') + ` +${roles.length - 20} more` : roles.join(', ');
+      embed.addFields({
+        name: `🎭 Roles (${roles.length})`,
+        value: displayRoles || 'None',
+        inline: false
+      });
+    }
+
+    // Nickname
+    if (member.nickname) {
+      embed.addFields({
+        name: '📛 Nickname',
+        value: member.nickname,
+        inline: true
+      });
+    }
+
+    // Status and activity
+    if (member.presence) {
+      const status = {
+        online: '🟢 Online',
+        idle: '🟡 Idle',
+        dnd: '🔴 Do Not Disturb',
+        offline: '⚫ Offline'
+      };
+      
+      embed.addFields({
+        name: '📊 Status',
+        value: status[member.presence.status] || '⚫ Offline',
+        inline: true
+      });
+
+      // Activities
+      if (member.presence.activities.length > 0) {
+        const activities = member.presence.activities.map(activity => {
+          if (activity.type === 0) return `Playing **${activity.name}**`;
+          if (activity.type === 1) return `Streaming **${activity.name}**`;
+          if (activity.type === 2) return `Listening to **${activity.name}**`;
+          if (activity.type === 3) return `Watching **${activity.name}**`;
+          if (activity.type === 4) return activity.state || 'Custom Status';
+          if (activity.type === 5) return `Competing in **${activity.name}**`;
+          return activity.name;
+        }).join('\n');
+        
+        embed.addFields({
+          name: '🎮 Activity',
+          value: activities,
+          inline: false
+        });
+      }
+    }
+
+    // Key permissions
+    const keyPerms = [];
+    if (member.permissions.has(PermissionFlagsBits.Administrator)) keyPerms.push('Administrator');
+    if (member.permissions.has(PermissionFlagsBits.ManageGuild)) keyPerms.push('Manage Server');
+    if (member.permissions.has(PermissionFlagsBits.ManageMessages)) keyPerms.push('Manage Messages');
+    if (member.permissions.has(PermissionFlagsBits.ManageRoles)) keyPerms.push('Manage Roles');
+    if (member.permissions.has(PermissionFlagsBits.ModerateMembers)) keyPerms.push('Timeout Members');
+    if (member.permissions.has(PermissionFlagsBits.KickMembers)) keyPerms.push('Kick Members');
+    if (member.permissions.has(PermissionFlagsBits.BanMembers)) keyPerms.push('Ban Members');
+    
+    if (keyPerms.length > 0) {
+      embed.addFields({
+        name: '🔑 Key Permissions',
+        value: keyPerms.join(', '),
+        inline: false
+      });
+    }
+
+    // Join position
+    const members = [...interaction.guild.members.cache.values()].sort((a, b) => a.joinedTimestamp - b.joinedTimestamp);
+    const joinPosition = members.findIndex(m => m.id === member.id) + 1;
+    
+    embed.addFields({
+      name: '📊 Join Position',
+      value: `${joinPosition} / ${interaction.guild.memberCount}`,
+      inline: true
+    });
+  } else {
+    embed.addFields({
+      name: '❌ Not in this server',
+      value: 'This user is not a member of this server.',
+      inline: false
+    });
+  }
+
+  // Add banner as image if available
+  if (fetchedUser.banner) {
+    embed.setImage(fetchedUser.bannerURL({ size: 512 }));
+  }
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -289,6 +534,8 @@ export function setupUsernameTracking(client) {
 // Export individual commands
 export const commands = [
   { data: pfpData, execute: executePfp },
+  { data: bannerData, execute: executeBanner },
+  { data: whoisData, execute: executeWhois },
   { data: namesData, execute: executeNames },
   { data: serverInfoData, execute: executeServerInfo }
 ];
