@@ -5,7 +5,7 @@
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
 import fs from "fs";
-import { Client, Collection, Events, ActivityType } from "discord.js";
+import { Client, Collection, Events, ActivityType, Partials } from "discord.js";
 import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import AntiNuke from "./systems/antiNuke.js";
@@ -26,6 +26,7 @@ import { ConfessSystem } from "./systems/confessSystem.js";
 import { SkullboardSystem } from "./systems/skullboardSystem.js";
 import { SnipeSystem } from "./systems/snipeSystem.js";
 import { SocialLookupSystem } from "./systems/socialLookupSystem.js";
+import { EntranceSystem } from "./systems/entranceSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -45,6 +46,8 @@ import * as confessCommands from "./commands/confess.js";
 import * as skullboardCommands from "./commands/skullboard.js";
 import * as snipeCommands from "./commands/snipe.js";
 import * as socialCommands from "./commands/social.js";
+import * as setupEntranceCommand from "./commands/setupentrance.js";
+import * as antiNukeCommand from "./commands/antinuke.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,8 +61,17 @@ async function main() {
   const configPath = resolve(__dirname, "../config.yaml");
   const config     = new ConfigLoader(configPath);
 
-  // 2) Create Discord Client with specified intents
-  const client = new Client({ intents: botIntents });
+  // 2) Create Discord Client with specified intents and partials
+  const client = new Client({ 
+    intents: botIntents,
+    partials: [
+      Partials.Message,
+      Partials.Channel,
+      Partials.Reaction,
+      Partials.User,
+      Partials.GuildMember
+    ]
+  });
 
   // 3) Initialize all systems
   const antiNuke = new AntiNuke(client, config);
@@ -80,13 +92,10 @@ async function main() {
   const skullboardSystem = new SkullboardSystem(client, config);
   const snipeSystem = new SnipeSystem(client, config);
   const socialLookupSystem = new SocialLookupSystem(client, config);
+  const entranceSystem = new EntranceSystem(client, config);
 
   // 4) Pass systems into commands that need them
-  import("./commands/antinuke.js").then(mod => {
-    if (typeof mod.setAntiNuke === "function") {
-      mod.setAntiNuke(antiNuke);
-    }
-  });
+  antiNukeCommand.setAntiNuke(antiNuke);
   
   setupJ2CCommand.setJ2CManager(j2cManager);
   vcCommand.setJ2CManager(j2cManager);
@@ -107,6 +116,7 @@ async function main() {
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   snipeCommands.setSnipeSystem(snipeSystem);
   socialCommands.setSocialLookupSystem(socialLookupSystem);
+  setupEntranceCommand.setEntranceSystem(entranceSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -138,7 +148,7 @@ async function main() {
     const multiCommandFiles = [
       'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
       'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
-      'confess.js', 'skullboard.js', 'snipe.js', 'social.js'
+      'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js'
     ];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
@@ -149,7 +159,8 @@ async function main() {
         }
         client.commands.set(cmd.data.name, {
           data: cmd.data,
-          execute: cmd.execute
+          execute: cmd.execute,
+          autocomplete: cmd.autocomplete // Include autocomplete if present
         });
       }
     } 
@@ -167,7 +178,8 @@ async function main() {
       // Regular single command handling
       client.commands.set(commandModule.data.name, {
         data: commandModule.data,
-        execute: commandModule.execute
+        execute: commandModule.execute,
+        autocomplete: commandModule.autocomplete
       });
     } else {
       console.warn(`Skipping ${file} – it does not export both 'data' and 'execute'.`);
@@ -263,12 +275,10 @@ async function main() {
     console.log(`Skullboard System: ${skullboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
-
-  // 9) Handle slash command interactions
- // Update this section in index.js starting at line ~245 (the interaction handler)
 
   // 9) Handle slash command interactions
   client.on(Events.InteractionCreate, async (interaction) => {
@@ -313,6 +323,8 @@ async function main() {
         // No need to handle here as TicketSystem sets up its own listeners
       } else if (interaction.customId.startsWith('snipe_')) {
         // Snipe pagination buttons are handled within the command
+      } else if (interaction.customId.startsWith('entrance_')) {
+        // Entrance system buttons are handled within the command
       }
     } else if (interaction.isModalSubmit()) {
       // Handle modal submissions

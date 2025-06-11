@@ -1,9 +1,9 @@
 token: MTM3OTkzNzIyNDI1NDI5NjE2NA.GXlWom.zaKMFAKN9qABWfGAuldzRkCgtE0EoQdrfAkhPQ
-prefix: ''
+prefix: ""
 logging:
   level: info
 bot:
-  name: ''
+  name: ""
   avatar: https://example.com/avatar.png
   status:
     type: PLAYING
@@ -13,15 +13,11 @@ bot:
     I'm a multi-purpose Discord bot with moderation, welcome messages, and more!
 
     Use /help to see my commands.
-developmentGuildId: '1379953422241103943'
-
-# Queue System Configuration
+developmentGuildId: "1379953422241103943"
 queue:
   maxSize: 100
   workerCount: 3
   retryDelaySeconds: 5
-
-# Rate Limiting Configuration
 rateLimit:
   windowMs: 60000
   limits:
@@ -30,17 +26,16 @@ rateLimit:
     default: 5
   customRoles: null
   message: You're sending commands too quickly! Please wait {time} seconds.
-
-# Moderation System Configuration
 moderation:
+  ownerBypass: true
   permissions:
     administrator:
       users:
-        - '987654321098765432'
-        - '234567890123456789'
-        - '1162730217895379025'
+        - "987654321098765432"
+        - "234567890123456789"
+        - "1162730217895379025"
       roles:
-        - '1235002473698299956'
+        - "1235002473698299956"
       commands:
         - ban
         - unban
@@ -59,9 +54,9 @@ moderation:
         - restoreroles
     moderator:
       users:
-        - '345678901234567890'
+        - "345678901234567890"
       roles:
-        - '456789012345678901'
+        - "456789012345678901"
       commands:
         - lockchannel
         - unlockchannel
@@ -69,12 +64,11 @@ moderation:
         - mute
         - unmute
         - purge
-  ownerBypass: true
   permRoles:
-    vc: '1380755737906647060'
-    pic: '1380755738950893658'
-    link: '1380755739672313866'
-  logChannel: '1380422918017650719'
+    vc: "1380755737906647060"
+    pic: "1380755738950893658"
+    link: "1380755739672313866"
+  logChannel: "1380422918017650719"
   cooldowns:
     default: 3
     nuke: 30
@@ -87,16 +81,51 @@ moderation:
     createchannel: 10
     deletechannel: 15
     restoreroles: 10
+    ban: 5
+    kick: 5
+    timeout: 5
+    role: 3
+  multiUserCommands:
+    # Settings for multi-user moderation (targeting 2+ users at once)
+    # Single user operations are not affected by these settings
+    ban:
+      enabled: true
+      requiresAntiNukeWhitelist: true
+      maxUsers: 10
+      cooldownMultiplier: 2
+    kick:
+      enabled: true
+      requiresAntiNukeWhitelist: true
+      maxUsers: 10
+      cooldownMultiplier: 2
+    timeout:
+      enabled: true
+      requiresAntiNukeWhitelist: true
+      maxUsers: 10
+      cooldownMultiplier: 1.5
+    mute:
+      enabled: true
+      requiresAntiNukeWhitelist: true
+      maxUsers: 10
+      cooldownMultiplier: 1.5
+    unmute:
+      enabled: true
+      requiresAntiNukeWhitelist: false
+      maxUsers: 10
+      cooldownMultiplier: 1
+    role:
+      enabled: true
+      requiresAntiNukeWhitelist: true
+      maxUsers: 20
+      cooldownMultiplier: 1.5
   forcedNicknames:
     dataFile: forced_nicknames.json
     checkInterval: 5000
     roleId: null
   permMuteRole:
-    roleId: '1381115435885264896'
+    roleId: "1381115435885264896"
     defaultName: Muted
     defaultColor: 8421504
-
-# AFK System Configuration
 afk:
   enabled: true
   dataFile: afk_data.json
@@ -105,8 +134,6 @@ afk:
   mentionResponse:
     showTimestamp: true
     showReason: true
-
-# Link Protection Configuration
 linkProtection:
   enabled: true
   patterns:
@@ -115,50 +142,46 @@ linkProtection:
     - discordapp\.com\/invite\/[a-zA-Z0-9]+
   allowed:
     users:
-      - '123456789012345678'
+      - "123456789012345678"
     roles:
-      - '789012345678901234'
+      - "789012345678901234"
     useLinkPermRole: true
   exemptChannels:
-    - '1234567890123456789'
-  logChannel: '1380422905191731210'
+    - "1234567890123456789"
+  logChannel: "1380422905191731210"
   deleteMessage: true
   warningMessage: ❌ You do not have permission to send links in this channel.
   ephemeralWarning: true
-
-# Vanity System Configuration
 vanity:
   enabled: false
-  checkIntervalSeconds: 1800  # 30 minutes
+  checkIntervalSeconds: 1800
   vanityStrings:
     - YourServer
     - .gg/yourserver
   roles:
-    - '789012345678901234'
-    - '890123456789012345'
-  logChannel: '1380422905191731210'
-  enableLogging: false  # Vanity doesn't need logging
+    - "789012345678901234"
+    - "890123456789012345"
+  logChannel: "1380422905191731210"
+  enableLogging: false
   caseSensitive: false
   checkUsername: true
   checkNickname: true
   checkBio: true
   checkStatus: true
   exemptRoles:
-    - '901234567890123456'
+    - "901234567890123456"
   removeOnVanityLoss: true
-
-# Anti-Nuke Configuration
 antiNuke:
   whitelist:
     users:
-      - '123456789012345678'
+      - "123456789012345678"
     roles:
-      - '876543210987654321'
+      - "876543210987654321"
   adminUsers:
-    - '987654321098765432'
-    - '234567890123456789'
+    - "987654321098765432"
+    - "234567890123456789"
   adminRoles:
-    - '1235002473698299956'
+    - "1235002473698299956"
   limits:
     commands:
       maxActions: 5
@@ -185,66 +208,47 @@ antiNuke:
     roleDelete:
       maxActions: 2
       timeWindowSeconds: 60
-  
-  # Content Moderation Features (NEW)
+  adminLogChannel: "1380422918017650719"
+  abuseLogChannel: "1380422905191731210"
   contentModeration:
     enabled: true
-    
-    # Mass mention detection
     massMention:
       enabled: true
-      threshold: 5  # Number of mentions to trigger
-      action: 'delete'  # delete, timeout
-    
-    # Mass emoji detection
+      threshold: 5
+      action: delete
     massEmoji:
       enabled: true
-      threshold: 10  # Number of emojis to trigger
-      action: 'delete'
-    
-    # Caps spam detection
+      threshold: 10
+      action: delete
     capsSpam:
       enabled: true
-      percentage: 70  # Percentage of caps to trigger
-      minLength: 10  # Minimum message length to check
-      action: 'delete'
-    
-    # Duplicate message detection
+      percentage: 70
+      minLength: 10
+      action: delete
     duplicateMessages:
       enabled: true
-      threshold: 3  # Number of duplicates to trigger
-      timeWindow: 30000  # Time window in milliseconds
-      action: 'delete'
-    
-    # Anti-raid settings
+      threshold: 3
+      timeWindow: 30000
+      action: delete
     antiRaid:
       enabled: true
-      joinThreshold: 10  # Number of joins to trigger raid mode
-      timeWindow: 30000  # Time window in milliseconds
-      lockdownEnabled: true  # Whether to lockdown server during raids
-    
-    # General settings
-    timeoutDuration: 300000  # 5 minutes in milliseconds
-    exemptRoles:  # Roles exempt from content moderation
-      - '1235002473698299956'  # Admin role
-  
-  adminLogChannel: '1380422918017650719'
-  abuseLogChannel: '1380422905191731210'
-
-# Join to Create Configuration
+      joinThreshold: 10
+      timeWindow: 30000
+      lockdownEnabled: true
+    timeoutDuration: 300000
+    exemptRoles:
+      - "1235002473698299956"
 j2c:
   defaultChannelName: ➕ Create Voice Channel
   logChannel: null
   categoryId: null
-  j2cChannelId: '1380618466557558786'
-
-# Welcome System Configuration
+  j2cChannelId: "1380618466557558786"
 welcome:
   enabled: false
   channel: null
   message:
     title: Welcome!
-    description: 'Welcome {user} to **{server}**!\n\nYou are member #{memberCount}'
+    description: "Welcome {user} to **{server}**!\\n\\nYou are member #{memberCount}"
     color: 65280
     thumbnail: true
     footer: Enjoy your stay!
@@ -259,8 +263,6 @@ welcome:
   roleOnJoin: null
   pingUser: false
   deleteAfter: null
-
-# Role Tracker Configuration
 roleTracker:
   enabled: true
   dataFile: role_history.json
@@ -268,358 +270,291 @@ roleTracker:
   trackBots: false
   exemptRoles: []
   logChannel: null
-
-# Leaderboard System Configuration
 leaderboard:
   enabled: true
   trackMessages: true
   trackVoice: true
-  dataFile: 'leaderboard_data.json'
+  dataFile: leaderboard_data.json
   resetSchedule:
-    weekly: 'Monday'  # Day of week to reset weekly stats
-    monthly: 1  # Day of month to reset monthly stats
-  minimumVCTime: 60  # Minimum seconds in VC to count
-  excludedChannels: []  # Channel IDs to exclude from tracking
-  excludedRoles: []  # Role IDs to exclude from tracking
+    weekly: Monday
+    monthly: 1
+  minimumVCTime: 60
+  excludedChannels: []
+  excludedRoles: []
   trackBots: false
-
-# Event Hosting System Configuration
 events:
   enabled: true
-  dataFile: 'events_data.json'
-  announcementChannel: null  # Channel ID for event announcements
-  logChannel: null  # Channel ID for event logs
-  pingRole: null  # Role ID to ping for event announcements
-  dmWinners: true  # DM winners their rewards
+  dataFile: events_data.json
+  announcementChannel: null
+  logChannel: null
+  pingRole: null
+  dmWinners: true
   enableLogging: true
-  # Last to Leave VC defaults
   lastToLeave:
     defaultCountdownMinutes: 5
     defaultDurationMinutes: 60
     maxCountdownMinutes: 60
-    maxDurationMinutes: 1440  # 24 hours
-
-# Booster System Configuration
+    maxDurationMinutes: 1440
 boosterSystem:
   enabled: true
-  dataFile: 'booster_data.json'
-  boostMessageChannel: null  # Channel ID where boost messages appear
-  
-  # Voice Channel Settings
+  dataFile: booster_data.json
+  boostMessageChannel: null
   vcNameFormat: "{username}'s Channel"
   vcUserLimit: 10
   vcBitrate: 64000
-  vcCategory: null  # Category ID for booster VCs
-  
-  # Role Settings  
+  vcCategory: null
   roleNameFormat: "{username}'s Role"
-  roleColor: 'Random'  # 'Random' or hex color like '#FF0000'
-  rolePosition: null  # Position to place role (null = bottom)
+  roleColor: Random
+  rolePosition: null
   roleHoist: false
   roleMentionable: false
-  
-  # Cleanup
-  checkInterval: 86400000  # 24 hours in milliseconds
-  
-  # Logging
+  checkInterval: 86400000
   logChannel: null
   enableLogging: true
-
-# Filter System Configuration
-filter:
-  enabled: true
-  dataFile: 'filter_data.json'
-  
-  # Word filter settings
-  wordFilter:
-    enabled: true
-    defaultWords:  # These cannot be removed via commands
-      - 'nigger'
-      - 'nigga'
-      - 'faggot'
-      - 'fag'
-      - 'retard'
-      - 'kys'
-    customWords: []  # Added via commands
-    exemptRoles: []
-    exemptChannels: []
-    action: 'delete'  # 'delete', 'warn', 'timeout'
-    timeoutDuration: 300  # 5 minutes in seconds
-    warningMessage: '⚠️ Your message contains prohibited words.'
-    caseSensitive: false
-    checkVariations: true  # Check l33t speak, spacing, etc.
-  
-  # Image filter settings
-  imageFilter:
-    enabled: false  # Disabled by default as it requires API
-    nsfwThreshold: 0.7  # 0-1, higher = stricter
-    exemptRoles: []
-    exemptChannels: []
-    nsfwChannels: []  # Allow NSFW in these channels
-    action: 'delete'  # 'delete', 'spoiler', 'warn'
-    warningMessage: '⚠️ Your image appears to contain NSFW content.'
-    apiUrl: null  # External NSFW detection API URL
-    maxFileSize: 8388608  # 8MB in bytes
-  
-  # Logging
-  logChannel: null
-  enableLogging: true
-  
-  # Statistics
-  trackStats: true
-
-# Ban Appeal System Configuration
-banAppeal:
-  enabled: true
-  dataFile: 'ban_appeals.json'
-  
-  # Appeal settings
-  appealChannel: null  # Channel to send appeals to
-  dmMessage:
-    enabled: true
-    delay: 5000  # 5 seconds delay after ban in milliseconds
-    content: 'You have been banned from **{server}**. If you believe this was a mistake, you can submit an appeal.'
-    embedTitle: 'Ban Appeal'
-    embedDescription: 'Click the button below to submit a ban appeal. Please be honest and provide as much detail as possible.'
-    embedColor: 0xff0000
-    buttonLabel: 'Submit Appeal'
-    buttonEmoji: '📝'
-  
-  # Appeal form fields
-  appealForm:
-    reasonField:
-      label: 'Why were you banned?'
-      placeholder: 'Please explain what led to your ban'
-      style: 'paragraph'
-      minLength: 20
-      maxLength: 500
-      required: true
-    explanationField:
-      label: 'Why should you be unbanned?'
-      placeholder: 'Explain why you deserve a second chance'
-      style: 'paragraph'
-      minLength: 50
-      maxLength: 1000
-      required: true
-    changesField:
-      label: 'What will you do differently?'
-      placeholder: 'How will you ensure this doesn''t happen again?'
-      style: 'paragraph'
-      minLength: 30
-      maxLength: 500
-      required: true
-    additionalField:
-      label: 'Additional information'
-      placeholder: 'Any other information you''d like to add (optional)'
-      style: 'paragraph'
-      minLength: 0
-      maxLength: 500
-      required: false
-  
-  # Cooldowns
-  appealCooldown: 604800000  # 7 days in milliseconds
-  maxAppeals: 3  # Max appeals per user
-  
-  # Notifications
-  notifyRole: null  # Role to ping for new appeals
-  
-  # Auto responses
-  autoResponses:
-    submitted: 'Your appeal has been submitted successfully. You will be notified when a decision is made.'
-    cooldown: 'You must wait {time} before submitting another appeal.'
-    maxReached: 'You have reached the maximum number of appeals allowed.'
-    error: 'An error occurred while submitting your appeal. Please try again later.'
-  
-  # Logging
-  logChannel: null
-  enableLogging: true
-
-confess:
-  enabled: true
-  dataFile: 'confess_data.json'
-  channels: {}  # Will be populated with guildId -> channelId mappings
-  cooldown: 300  # 5 minutes
-  minLength: 10
-  maxLength: 2000
-  embedTitle: '🤫 Anonymous Confession'
-  embedColor: 0x2f3136
-  showConfessionNumber: true
-  filterBannedWords: true
-  bannedWords:
-    - 'nigger'
-    - 'nigga'
-    - 'faggot'
-    - 'fag'
-    - 'retard'
-    - 'kys'
-  successMessage: '✅ Your confession has been sent! ID: {id}'
-  logChannel: null
-  setupMessage:
-    enabled: true
-    title: '🤫 Anonymous Confessions'
-    description: |
-      Use `/confess` command to send an anonymous confession to this channel.
-      
-      All confessions are anonymous, but moderators can see who sent them in the logs.
-    color: 0x2f3136
-    footer: 'Think before you confess!'
-
-# Skullboard System Configuration  
-skullboard:
-  enabled: true
-  dataFile: 'skullboard_data.json'
-  emoji: '💀'  # Can use custom emoji like <:skull:123456789>
-  defaultThreshold: 5
-  guilds: {}  # Will be populated with guildId -> {channelId, threshold}
-  excludedChannels: []
-  allowSelfStar: false
-  removeOnBelowThreshold: true
-  removeOnMessageDelete: true
-  logChannel: null
-
-# Snipe System Configuration
-snipe:
-  enabled: true
-  maxSnipesPerChannel: 5
-  messageExpiry: 3600  # 1 hour
-  trackEdits: true
-  includeBots: false
-  excludedChannels: []
-  ephemeral: false
-  requirePermission: false
-  allowedRoles: []  # If requirePermission is true
-  moderatorRoles: []  # Can use /clearsnipes
-  embedColor: 0x2f3136
-  logDeleted: false
-  logChannel: null
-
-# Social Lookup System Configuration
-socialLookup:
-  enabled: true
-  cacheExpiry: 3600  # 1 hour
-  rateLimitMs: 30000  # 30 seconds
-  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-  platforms:
-    tiktok:
-      enabled: true
-      baseUrl: 'https://www.tiktok.com/@'
-    instagram:
-      enabled: true
-      baseUrl: 'https://www.instagram.com/'
-# Ticket System Configuration
 ticketSystem:
   enabled: false
-  dataFile: 'tickets.json'
-  
-  # Basic Settings
+  dataFile: tickets.json
   maxTicketsPerUser: 3
-  cooldown: 60000  # 1 minute in milliseconds
-  channelNameFormat: 'ticket-{number}'  # Variables: {number}, {username}, {category}
-  
-  # Auto-delete Settings
-  autoDelete:
-    enabled: true
-    timeout: 300000  # 5 minutes in milliseconds
-  
-  # Default Channels (set via setup command)
-  defaultCategoryId: null  # Category where tickets are created
-  logChannel: null  # Channel for ticket logs
-  transcriptChannel: null  # Channel for ticket transcripts
-  
-  # Panel Configuration
-  panelEmbed:
-    title: '🎫 Support Tickets'
-    description: 'Need help? Create a ticket and our support team will assist you!'
-    color: 0x0099ff
-    footer: 'Our support team will respond as soon as possible'
-    buttonLabel: 'Create Ticket'
-    buttonEmoji: '🎫'
-  
-  # Welcome Message
+  cooldown: 60000
+  channelNameFormat: ticket-{number}
   welcomeMessage: |
     Thank you for creating a ticket! 
-    
+
     Please describe your issue in detail and our support team will assist you shortly.
-    
+
     • Be patient - we'll respond as soon as possible
     • Provide all relevant information
     • Be respectful to our support team
-  
-  # Ticket Categories (configured via setup)
   categories: []
-  # Example category structure:
-  # - id: 'support'
-  #   name: 'General Support'
-  #   description: 'General help and questions'
-  #   emoji: '❓'
-  #   supportRole: '123456789012345678'  # Role ID
-  #   categoryId: null  # Optional specific category channel
-  #   welcomeMessage: 'Custom welcome message for this category'
-  #   color: 0x0099ff
-  
-  # Permissions
-  closeOwnTicket: true  # Allow users to close their own tickets
-  transcriptOnClose: true  # Generate transcript when ticket is closed
-  dmTranscripts: false  # DM transcripts to ticket creator
-  
-  # Limits
-  maxActiveTickets: 50  # Maximum active tickets at once
-  transcriptMessageLimit: 1000  # Max messages to include in transcript
-  autoCloseInactiveDays: 7  # Close inactive tickets after X days (0 = disabled)
-  
-  # Button Configuration
-  buttons:
-    close:
-      label: 'Close Ticket'
-      emoji: '🔒'
-      style: 'Danger'  # Primary, Secondary, Success, Danger
-    claim:
-      label: 'Claim Ticket'
-      emoji: '🎫'
-      style: 'Primary'
-    delete:
-      label: 'Delete Ticket'
-      emoji: '🗑️'
-      style: 'Danger'
-    transcript:
-      label: 'Save Transcript'
-      emoji: '📄'
-      style: 'Secondary'
-  
-  # Notification Settings
-  notifications:
-    pingSupport: true  # Ping support role on ticket creation
-    pingUser: true  # Ping user when ticket is created
-    notifyOnClaim: true  # Notify when ticket is claimed
-    notifyOnClose: true  # Notify when ticket is closed
-  
-  # Message Templates
-  messages:
-    ticketCreated: '✅ Your ticket has been created: {channel}'
-    ticketClosed: '🔒 This ticket has been closed by {user}'
-    ticketClaimed: '🎫 {user} has claimed this ticket'
-    ticketDeleting: '🗑️ Deleting ticket in {seconds} seconds...'
-    maxTicketsReached: '❌ You already have {max} open ticket(s). Please close one before creating another.'
-    cooldownActive: '❌ Please wait {time} seconds before creating another ticket.'
-    noPermission: '❌ You do not have permission to {action} this ticket.'
-    transcriptSaved: '✅ Transcript saved!'
-    errorCreating: '❌ Failed to create ticket. Please try again later.'
-    errorTranscript: '❌ Failed to generate transcript.'
-  
-  # Logging
+  panelEmbed:
+    title: 🎫 Support Tickets
+    description: Need help? Create a ticket and our support team will assist you!
+    color: 39423
+    footer: Our support team will respond as soon as possible
+    buttonLabel: Create Ticket
+    buttonEmoji: 🎫
+  autoDelete:
+    enabled: true
+    timeout: 300000
+  transcriptChannel: null
+  logChannel: null
   enableLogging: true
-  logActions:
-    - 'create'
-    - 'close'
-    - 'claim'
-    - 'delete'
-    - 'add_user'
-    - 'remove_user'
-    - 'rename'
-  
-  # Statistics
   stats:
     totalTickets: 0
     totalClosed: 0
     averageResponseTime: 0
     averageResolutionTime: 0
+  defaultCategoryId: null
+  closeOwnTicket: true
+  transcriptOnClose: true
+  dmTranscripts: false
+  maxActiveTickets: 50
+  transcriptMessageLimit: 1000
+  autoCloseInactiveDays: 7
+  buttons:
+    close:
+      label: Close Ticket
+      emoji: 🔒
+      style: Danger
+    claim:
+      label: Claim Ticket
+      emoji: 🎫
+      style: Primary
+    delete:
+      label: Delete Ticket
+      emoji: 🗑️
+      style: Danger
+    transcript:
+      label: Save Transcript
+      emoji: 📄
+      style: Secondary
+  notifications:
+    pingSupport: true
+    pingUser: true
+    notifyOnClaim: true
+    notifyOnClose: true
+  messages:
+    ticketCreated: "✅ Your ticket has been created: {channel}"
+    ticketClosed: 🔒 This ticket has been closed by {user}
+    ticketClaimed: 🎫 {user} has claimed this ticket
+    ticketDeleting: 🗑️ Deleting ticket in {seconds} seconds...
+    maxTicketsReached: ❌ You already have {max} open ticket(s). Please close one before creating another.
+    cooldownActive: ❌ Please wait {time} seconds before creating another ticket.
+    noPermission: ❌ You do not have permission to {action} this ticket.
+    transcriptSaved: ✅ Transcript saved!
+    errorCreating: ❌ Failed to create ticket. Please try again later.
+    errorTranscript: ❌ Failed to generate transcript.
+  logActions:
+    - create
+    - close
+    - claim
+    - delete
+    - add_user
+    - remove_user
+    - rename
+filter:
+  enabled: true
+  dataFile: filter_data.json
+  wordFilter:
+    enabled: true
+    defaultWords:
+      - nigger
+      - nigga
+      - faggot
+      - fag
+      - retard
+      - kys
+    customWords: []
+    exemptRoles: []
+    exemptChannels: []
+    action: delete
+    timeoutDuration: 300
+    warningMessage: ⚠️ Your message contains prohibited words.
+    caseSensitive: false
+    checkVariations: true
+  imageFilter:
+    enabled: false
+    nsfwThreshold: 0.7
+    exemptRoles: []
+    exemptChannels: []
+    nsfwChannels: []
+    action: delete
+    warningMessage: ⚠️ Your image appears to contain NSFW content.
+    apiUrl: null
+    maxFileSize: 8388608
+  logChannel: null
+  enableLogging: true
+  trackStats: true
+banAppeal:
+  enabled: true
+  dataFile: ban_appeals.json
+  appealChannel: null
+  dmMessage:
+    enabled: true
+    delay: 5000
+    content: You have been banned from **{server}**. If you believe this was a mistake, you can submit an appeal.
+    embedTitle: Ban Appeal
+    embedDescription: Click the button below to submit a ban appeal. Please be honest and provide as much detail as possible.
+    embedColor: 16711680
+    buttonLabel: Submit Appeal
+    buttonEmoji: 📝
+  appealForm:
+    reasonField:
+      label: Why were you banned?
+      placeholder: Please explain what led to your ban
+      style: paragraph
+      minLength: 20
+      maxLength: 500
+      required: true
+    explanationField:
+      label: Why should you be unbanned?
+      placeholder: Explain why you deserve a second chance
+      style: paragraph
+      minLength: 50
+      maxLength: 1000
+      required: true
+    changesField:
+      label: What will you do differently?
+      placeholder: How will you ensure this doesn't happen again?
+      style: paragraph
+      minLength: 30
+      maxLength: 500
+      required: true
+    additionalField:
+      label: Additional information
+      placeholder: Any other information you'd like to add (optional)
+      style: paragraph
+      minLength: 0
+      maxLength: 500
+      required: false
+  appealCooldown: 604800000
+  maxAppeals: 3
+  notifyRole: null
+  autoResponses:
+    submitted: Your appeal has been submitted successfully. You will be notified when a decision is made.
+    cooldown: You must wait {time} before submitting another appeal.
+    maxReached: You have reached the maximum number of appeals allowed.
+    error: An error occurred while submitting your appeal. Please try again later.
+  logChannel: null
+  enableLogging: true
+entrance:
+  enabled: true
+  dataFile: entrance.json
+  defaultRoleName: Verified
+  defaultEmoji: ✅
+  defaultWelcomeMessage: |
+    Welcome to the server! 
+
+    You now have access to all channels. Please make sure to read the rules and enjoy your stay!
+  dmWelcome: false
+  removeReactionAfterVerify: false
+  logVerifications: true
+  stats:
+    totalVerified: 3
+    totalUnverified: 3
+confess:
+  enabled: true
+  dataFile: confess_data.json
+  channels: {}
+  cooldown: 300
+  minLength: 10
+  maxLength: 2000
+  embedTitle: 🤫 Anonymous Confession
+  embedColor: 3092790
+  showConfessionNumber: true
+  filterBannedWords: true
+  bannedWords:
+    - nigger
+    - nigga
+    - faggot
+    - fag
+    - retard
+    - kys
+  successMessage: "✅ Your confession has been sent! ID: {id}"
+  logChannel: null
+  setupMessage:
+    enabled: true
+    title: 🤫 Anonymous Confessions
+    description: |
+      Use `/confess` command to send an anonymous confession to this channel.
+
+      All confessions are anonymous, but moderators can see who sent them in the logs.
+    color: 3092790
+    footer: Think before you confess!
+skullboard:
+  enabled: true
+  dataFile: skullboard_data.json
+  emoji: 💀
+  defaultThreshold: 5
+  guilds: {}
+  excludedChannels: []
+  allowSelfStar: false
+  removeOnBelowThreshold: true
+  removeOnMessageDelete: true
+  logChannel: null
+snipe:
+  enabled: true
+  maxSnipesPerChannel: 5
+  messageExpiry: 3600
+  trackEdits: true
+  includeBots: false
+  excludedChannels: []
+  ephemeral: false
+  requirePermission: false
+  allowedRoles: []
+  moderatorRoles: []
+  embedColor: 3092790
+  logDeleted: false
+  logChannel: null
+socialLookup:
+  enabled: true
+  cacheExpiry: 3600
+  rateLimitMs: 30000
+  userAgent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+  platforms:
+    tiktok:
+      enabled: true
+      baseUrl: https://www.tiktok.com/@
+    instagram:
+      enabled: true
+      baseUrl: https://www.instagram.com/

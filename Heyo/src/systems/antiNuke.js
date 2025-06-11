@@ -1,5 +1,5 @@
 // src/systems/antiNuke.js
-import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits, AuditLogEvent } from 'discord.js';
 
 export default class AntiNuke {
   constructor(client, configLoader) {
@@ -46,7 +46,7 @@ export default class AntiNuke {
   setupEventListeners() {
     // Ban tracking
     this.client.on('guildBanAdd', async (ban) => {
-      const executor = await this.getExecutor(ban.guild, 'MEMBER_BAN_ADD');
+      const executor = await this.getExecutor(ban.guild, AuditLogEvent.MemberBanAdd);
       if (!executor) return;
       
       const violation = this.track(executor.id, 'bans', {
@@ -62,18 +62,8 @@ export default class AntiNuke {
 
     // Kick tracking
     this.client.on('guildMemberRemove', async (member) => {
-      const auditLog = await member.guild.fetchAuditLogs({
-        limit: 1,
-        type: 'MEMBER_KICK'
-      }).catch(() => null);
-      
-      if (!auditLog) return;
-      
-      const kickLog = auditLog.entries.first();
-      if (!kickLog || Date.now() - kickLog.createdTimestamp > 5000) return;
-      
-      const executor = kickLog.executor;
-      if (!executor || executor.bot) return;
+      const executor = await this.getExecutor(member.guild, AuditLogEvent.MemberKick);
+      if (!executor) return;
       
       const violation = this.track(executor.id, 'kicks', {
         targetId: member.id,
@@ -88,7 +78,7 @@ export default class AntiNuke {
 
     // Channel creation/deletion
     this.client.on('channelCreate', async (channel) => {
-      const executor = await this.getExecutor(channel.guild, 'CHANNEL_CREATE');
+      const executor = await this.getExecutor(channel.guild, AuditLogEvent.ChannelCreate);
       if (!executor) return;
       
       const violation = this.track(executor.id, 'channelCreate', {
@@ -103,7 +93,7 @@ export default class AntiNuke {
     });
 
     this.client.on('channelDelete', async (channel) => {
-      const executor = await this.getExecutor(channel.guild, 'CHANNEL_DELETE');
+      const executor = await this.getExecutor(channel.guild, AuditLogEvent.ChannelDelete);
       if (!executor) return;
       
       const violation = this.track(executor.id, 'channelDelete', {
@@ -118,7 +108,7 @@ export default class AntiNuke {
 
     // Role creation/deletion
     this.client.on('roleCreate', async (role) => {
-      const executor = await this.getExecutor(role.guild, 'ROLE_CREATE');
+      const executor = await this.getExecutor(role.guild, AuditLogEvent.RoleCreate);
       if (!executor) return;
       
       const violation = this.track(executor.id, 'roleCreate', {
@@ -133,7 +123,7 @@ export default class AntiNuke {
     });
 
     this.client.on('roleDelete', async (role) => {
-      const executor = await this.getExecutor(role.guild, 'ROLE_DELETE');
+      const executor = await this.getExecutor(role.guild, AuditLogEvent.RoleDelete);
       if (!executor) return;
       
       const violation = this.track(executor.id, 'roleDelete', {
@@ -148,7 +138,7 @@ export default class AntiNuke {
 
     // Command usage tracking
     this.client.on('interactionCreate', async (interaction) => {
-      if (!interaction.isCommand()) return;
+      if (!interaction.isChatInputCommand()) return;
       
       const violation = this.track(interaction.user.id, 'commands', {
         commandName: interaction.commandName,
@@ -471,6 +461,9 @@ export default class AntiNuke {
       const auditEntry = auditLogs.entries.first();
       if (!auditEntry || Date.now() - auditEntry.createdTimestamp > 5000) return null;
       
+      // Skip bot actions if it's our bot
+      if (auditEntry.executor.id === this.client.user.id) return null;
+      
       return auditEntry.executor;
     } catch (error) {
       console.error('[AntiNuke] Error fetching audit logs:', error);
@@ -766,6 +759,8 @@ export default class AntiNuke {
     const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
     return userData.lastReport > fiveMinutesAgo;
   }
+
+
 
   async saveConfig() {
     this.configLoader.set('antiNuke', this.config);

@@ -1,0 +1,26 @@
+{
+  "instances": {
+    "1379953422241103943": {
+      "guildId": "1379953422241103943",
+      "messageId": "1382382542061043772",
+      "channelId": "1379953422241103946",
+      "emoji": "✅",
+      "roleId": "1381019724371984485",
+      "welcomeMessage": "Welcome to the server! \n\nYou now have access to all channels. Please make sure to read the rules and enjoy your stay!\n",
+      "dmWelcome": false,
+      "removeReaction": false,
+      "exemptRoles": [],
+      "exemptChannels": [],
+      "allowUnverify": true,
+      "verifiedUsers": [
+        "1235002473698299956"
+      ],
+      "createdAt": "2025-06-11T15:44:19.966Z",
+      "createdBy": "1235002473698299956"
+    }
+  },
+  "stats": {
+    "totalVerified": 5,
+    "totalUnverified": 4
+  }
+}

@@ -20,39 +20,45 @@ export const ticketData = new SlashCommandBuilder()
   .setName('ticket')
   .setDescription('Manage ticket system')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('setup')
+      .setDescription('Setup the ticket system')
+      .addChannelOption(option =>
+        option
+          .setName('category')
+          .setDescription('Category where ticket channels will be created')
+          .addChannelTypes(ChannelType.GuildCategory)
+          .setRequired(true)
+      )
+      .addChannelOption(option =>
+        option
+          .setName('log_channel')
+          .setDescription('Channel for ticket logs')
+          .addChannelTypes(ChannelType.GuildText)
+          .setRequired(true)
+      )
+      .addChannelOption(option =>
+        option
+          .setName('transcript_channel')
+          .setDescription('Channel for ticket transcripts')
+          .addChannelTypes(ChannelType.GuildText)
+          .setRequired(false)
+      )
+      .addBooleanOption(option =>
+        option
+          .setName('enable')
+          .setDescription('Enable the ticket system immediately')
+          .setRequired(false)
+      )
+  )
   .addSubcommandGroup(group =>
     group
-      .setName('setup')
-      .setDescription('Setup ticket system')
+      .setName('category')
+      .setDescription('Manage ticket categories')
       .addSubcommand(subcommand =>
         subcommand
-          .setName('init')
-          .setDescription('Initialize ticket system with basic settings')
-          .addChannelOption(option =>
-            option
-              .setName('category')
-              .setDescription('Category where ticket channels will be created')
-              .addChannelTypes(ChannelType.GuildCategory)
-              .setRequired(true)
-          )
-          .addChannelOption(option =>
-            option
-              .setName('log_channel')
-              .setDescription('Channel for ticket logs')
-              .addChannelTypes(ChannelType.GuildText)
-              .setRequired(true)
-          )
-          .addChannelOption(option =>
-            option
-              .setName('transcript_channel')
-              .setDescription('Channel for ticket transcripts')
-              .addChannelTypes(ChannelType.GuildText)
-              .setRequired(false)
-          )
-      )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('category')
+          .setName('add')
           .setDescription('Add a ticket category')
           .addStringOption(option =>
             option
@@ -94,7 +100,7 @@ export const ticketData = new SlashCommandBuilder()
       )
       .addSubcommand(subcommand =>
         subcommand
-          .setName('remove_category')
+          .setName('remove')
           .setDescription('Remove a ticket category')
           .addStringOption(option =>
             option
@@ -106,112 +112,117 @@ export const ticketData = new SlashCommandBuilder()
       )
       .addSubcommand(subcommand =>
         subcommand
-          .setName('settings')
-          .setDescription('Configure ticket system settings')
-          .addIntegerOption(option =>
-            option
-              .setName('max_tickets')
-              .setDescription('Maximum tickets per user (1-10)')
-              .setMinValue(1)
-              .setMaxValue(10)
-              .setRequired(false)
-          )
-          .addIntegerOption(option =>
-            option
-              .setName('cooldown')
-              .setDescription('Cooldown between ticket creation in seconds (0-3600)')
-              .setMinValue(0)
-              .setMaxValue(3600)
-              .setRequired(false)
-          )
-          .addBooleanOption(option =>
-            option
-              .setName('auto_delete')
-              .setDescription('Auto-delete closed tickets')
-              .setRequired(false)
-          )
-          .addIntegerOption(option =>
-            option
-              .setName('delete_after')
-              .setDescription('Delete tickets after X seconds when closed (60-86400)')
-              .setMinValue(60)
-              .setMaxValue(86400)
-              .setRequired(false)
-          )
-          .addIntegerOption(option =>
-            option
-              .setName('max_active')
-              .setDescription('Maximum active tickets in server (10-500)')
-              .setMinValue(10)
-              .setMaxValue(500)
-              .setRequired(false)
-          )
-          .addIntegerOption(option =>
-            option
-              .setName('inactive_days')
-              .setDescription('Auto-close inactive tickets after X days (0=disabled, 1-30)')
-              .setMinValue(0)
-              .setMaxValue(30)
-              .setRequired(false)
-          )
-          .addBooleanOption(option =>
-            option
-              .setName('dm_transcripts')
-              .setDescription('DM transcripts to ticket creators')
-              .setRequired(false)
-          )
-          .addBooleanOption(option =>
-            option
-              .setName('close_own')
-              .setDescription('Allow users to close their own tickets')
-              .setRequired(false)
-          )
+          .setName('list')
+          .setDescription('List all ticket categories')
       )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('panel_message')
-          .setDescription('Customize the ticket panel message')
-          .addStringOption(option =>
-            option
-              .setName('title')
-              .setDescription('Panel embed title')
-              .setMaxLength(256)
-              .setRequired(false)
-          )
-          .addStringOption(option =>
-            option
-              .setName('description')
-              .setDescription('Panel embed description')
-              .setMaxLength(4096)
-              .setRequired(false)
-          )
-          .addStringOption(option =>
-            option
-              .setName('footer')
-              .setDescription('Panel embed footer')
-              .setMaxLength(2048)
-              .setRequired(false)
-          )
-          .addStringOption(option =>
-            option
-              .setName('button_label')
-              .setDescription('Button label text')
-              .setMaxLength(80)
-              .setRequired(false)
-          )
-          .addStringOption(option =>
-            option
-              .setName('welcome_message')
-              .setDescription('Message sent when ticket is created')
-              .setMaxLength(2000)
-              .setRequired(false)
-          )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('settings')
+      .setDescription('Configure ticket system settings')
+      .addIntegerOption(option =>
+        option
+          .setName('max_tickets')
+          .setDescription('Maximum tickets per user (1-10)')
+          .setMinValue(1)
+          .setMaxValue(10)
+          .setRequired(false)
       )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('view')
-          .setDescription('View current ticket system configuration')
+      .addIntegerOption(option =>
+        option
+          .setName('cooldown')
+          .setDescription('Cooldown between ticket creation in seconds (0-3600)')
+          .setMinValue(0)
+          .setMaxValue(3600)
+          .setRequired(false)
       )
+      .addBooleanOption(option =>
+        option
+          .setName('auto_delete')
+          .setDescription('Auto-delete closed tickets')
+          .setRequired(false)
+      )
+      .addIntegerOption(option =>
+        option
+          .setName('delete_after')
+          .setDescription('Delete tickets after X seconds when closed (60-86400)')
+          .setMinValue(60)
+          .setMaxValue(86400)
+          .setRequired(false)
+      )
+      .addIntegerOption(option =>
+        option
+          .setName('max_active')
+          .setDescription('Maximum active tickets in server (10-500)')
+          .setMinValue(10)
+          .setMaxValue(500)
+          .setRequired(false)
+      )
+      .addIntegerOption(option =>
+        option
+          .setName('inactive_days')
+          .setDescription('Auto-close inactive tickets after X days (0=disabled, 1-30)')
+          .setMinValue(0)
+          .setMaxValue(30)
+          .setRequired(false)
+      )
+      .addBooleanOption(option =>
+        option
+          .setName('dm_transcripts')
+          .setDescription('DM transcripts to ticket creators')
+          .setRequired(false)
+      )
+      .addBooleanOption(option =>
+        option
+          .setName('close_own')
+          .setDescription('Allow users to close their own tickets')
+          .setRequired(false)
+      )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('messages')
+      .setDescription('Customize ticket system messages')
+      .addStringOption(option =>
+        option
+          .setName('panel_title')
+          .setDescription('Panel embed title')
+          .setMaxLength(256)
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option
+          .setName('panel_description')
+          .setDescription('Panel embed description')
+          .setMaxLength(4096)
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option
+          .setName('panel_footer')
+          .setDescription('Panel embed footer')
+          .setMaxLength(2048)
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option
+          .setName('button_label')
+          .setDescription('Button label text')
+          .setMaxLength(80)
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option
+          .setName('welcome_message')
+          .setDescription('Message sent when ticket is created')
+          .setMaxLength(2000)
+          .setRequired(false)
+      )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('config')
+      .setDescription('View current ticket system configuration')
   )
   .addSubcommand(subcommand =>
     subcommand
@@ -227,13 +238,13 @@ export const ticketData = new SlashCommandBuilder()
       .addStringOption(option =>
         option
           .setName('title')
-          .setDescription('Panel title')
+          .setDescription('Panel title (overrides default)')
           .setRequired(false)
       )
       .addStringOption(option =>
         option
           .setName('description')
-          .setDescription('Panel description')
+          .setDescription('Panel description (overrides default)')
           .setRequired(false)
       )
       .addStringOption(option =>
@@ -298,6 +309,17 @@ export const ticketData = new SlashCommandBuilder()
           .setDescription('Reason for closing')
           .setRequired(false)
       )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('enable')
+      .setDescription('Enable or disable the ticket system')
+      .addBooleanOption(option =>
+        option
+          .setName('enabled')
+          .setDescription('Enable or disable')
+          .setRequired(true)
+      )
   );
 
 export async function execute(interaction) {
@@ -308,11 +330,19 @@ export async function execute(interaction) {
   const subcommandGroup = interaction.options.getSubcommandGroup();
   const subcommand = interaction.options.getSubcommand();
 
-  if (subcommandGroup === 'setup') {
-    return executeSetup(interaction, subcommand);
+  if (subcommandGroup === 'category') {
+    return executeCategoryCommands(interaction, subcommand);
   }
 
   switch (subcommand) {
+    case 'setup':
+      return executeSetup(interaction);
+    case 'settings':
+      return executeSettings(interaction);
+    case 'messages':
+      return executeMessages(interaction);
+    case 'config':
+      return executeConfig(interaction);
     case 'panel':
       return executePanel(interaction);
     case 'add':
@@ -325,10 +355,12 @@ export async function execute(interaction) {
       return executeStats(interaction);
     case 'close':
       return executeClose(interaction);
+    case 'enable':
+      return executeEnable(interaction);
   }
 }
 
-async function executeSetup(interaction, subcommand) {
+async function executeSetup(interaction) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
@@ -337,26 +369,10 @@ async function executeSetup(interaction, subcommand) {
     });
   }
 
-  switch (subcommand) {
-    case 'init':
-      return executeSetupInit(interaction);
-    case 'category':
-      return executeSetupCategory(interaction);
-    case 'remove_category':
-      return executeSetupRemoveCategory(interaction);
-    case 'settings':
-      return executeSetupSettings(interaction);
-    case 'panel_message':
-      return executeSetupPanelMessage(interaction);
-    case 'view':
-      return executeSetupView(interaction);
-  }
-}
-
-async function executeSetupInit(interaction) {
   const category = interaction.options.getChannel('category');
   const logChannel = interaction.options.getChannel('log_channel');
   const transcriptChannel = interaction.options.getChannel('transcript_channel');
+  const enable = interaction.options.getBoolean('enable') ?? false;
 
   await interaction.deferReply();
 
@@ -373,8 +389,10 @@ async function executeSetupInit(interaction) {
       ticketSystem.config.transcriptChannel = transcriptChannel.id;
     }
 
-    // Enable system
-    ticketSystem.config.enabled = true;
+    // Enable system if requested
+    if (enable) {
+      ticketSystem.config.enabled = true;
+    }
 
     // Set default settings if not present
     ticketSystem.config.maxTicketsPerUser = ticketSystem.config.maxTicketsPerUser || 3;
@@ -392,27 +410,47 @@ async function executeSetupInit(interaction) {
     await ticketSystem.saveConfig();
 
     const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket System Initialized')
-      .setDescription('Basic ticket system setup completed!')
+      .setTitle('✅ Ticket System Setup Complete')
+      .setDescription(`Basic ticket system setup completed!${enable ? ' System is now enabled.' : ''}`)
       .setColor(0x00ff00)
       .addFields(
         { name: 'Ticket Category', value: `${category}`, inline: true },
         { name: 'Log Channel', value: `${logChannel}`, inline: true },
-        { name: 'Transcript Channel', value: transcriptChannel ? `${transcriptChannel}` : 'Not set', inline: true }
+        { name: 'Transcript Channel', value: transcriptChannel ? `${transcriptChannel}` : 'Not set', inline: true },
+        { name: 'Status', value: enable ? '✅ Enabled' : '❌ Disabled', inline: true }
       )
-      .setFooter({ text: 'Use /ticket setup category to add ticket categories' })
+      .setFooter({ text: 'Use /ticket category add to add ticket categories' })
       .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('[Ticket Setup] Error initializing:', error);
+    console.error('[Ticket Setup] Error:', error);
     await interaction.editReply({
-      content: '❌ Failed to initialize ticket system.'
+      content: '❌ Failed to setup ticket system.'
     });
   }
 }
 
-async function executeSetupCategory(interaction) {
+async function executeCategoryCommands(interaction, subcommand) {
+  // Admin only
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: '❌ Only administrators can manage ticket categories.',
+      ephemeral: true
+    });
+  }
+
+  switch (subcommand) {
+    case 'add':
+      return executeCategoryAdd(interaction);
+    case 'remove':
+      return executeCategoryRemove(interaction);
+    case 'list':
+      return executeCategoryList(interaction);
+  }
+}
+
+async function executeCategoryAdd(interaction) {
   const id = interaction.options.getString('id').toLowerCase().replace(/\s+/g, '-');
   const name = interaction.options.getString('name');
   const description = interaction.options.getString('description');
@@ -462,14 +500,14 @@ async function executeSetupCategory(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('[Ticket Setup] Error adding category:', error);
+    console.error('[Ticket Category] Error adding category:', error);
     await interaction.editReply({
       content: '❌ Failed to add ticket category.'
     });
   }
 }
 
-async function executeSetupRemoveCategory(interaction) {
+async function executeCategoryRemove(interaction) {
   const id = interaction.options.getString('id');
 
   const category = ticketSystem.config.categories.find(c => c.id === id);
@@ -552,7 +590,42 @@ async function executeSetupRemoveCategory(interaction) {
   });
 }
 
-async function executeSetupSettings(interaction) {
+async function executeCategoryList(interaction) {
+  const categories = ticketSystem.config.categories || [];
+
+  if (categories.length === 0) {
+    return interaction.reply({
+      content: '❌ No ticket categories configured.',
+      ephemeral: true
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 Ticket Categories')
+    .setColor(0x0099ff)
+    .setDescription(`Total categories: ${categories.length}`)
+    .setTimestamp();
+
+  for (const cat of categories) {
+    embed.addFields({
+      name: `${cat.emoji} ${cat.name}`,
+      value: `ID: \`${cat.id}\`\nDescription: ${cat.description}\nSupport Role: <@&${cat.supportRole}>\nCategory: ${cat.categoryId ? `<#${cat.categoryId}>` : 'Default'}`,
+      inline: false
+    });
+  }
+
+  await interaction.reply({ embeds: [embed] });
+}
+
+async function executeSettings(interaction) {
+  // Admin only
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: '❌ Only administrators can change ticket settings.',
+      ephemeral: true
+    });
+  }
+
   const maxTickets = interaction.options.getInteger('max_tickets');
   const cooldown = interaction.options.getInteger('cooldown');
   const autoDelete = interaction.options.getBoolean('auto_delete');
@@ -632,14 +705,96 @@ async function executeSetupSettings(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('[Ticket Setup] Error updating settings:', error);
+    console.error('[Ticket Settings] Error updating:', error);
     await interaction.editReply({
       content: '❌ Failed to update settings.'
     });
   }
 }
 
-async function executeSetupView(interaction) {
+async function executeMessages(interaction) {
+  // Admin only
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: '❌ Only administrators can customize messages.',
+      ephemeral: true
+    });
+  }
+
+  const panelTitle = interaction.options.getString('panel_title');
+  const panelDescription = interaction.options.getString('panel_description');
+  const panelFooter = interaction.options.getString('panel_footer');
+  const buttonLabel = interaction.options.getString('button_label');
+  const welcomeMessage = interaction.options.getString('welcome_message');
+
+  await interaction.deferReply();
+
+  try {
+    const changes = [];
+
+    if (panelTitle !== null) {
+      ticketSystem.config.panelEmbed.title = panelTitle;
+      changes.push(`Panel title updated`);
+    }
+
+    if (panelDescription !== null) {
+      ticketSystem.config.panelEmbed.description = panelDescription;
+      changes.push(`Panel description updated`);
+    }
+
+    if (panelFooter !== null) {
+      ticketSystem.config.panelEmbed.footer = panelFooter;
+      changes.push(`Panel footer updated`);
+    }
+
+    if (buttonLabel !== null) {
+      ticketSystem.config.panelEmbed.buttonLabel = buttonLabel;
+      changes.push(`Button label updated`);
+    }
+
+    if (welcomeMessage !== null) {
+      ticketSystem.config.welcomeMessage = welcomeMessage;
+      changes.push(`Welcome message updated`);
+    }
+
+    if (changes.length === 0) {
+      return interaction.editReply({
+        content: '❌ No messages were provided to update.'
+      });
+    }
+
+    await ticketSystem.saveConfig();
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Messages Updated')
+      .setDescription('Successfully updated ticket system messages:')
+      .setColor(0x00ff00)
+      .addFields({
+        name: 'Changes',
+        value: changes.join('\n')
+      })
+      .setTimestamp();
+
+    // Show preview
+    const previewEmbed = new EmbedBuilder()
+      .setTitle(ticketSystem.config.panelEmbed.title)
+      .setDescription(ticketSystem.config.panelEmbed.description)
+      .setColor(ticketSystem.config.panelEmbed.color)
+      .setFooter({ text: ticketSystem.config.panelEmbed.footer });
+
+    await interaction.editReply({ 
+      embeds: [embed, previewEmbed],
+      content: '**Preview:**'
+    });
+  } catch (error) {
+    console.error('[Ticket Messages] Error updating:', error);
+    await interaction.editReply({
+      content: '❌ Failed to update messages.'
+    });
+  }
+}
+
+async function executeConfig(interaction) {
   const config = ticketSystem.config;
 
   const embed = new EmbedBuilder()
@@ -690,6 +845,39 @@ async function executeSetupView(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
+async function executeEnable(interaction) {
+  // Admin only
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: '❌ Only administrators can enable/disable the ticket system.',
+      ephemeral: true
+    });
+  }
+
+  const enabled = interaction.options.getBoolean('enabled');
+
+  ticketSystem.config.enabled = enabled;
+  await ticketSystem.saveConfig();
+
+  if (enabled) {
+    // Setup event listeners if enabling
+    ticketSystem.setupEventListeners();
+    if (ticketSystem.config.autoCloseInactiveDays > 0) {
+      ticketSystem.setupInactiveCheck();
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(enabled ? '✅ Ticket System Enabled' : '❌ Ticket System Disabled')
+    .setDescription(enabled ? 
+      'The ticket system is now active. Users can create tickets.' : 
+      'The ticket system has been disabled. Users cannot create new tickets.')
+    .setColor(enabled ? 0x00ff00 : 0xff0000)
+    .setTimestamp();
+
+  await interaction.reply({ embeds: [embed] });
+}
+
 async function executePanel(interaction) {
   const channel = interaction.options.getChannel('channel');
   const title = interaction.options.getString('title');
@@ -702,7 +890,7 @@ async function executePanel(interaction) {
     // Check if system is configured
     if (!ticketSystem.config.categories || ticketSystem.config.categories.length === 0) {
       return interaction.editReply({
-        content: '❌ No ticket categories configured. Use `/ticket setup category` to add categories first.'
+        content: '❌ No ticket categories configured. Use `/ticket category add` to add categories first.'
       });
     }
 
@@ -741,7 +929,7 @@ async function executePanel(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('[Ticket Command] Error creating panel:', error);
+    console.error('[Ticket Panel] Error creating panel:', error);
     await interaction.editReply({
       content: '❌ Failed to create ticket panel.'
     });
@@ -789,8 +977,7 @@ async function executeClose(interaction) {
   await ticketSystem.handleClose(closeButton, ticket);
 }
 
-// Keep other functions (executeAdd, executeRemove, executeRename, executeStats) as they were
-
+// Keep these functions as they were
 async function executeAdd(interaction) {
   const user = interaction.options.getUser('user');
   
@@ -835,8 +1022,18 @@ async function executeAdd(interaction) {
     await interaction.reply({
       content: `✅ Added ${user} to the ticket.`
     });
+
+    // Log action
+    if (ticketSystem.config.enableLogging && ticketSystem.config.logActions.includes('add_user')) {
+      await ticketSystem.logAction(interaction.guild, {
+        action: 'User Added to Ticket',
+        ticket: ticket,
+        addedUser: user,
+        addedBy: interaction.user
+      });
+    }
   } catch (error) {
-    console.error('[Ticket Command] Error adding user:', error);
+    console.error('[Ticket Add] Error adding user:', error);
     await interaction.reply({
       content: '❌ Failed to add user to ticket.',
       ephemeral: true
@@ -891,8 +1088,18 @@ async function executeRemove(interaction) {
     await interaction.reply({
       content: `✅ Removed ${user} from the ticket.`
     });
+
+    // Log action
+    if (ticketSystem.config.enableLogging && ticketSystem.config.logActions.includes('remove_user')) {
+      await ticketSystem.logAction(interaction.guild, {
+        action: 'User Removed from Ticket',
+        ticket: ticket,
+        removedUser: user,
+        removedBy: interaction.user
+      });
+    }
   } catch (error) {
-    console.error('[Ticket Command] Error removing user:', error);
+    console.error('[Ticket Remove] Error removing user:', error);
     await interaction.reply({
       content: '❌ Failed to remove user from ticket.',
       ephemeral: true
@@ -930,8 +1137,19 @@ async function executeRename(interaction) {
     await interaction.reply({
       content: `✅ Renamed ticket to: ${newName}`
     });
+
+    // Log action
+    if (ticketSystem.config.enableLogging && ticketSystem.config.logActions.includes('rename')) {
+      await ticketSystem.logAction(interaction.guild, {
+        action: 'Ticket Renamed',
+        ticket: ticket,
+        oldName: interaction.channel.name,
+        newName: newName,
+        renamedBy: interaction.user
+      });
+    }
   } catch (error) {
-    console.error('[Ticket Command] Error renaming channel:', error);
+    console.error('[Ticket Rename] Error renaming channel:', error);
     await interaction.reply({
       content: '❌ Failed to rename ticket.',
       ephemeral: true
@@ -973,7 +1191,8 @@ async function executeStats(interaction) {
 export async function autocomplete(interaction) {
   const focusedOption = interaction.options.getFocused(true);
   
-  if (focusedOption.name === 'id' && interaction.options.getSubcommand() === 'remove_category') {
+  if (focusedOption.name === 'id' && interaction.options.getSubcommand() === 'remove' && 
+      interaction.options.getSubcommandGroup() === 'category') {
     const categories = ticketSystem.config.categories || [];
     const choices = categories.map(cat => ({
       name: `${cat.name} (${cat.id})`,

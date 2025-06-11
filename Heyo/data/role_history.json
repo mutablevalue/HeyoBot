@@ -7,6 +7,26 @@
       {
         "roles": [
           {
+            "id": "1381019724371984485",
+            "name": "Forced Nickname"
+          }
+        ],
+        "timestamp": "2025-06-11T15:44:32.484Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1381113939412389954",
+            "name": "Muted"
+          }
+        ],
+        "timestamp": "2025-06-11T15:36:31.143Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
             "id": "1381115435885264896",
             "name": "Muted"
           }
@@ -22,6 +42,75 @@
           }
         ],
         "timestamp": "2025-06-08T03:40:29.855Z",
+        "reason": "automatic"
+      }
+    ]
+  },
+  "1379953422241103943-1235002473698299956": {
+    "userId": "1235002473698299956",
+    "username": "notarustdev",
+    "guildId": "1379953422241103943",
+    "history": [
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          },
+          {
+            "id": "1381019724371984485",
+            "name": "Forced Nickname"
+          }
+        ],
+        "timestamp": "2025-06-11T15:44:22.689Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          }
+        ],
+        "timestamp": "2025-06-11T15:43:15.424Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          },
+          {
+            "id": "1381113939412389954",
+            "name": "Muted"
+          }
+        ],
+        "timestamp": "2025-06-11T15:43:14.718Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          }
+        ],
+        "timestamp": "2025-06-11T15:36:11.448Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          },
+          {
+            "id": "1381113939412389954",
+            "name": "Muted"
+          }
+        ],
+        "timestamp": "2025-06-11T15:36:09.685Z",
         "reason": "automatic"
       }
     ]
