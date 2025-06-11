@@ -316,22 +316,21 @@ export class EntranceSystem {
    * @param {import("discord.js").User} user
    */
   async handleReactionAdd(reaction, user) {
-    console.log(`[EntranceSystem] Reaction add detected from ${user.tag}`);
     
     const instance = this.instances.get(reaction.message.guild.id);
     if (!instance) {
-      console.log(`[EntranceSystem] No instance found for guild ${reaction.message.guild.id}`);
+      //console.log(`[EntranceSystem] No instance found for guild ${reaction.message.guild.id}`);
       return;
     }
 
     // Check if it's the correct message and emoji
     if (reaction.message.id !== instance.messageId) {
-      console.log(`[EntranceSystem] Wrong message ID. Expected: ${instance.messageId}, Got: ${reaction.message.id}`);
+      //console.log(`[EntranceSystem] Wrong message ID. Expected: ${instance.messageId}, Got: ${reaction.message.id}`);
       return;
     }
     
     if (reaction.emoji.toString() !== instance.emoji) {
-      console.log(`[EntranceSystem] Wrong emoji. Expected: ${instance.emoji}, Got: ${reaction.emoji.toString()}`);
+      //console.log(`[EntranceSystem] Wrong emoji. Expected: ${instance.emoji}, Got: ${reaction.emoji.toString()}`);
       return;
     }
 

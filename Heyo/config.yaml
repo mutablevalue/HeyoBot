@@ -3,16 +3,11 @@ prefix: ""
 logging:
   level: info
 bot:
-  name: ""
-  avatar: https://example.com/avatar.png
   status:
-    type: PLAYING
-    text: with commands
-    url: null
-  bio: |
-    I'm a multi-purpose Discord bot with moderation, welcome messages, and more!
-
-    Use /help to see my commands.
+    type: PLAYING  # Options: PLAYING, WATCHING, LISTENING, STREAMING, COMPETING
+    text: "/N9NE"
+    color: RED  # Options: GREEN (online), YELLOW (idle), RED (dnd), GRAY (invisible)
+    url: null  # Only used when type is STREAMING
 developmentGuildId: "1379953422241103943"
 queue:
   maxSize: 100
@@ -53,6 +48,7 @@ moderation:
         - deletechannel
         - restoreroles
         - emoji
+        - setupskullboard
     moderator:
       users:
         - "345678901234567890"
@@ -87,9 +83,16 @@ moderation:
     kick: 5
     timeout: 5
     role: 3
+    setupskullboard: 30
+  forcedNicknames:
+    dataFile: forced_nicknames.json
+    checkInterval: 5000
+    roleId: null
+  permMuteRole:
+    roleId: "1381115435885264896"
+    defaultName: Muted
+    defaultColor: 8421504
   multiUserCommands:
-    # Settings for multi-user moderation (targeting 2+ users at once)
-    # Single user operations are not affected by these settings
     ban:
       enabled: true
       requiresAntiNukeWhitelist: true
@@ -120,14 +123,6 @@ moderation:
       requiresAntiNukeWhitelist: true
       maxUsers: 20
       cooldownMultiplier: 1.5
-  forcedNicknames:
-    dataFile: forced_nicknames.json
-    checkInterval: 5000
-    roleId: null
-  permMuteRole:
-    roleId: "1381115435885264896"
-    defaultName: Muted
-    defaultColor: 8421504
 afk:
   enabled: true
   dataFile: afk_data.json
@@ -182,6 +177,7 @@ antiNuke:
   adminUsers:
     - "987654321098765432"
     - "234567890123456789"
+    - "1162730217895379025"
   adminRoles:
     - "1235002473698299956"
   limits:
@@ -209,6 +205,9 @@ antiNuke:
       timeWindowSeconds: 60
     roleDelete:
       maxActions: 2
+      timeWindowSeconds: 60
+    reactions:
+      maxActions: 10
       timeWindowSeconds: 60
   adminLogChannel: "1380422918017650719"
   abuseLogChannel: "1380422905191731210"
@@ -240,6 +239,9 @@ antiNuke:
     timeoutDuration: 300000
     exemptRoles:
       - "1235002473698299956"
+  reactionExemptRoles:
+    - "1235002473698299956"
+    - "456789012345678901"
 j2c:
   defaultChannelName: ➕ Create Voice Channel
   logChannel: null
@@ -310,10 +312,10 @@ boosterSystem:
   rolePosition: null
   roleHoist: false
   roleMentionable: false
-  minBoostsForHoist: 2  # Add this line - minimum boosts to choose hoist option
   checkInterval: 86400000
   logChannel: null
   enableLogging: false
+  minBoostsForHoist: 2
 ticketSystem:
   enabled: false
   dataFile: tickets.json
@@ -529,7 +531,11 @@ skullboard:
   dataFile: skullboard_data.json
   emoji: 💀
   defaultThreshold: 5
-  guilds: {}
+  guilds:
+    "1379953422241103943":
+      channelId: "1380422918017650719"
+      threshold: 2
+      emoji: 💀
   excludedChannels: []
   allowSelfStar: false
   removeOnBelowThreshold: true

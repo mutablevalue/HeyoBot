@@ -13,9 +13,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export class SkullboardSystem {
-  constructor(client, configLoader) {
+  constructor(client, configLoader, antiNuke = null) {
     this.client = client;
     this.configLoader = configLoader;
+    this.antiNuke = antiNuke; // Anti-nuke system reference
     this.config = this.configLoader.get('skullboard');
     
     if (!this.config.enabled) {
@@ -24,6 +25,7 @@ export class SkullboardSystem {
     }
     
     this.skullboardMessages = new Map(); // messageId -> skullboard data
+    this.reactionTracking = new Map(); // userId -> reaction timestamps
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
     
     this.loadData();
@@ -96,20 +98,46 @@ export class SkullboardSystem {
       }
     }
     
-    // Check if it's the configured emoji
-    const emojiName = reaction.emoji.name;
-    const emojiId = reaction.emoji.id;
-    const emojiString = emojiId ? `<:${emojiName}:${emojiId}>` : emojiName;
-    
-    if (emojiString !== this.config.emoji && emojiName !== this.config.emoji) {
-      return;
-    }
-    
     const message = reaction.message;
     const guildConfig = this.config.guilds[message.guild.id];
     
     if (!guildConfig || !guildConfig.channelId) {
       return; // Skullboard not set up for this guild
+    }
+    
+    // Anti-spam protection
+    if (type === 'add' && this.antiNuke) {
+      if (!this.checkReactionRateLimit(user.id)) {
+        // Remove the reaction if rate limit exceeded
+        await reaction.users.remove(user.id).catch(() => {});
+        
+        // Track this as suspicious behavior
+        this.antiNuke.trackSuspiciousUser(user.id, {
+          type: 'skullboard_spam',
+          action: 'Excessive skullboard reactions'
+        });
+        
+        return;
+      }
+    }
+    
+    // Get the guild-specific emoji or default
+    const guildEmoji = guildConfig.emoji || this.config.emoji;
+    
+    // Check if it's the configured emoji
+    const emojiName = reaction.emoji.name;
+    const emojiId = reaction.emoji.id;
+    const emojiString = emojiId ? `<:${emojiName}:${emojiId}>` : emojiName;
+    
+    // More flexible emoji comparison
+    const isMatch = (
+      emojiString === guildEmoji || 
+      emojiName === guildEmoji ||
+      (emojiId && guildEmoji.includes(emojiId)) // Handle custom emojis
+    );
+    
+    if (!isMatch) {
+      return;
     }
     
     // Check if message is from skullboard channel (avoid recursion)
@@ -131,6 +159,8 @@ export class SkullboardSystem {
     const reactionCount = reaction.count;
     const threshold = guildConfig.threshold || this.config.defaultThreshold;
     
+    console.log(`[SkullboardSystem] Reaction ${type}: ${emojiString} on message ${message.id}, count: ${reactionCount}, threshold: ${threshold}`);
+    
     if (reactionCount >= threshold) {
       await this.addToSkullboard(message, reactionCount, guildConfig);
     } else if (type === 'remove') {
@@ -147,12 +177,12 @@ export class SkullboardSystem {
     const existingData = this.skullboardMessages.get(message.id);
     if (existingData) {
       // Update existing
-      await this.updateSkullboardMessage(existingData, reactionCount, skullboardChannel);
+      await this.updateSkullboardMessage(existingData, reactionCount, skullboardChannel, guildConfig);
       return;
     }
     
     // Create skullboard embed
-    const embed = await this.createSkullboardEmbed(message, reactionCount);
+    const embed = await this.createSkullboardEmbed(message, reactionCount, guildConfig);
     if (!embed) return;
     
     try {
@@ -172,9 +202,11 @@ export class SkullboardSystem {
       this.skullboardMessages.set(message.id, skullboardData);
       this.saveData();
       
+      console.log(`[SkullboardSystem] Added message ${message.id} to skullboard`);
+      
       // Log if enabled
       if (this.config.logChannel) {
-        await this.logSkullboardAction('add', message, reactionCount);
+        await this.logSkullboardAction('add', message, reactionCount, guildConfig);
       }
       
     } catch (error) {
@@ -200,19 +232,21 @@ export class SkullboardSystem {
         this.skullboardMessages.delete(message.id);
         this.saveData();
         
+        console.log(`[SkullboardSystem] Removed message ${message.id} from skullboard (below threshold)`);
+        
         if (this.config.logChannel) {
-          await this.logSkullboardAction('remove', message, reactionCount);
+          await this.logSkullboardAction('remove', message, reactionCount, guildConfig);
         }
       } catch (error) {
         console.error('[SkullboardSystem] Error removing from skullboard:', error);
       }
     } else {
       // Update reaction count
-      await this.updateSkullboardMessage(existingData, reactionCount, skullboardChannel);
+      await this.updateSkullboardMessage(existingData, reactionCount, skullboardChannel, guildConfig);
     }
   }
   
-  async updateSkullboardMessage(skullboardData, newCount, skullboardChannel) {
+  async updateSkullboardMessage(skullboardData, newCount, skullboardChannel, guildConfig) {
     try {
       const skullboardMsg = await skullboardChannel.messages.fetch(skullboardData.skullboardMessageId);
       const originalMsg = await this.client.channels.cache.get(skullboardData.channelId)
@@ -220,7 +254,7 @@ export class SkullboardSystem {
       
       if (!originalMsg) return;
       
-      const embed = await this.createSkullboardEmbed(originalMsg, newCount);
+      const embed = await this.createSkullboardEmbed(originalMsg, newCount, guildConfig);
       if (!embed) return;
       
       await skullboardMsg.edit({ embeds: [embed] });
@@ -229,13 +263,15 @@ export class SkullboardSystem {
       skullboardData.reactionCount = newCount;
       this.saveData();
       
+      console.log(`[SkullboardSystem] Updated skullboard message for ${originalMsg.id}, new count: ${newCount}`);
+      
     } catch (error) {
       console.error('[SkullboardSystem] Error updating skullboard message:', error);
     }
   }
   
-  async createSkullboardEmbed(message, reactionCount) {
-    const emoji = this.config.emoji;
+  async createSkullboardEmbed(message, reactionCount, guildConfig) {
+    const emoji = guildConfig.emoji || this.config.emoji;
     const stars = this.getStarRating(reactionCount);
     
     const embed = new EmbedBuilder()
@@ -320,7 +356,7 @@ export class SkullboardSystem {
         this.saveData();
         
         if (this.config.logChannel) {
-          await this.logSkullboardAction('delete', message, skullboardData.reactionCount);
+          await this.logSkullboardAction('delete', message, skullboardData.reactionCount, guildConfig);
         }
       } catch (error) {
         console.error('[SkullboardSystem] Error handling message delete:', error);
@@ -328,7 +364,7 @@ export class SkullboardSystem {
     }
   }
   
-  async setupSkullboard(guild, channelId, threshold) {
+  async setupSkullboard(guild, channelId, threshold, emoji) {
     try {
       const channel = guild.channels.cache.get(channelId);
       if (!channel || !channel.isTextBased()) {
@@ -340,11 +376,14 @@ export class SkullboardSystem {
       
       this.config.guilds[guild.id] = {
         channelId: channelId,
-        threshold: threshold || this.config.defaultThreshold
+        threshold: threshold || this.config.defaultThreshold,
+        emoji: emoji || this.config.emoji
       };
       
       this.configLoader.set(`skullboard.guilds.${guild.id}`, this.config.guilds[guild.id]);
       await this.configLoader.save();
+      
+      console.log(`[SkullboardSystem] Setup skullboard for guild ${guild.id}: channel=${channelId}, threshold=${threshold}, emoji=${emoji}`);
       
       return true;
     } catch (error) {
@@ -353,12 +392,14 @@ export class SkullboardSystem {
     }
   }
   
-  async logSkullboardAction(action, message, count) {
+  async logSkullboardAction(action, message, count, guildConfig) {
     const logChannelId = this.config.logChannel;
     if (!logChannelId) return;
     
     const logChannel = this.client.channels.cache.get(logChannelId);
     if (!logChannel || !logChannel.isTextBased()) return;
+    
+    const emoji = guildConfig?.emoji || this.config.emoji;
     
     const embed = new EmbedBuilder()
       .setTitle(`Skullboard ${action.charAt(0).toUpperCase() + action.slice(1)}`)
@@ -366,7 +407,7 @@ export class SkullboardSystem {
       .addFields(
         { name: 'Author', value: `${message.author.tag} (${message.author.id})`, inline: true },
         { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-        { name: `${this.config.emoji} Count`, value: count.toString(), inline: true }
+        { name: `${emoji} Count`, value: count.toString(), inline: true }
       )
       .setColor(action === 'add' ? 0x00ff00 : action === 'remove' ? 0xff0000 : 0xffa500)
       .setTimestamp();
@@ -395,5 +436,42 @@ export class SkullboardSystem {
       topMessages: topMessages,
       config: this.config.guilds[guildId] || null
     };
+  }
+  
+  checkReactionRateLimit(userId) {
+    const now = Date.now();
+    const userReactions = this.reactionTracking.get(userId) || [];
+    
+    // Remove reactions older than 1 minute
+    const recentReactions = userReactions.filter(timestamp => now - timestamp < 60000);
+    
+    // Check if user is reaction spamming (more than 10 reactions per minute)
+    if (recentReactions.length >= 10) {
+      console.log(`[SkullboardSystem] User ${userId} is reaction spamming`);
+      return false;
+    }
+    
+    // Add current timestamp
+    recentReactions.push(now);
+    this.reactionTracking.set(userId, recentReactions);
+    
+    // Clean up old entries periodically
+    if (Math.random() < 0.1) { // 10% chance to clean up
+      this.cleanupReactionTracking();
+    }
+    
+    return true;
+  }
+  
+  cleanupReactionTracking() {
+    const now = Date.now();
+    for (const [userId, timestamps] of this.reactionTracking) {
+      const recent = timestamps.filter(t => now - t < 300000); // Keep 5 minutes
+      if (recent.length === 0) {
+        this.reactionTracking.delete(userId);
+      } else {
+        this.reactionTracking.set(userId, recent);
+      }
+    }
   }
 }

@@ -1,0 +1,23 @@
+{
+  "messages": {
+    "1382415179123261510": {
+      "originalMessageId": "1382415179123261510",
+      "skullboardMessageId": "1382415274736877739",
+      "authorId": "1379937224254296164",
+      "channelId": "1379953422241103946",
+      "guildId": "1379953422241103943",
+      "reactionCount": 4,
+      "timestamp": 1749663937217
+    },
+    "1382415381976842320": {
+      "originalMessageId": "1382415381976842320",
+      "skullboardMessageId": "1382415830515716136",
+      "authorId": "1235002473698299956",
+      "channelId": "1379953422241103946",
+      "guildId": "1379953422241103943",
+      "reactionCount": 4,
+      "timestamp": 1749664069737
+    }
+  },
+  "lastUpdated": 1749665059739
+}
