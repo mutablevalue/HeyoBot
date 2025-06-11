@@ -1,0 +1,1127 @@
+// src/systems/friendGroupSystem.js
+/**
+ * Friend Group System
+ * 
+ * Allows users to apply for friend group voice channels with staff review.
+ * 
+ * Permission Hierarchy:
+ * 1. Server Owner (if ownerBypass enabled) → Can setup system
+ * 2. AntiNuke Administrators → Can setup system
+ * 3. System Administrators → Can review applications
+ * 4. System Moderators → Can review applications
+ * 5. Regular Users → Can apply for friend groups
+ * 
+ * Features:
+ * - Application system with member requirements
+ * - Staff review process
+ * - Custom role creation for accepted groups
+ * - Voice channel management
+ * - Persistent data storage
+ */
+import { 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle,
+  ChannelType,
+  PermissionFlagsBits,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
+} from 'discord.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export class FriendGroupSystem {
+  /**
+   * @param {import("discord.js").Client} client
+   * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
+   * @param {import("./moderationSystem.js").ModerationSystem} moderationSystem
+   */
+  constructor(client, configLoader, moderationSystem) {
+    console.log('[FriendGroupSystem] Initializing...');
+    
+    this.client = client;
+    this.configLoader = configLoader;
+    this.moderationSystem = moderationSystem;
+    
+    // Get config from config loader
+    this.config = this.configLoader.get('friendGroup') || {};
+    
+    // Initialize default config if not exists
+    this.initializeDefaultConfig();
+    
+    // Active applications tracking
+    this.activeApplications = new Map(); // applicationId -> application data
+    this.userApplications = new Map(); // userId -> applicationId
+    this.acceptedGroups = new Map(); // ownerId -> group data
+    
+    // Load data
+    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'friend_groups.json');
+    this.loadGroupData();
+
+    // Setup event listeners
+    if (this.config.enabled) {
+      console.log('[FriendGroupSystem] System enabled, setting up listeners');
+      this.setupEventListeners();
+    } else {
+      console.log('[FriendGroupSystem] System disabled, skipping listeners');
+    }
+    
+    console.log('[FriendGroupSystem] Initialization complete');
+  }
+
+  /**
+   * Initialize default configuration
+   */
+  initializeDefaultConfig() {
+    // Always reload from config first
+    const currentConfig = this.configLoader.get('friendGroup') || {};
+    
+    const defaults = {
+      enabled: true,
+      dataFile: 'friend_groups.json',
+      minMembers: 6,
+      cooldown: 604800000, // 7 days
+      maxApplicationsPerUser: 1,
+      reviewCategory: 'Staff Review',
+      friendGroupCategory: 'Friendgroups',
+      applicationChannelFormat: 'fg-app-{number}',
+      tempOwnerRole: 'fgowner(temp)',
+      defaultRoleColor: null, // No color by default
+      vcUserLimit: 0, // No limit
+      vcBitrate: 64000,
+      messages: {
+        alreadyHasGroup: '❌ You already own a friend group!',
+        pendingApplication: '⏳ You already have a pending application.',
+        cooldownActive: '⏰ Please wait {time} before applying again.',
+        notEnoughMembers: '❌ You must mention at least {min} members.',
+        applicationSubmitted: '✅ Your friend group application has been submitted!',
+        applicationApproved: '✅ Your friend group application has been approved! Check your DMs for instructions.',
+        applicationDenied: '❌ Your friend group application has been denied. Reason: {reason}',
+        setupRequired: '❌ Friend group system is not set up. An admin needs to run `/setupfg` first.',
+        errorSubmitting: '❌ Failed to submit application. Please try again later.'
+      },
+      notifications: {
+        notifyOnSubmit: true,
+        notifyOnReview: true,
+        dmResults: true
+      },
+      logChannel: null,
+      deleteDataAfterDays: 30,
+      maxActiveGroups: 50,
+      maxActiveApplications: 20,
+      allowedPermissions: [
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.Connect,
+        PermissionFlagsBits.Speak,
+        PermissionFlagsBits.Stream,
+        PermissionFlagsBits.UseVAD
+      ]
+    };
+
+    // Deep merge with current config (current config takes priority)
+    this.config = this.deepMerge(defaults, currentConfig);
+    
+    // Ensure guilds object exists
+    if (!this.config.guilds) {
+      this.config.guilds = {};
+    }
+    
+    console.log(`[FriendGroupSystem] Config initialized. MinMembers: ${this.config.minMembers}`);
+  }
+
+  /**
+   * Deep merge utility
+   */
+  deepMerge(target, source) {
+    const output = { ...target };
+    if (this.isObject(target) && this.isObject(source)) {
+      Object.keys(source).forEach(key => {
+        if (this.isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = this.deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+    return output;
+  }
+
+  isObject(item) {
+    return item && typeof item === 'object' && !Array.isArray(item);
+  }
+
+  /**
+   * Load group data from file
+   */
+  loadGroupData() {
+    try {
+      if (fs.existsSync(this.dataPath)) {
+        const data = JSON.parse(fs.readFileSync(this.dataPath, 'utf8'));
+        
+        if (data.activeApplications) {
+          this.activeApplications = new Map(Object.entries(data.activeApplications));
+        }
+        
+        if (data.userApplications) {
+          this.userApplications = new Map(Object.entries(data.userApplications));
+        }
+        
+        if (data.acceptedGroups) {
+          this.acceptedGroups = new Map(Object.entries(data.acceptedGroups));
+        }
+        
+        // Merge guild setups from data file with config
+        if (data.guilds) {
+          if (!this.config.guilds) this.config.guilds = {};
+          for (const [guildId, setup] of Object.entries(data.guilds)) {
+            if (!this.config.guilds[guildId]) {
+              this.config.guilds[guildId] = setup;
+            }
+          }
+        }
+        
+        console.log(`[FriendGroupSystem] Loaded ${this.acceptedGroups.size} friend groups`);
+      }
+    } catch (error) {
+      console.error('[FriendGroupSystem] Error loading group data:', error);
+    }
+  }
+
+  /**
+   * Save group data to file
+   */
+  saveGroupData() {
+    try {
+      const data = {
+        activeApplications: Object.fromEntries(this.activeApplications),
+        userApplications: Object.fromEntries(this.userApplications),
+        acceptedGroups: Object.fromEntries(this.acceptedGroups),
+        guilds: this.config.guilds || {}
+      };
+
+      const dir = path.dirname(this.dataPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      fs.writeFileSync(this.dataPath, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('[FriendGroupSystem] Error saving group data:', error);
+    }
+  }
+
+  /**
+   * Setup event listeners
+   */
+  setupEventListeners() {
+    this.client.on('interactionCreate', async (interaction) => {
+      if (interaction.isButton()) {
+        if (interaction.customId.startsWith('fg_')) {
+          await this.handleApplicationAction(interaction);
+        }
+      } else if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('fg_deny_reason_')) {
+          await this.handleDenyModal(interaction);
+        }
+      }
+    });
+
+    // Clean up old data periodically
+    setInterval(() => {
+      this.cleanupOldData();
+    }, 24 * 60 * 60 * 1000); // Daily
+  }
+
+  /**
+   * Setup the friend group system
+   */
+  async setupFriendGroup(guild, options = {}) {
+    try {
+      // Create or get the review category
+      const reviewCategory = await this.createOrGetCategory(guild,
+        options.reviewCategoryName || this.config.reviewCategory
+      );
+
+      // Create or get the friend group category
+      const fgCategory = await this.createOrGetCategory(guild,
+        options.fgCategoryName || this.config.friendGroupCategory
+      );
+
+      // Save setup data
+      const setupData = {
+        guildId: guild.id,
+        categories: {
+          review: reviewCategory.id,
+          friendGroups: fgCategory.id
+        },
+        createdAt: new Date().toISOString()
+      };
+
+      // Store in config
+      if (!this.config.guilds) this.config.guilds = {};
+      this.config.guilds[guild.id] = setupData;
+      
+      // Save to both config and data file
+      await this.saveConfig();
+      this.saveGroupData();
+      
+      console.log(`[FriendGroupSystem] Setup saved successfully for guild ${guild.id}`);
+
+      return {
+        success: true,
+        setup: setupData,
+        message: 'Friend group system has been set up successfully!'
+      };
+
+    } catch (error) {
+      console.error('[FriendGroupSystem] Setup error:', error);
+      return {
+        success: false,
+        message: 'Failed to setup friend group system',
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Handle modal submission for apply command
+   */
+  async handleModalSubmit(interaction) {
+    const members = interaction.fields.getTextInputValue('members');
+    const activity = interaction.fields.getTextInputValue('activity');
+    const notes = interaction.fields.getTextInputValue('notes');
+
+    // Parse member mentions
+    const memberMentions = members.match(/<@!?(\d+)>/g) || [];
+    const memberIds = memberMentions.map(mention => mention.replace(/<@!?|>/g, ''));
+    
+    // Remove duplicates and filter out the applicant
+    const uniqueMembers = [...new Set(memberIds)].filter(id => id !== interaction.user.id);
+
+    try {
+      const application = await this.handleApplication(
+        interaction,
+        uniqueMembers,
+        activity,
+        notes
+      );
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ Application Submitted')
+        .setDescription(this.config.messages.applicationSubmitted)
+        .setColor(0x00ff00)
+        .addFields(
+          { name: 'Application ID', value: `#${application.id.slice(-4)}`, inline: true },
+          { name: 'Members', value: `${uniqueMembers.length}`, inline: true },
+          { name: 'Status', value: 'Pending Review', inline: true }
+        )
+        .setFooter({ text: 'You will be notified once your application is reviewed.' })
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+
+    } catch (error) {
+      console.error('[FriendGroup] Error in modal submit:', error);
+      
+      await interaction.editReply({
+        content: error.message || this.config.messages.errorSubmitting
+      });
+    }
+  }
+
+  /**
+   * Reload configuration from file
+   */
+  reloadConfig() {
+    console.log('[FriendGroupSystem] Reloading configuration...');
+    
+    // Reload from config file
+    const currentConfig = this.configLoader.get('friendGroup');
+    if (currentConfig) {
+      // Preserve guilds data
+      const guilds = this.config.guilds || {};
+      
+      // Update config with fresh values
+      this.config = { ...currentConfig, guilds };
+      
+      console.log(`[FriendGroupSystem] Config reloaded. MinMembers: ${this.config.minMembers}`);
+    }
+  }
+
+  /**
+   * Handle friend group application
+   */
+  async handleApplication(interaction, members, activity, notes) {
+    // Reload config to get latest values
+    this.reloadConfig();
+    
+    const guild = interaction.guild;
+    const user = interaction.user;
+    const guildSetup = this.config.guilds?.[guild.id];
+    
+    if (!guildSetup) {
+      throw new Error(this.config.messages.setupRequired);
+    }
+
+    // Check if user already has a friend group
+    if (this.acceptedGroups.has(user.id)) {
+      throw new Error(this.config.messages.alreadyHasGroup);
+    }
+
+    // Check if user has pending application
+    if (this.userApplications.has(user.id)) {
+      throw new Error(this.config.messages.pendingApplication);
+    }
+
+    // Check cooldown
+    const lastAttempt = this.getLastAttempt(user.id);
+    if (lastAttempt) {
+      const timeSince = Date.now() - lastAttempt;
+      if (timeSince < this.config.cooldown) {
+        const timeLeft = Math.ceil((this.config.cooldown - timeSince) / 1000 / 60 / 60 / 24);
+        throw new Error(this.config.messages.cooldownActive.replace('{time}', `${timeLeft} days`));
+      }
+    }
+
+    // Validate member count
+    if (members.length < this.config.minMembers) {
+      throw new Error(this.config.messages.notEnoughMembers.replace('{min}', String(this.config.minMembers)));
+    }
+
+    // Create application
+    const applicationId = Date.now().toString();
+    
+    // Get the review category
+    const reviewCategory = guild.channels.cache.get(guildSetup.categories.review);
+    if (!reviewCategory) {
+      throw new Error('Review category not found. Please run /setupfg again.');
+    }
+
+    // Create review channel
+    const channelName = this.config.applicationChannelFormat.replace('{number}', applicationId.slice(-4));
+    const reviewChannel = await guild.channels.create({
+      name: channelName,
+      type: ChannelType.GuildText,
+      parent: reviewCategory.id,
+      topic: `Friend group application from ${user.tag}`,
+      reason: `FG application from ${user.tag}`
+    });
+
+    // Set permissions
+    await this.setReviewChannelPermissions(reviewChannel);
+
+    // Create application data
+    const applicationData = {
+      id: applicationId,
+      userId: user.id,
+      userTag: user.tag,
+      guildId: guild.id,
+      channelId: reviewChannel.id,
+      members: members,
+      activity: activity,
+      notes: notes,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    // Save application
+    this.activeApplications.set(applicationId, applicationData);
+    this.userApplications.set(user.id, applicationId);
+    this.saveGroupData();
+
+    // Send review embed
+    await this.sendReviewEmbed(reviewChannel, applicationData);
+
+    // Log submission
+    await this.logAction(guild, {
+      action: 'Friend Group Application Submitted',
+      user: user,
+      applicationId: applicationId.slice(-4),
+      memberCount: members.length,
+      reviewChannel: `<#${reviewChannel.id}>`
+    });
+
+    return applicationData;
+  }
+
+  /**
+   * Send review embed to channel
+   */
+  async sendReviewEmbed(channel, application) {
+    const user = await this.client.users.fetch(application.userId);
+    const guild = channel.guild;
+    
+    // Get member objects for all mentioned members
+    const memberList = [];
+    for (const memberId of application.members) {
+      try {
+        const member = await guild.members.fetch(memberId);
+        memberList.push(`${member.user.tag} (${memberId})`);
+      } catch {
+        memberList.push(`Unknown User (${memberId})`);
+      }
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`Friend Group Application #${application.id.slice(-4)}`)
+      .setDescription(`User ${user} has submitted a friend group application`)
+      .setColor(0xffff00)
+      .addFields(
+        { name: 'Applicant', value: `${user.tag} (${user.id})`, inline: true },
+        { name: 'Member Count', value: `${application.members.length}`, inline: true },
+        { name: 'Account Age', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+        { name: 'Activity Plan', value: application.activity || 'None provided' },
+        { name: 'Members', value: memberList.join('\n').slice(0, 1024) },
+        { name: 'Additional Notes', value: application.notes || 'None' }
+      )
+      .setTimestamp();
+
+    const actionRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`fg_approve_${application.id}`)
+          .setLabel('Approve')
+          .setEmoji('✅')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`fg_deny_${application.id}`)
+          .setLabel('Deny')
+          .setEmoji('❌')
+          .setStyle(ButtonStyle.Danger)
+      );
+
+    // Mention staff if configured
+    const modPerms = this.moderationSystem.config.permissions;
+    const staffMentions = [...modPerms.administrator.roles, ...modPerms.moderator.roles]
+      .filter(roleId => guild.roles.cache.has(roleId))
+      .map(roleId => `<@&${roleId}>`)
+      .join(' ');
+
+    const messageContent = staffMentions 
+      ? `${staffMentions}\n\nNew friend group application from ${user}` 
+      : `New friend group application from ${user}`;
+
+    await channel.send({
+      content: messageContent,
+      embeds: [embed],
+      components: [actionRow]
+    });
+  }
+
+  /**
+   * Set review channel permissions
+   */
+  async setReviewChannelPermissions(channel) {
+    const guild = channel.guild;
+    
+    // Deny everyone
+    await channel.permissionOverwrites.create(guild.id, {
+      ViewChannel: false
+    });
+    
+    // Allow bot
+    await channel.permissionOverwrites.create(this.client.user.id, {
+      ViewChannel: true,
+      SendMessages: true,
+      ManageChannels: true
+    });
+
+    // Add staff permissions
+    const modPerms = this.moderationSystem.config.permissions;
+    
+    // Add administrator users and roles
+    for (const userId of modPerms.administrator.users) {
+      try {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (member) {
+          await channel.permissionOverwrites.create(userId, {
+            ViewChannel: true,
+            SendMessages: true,
+            ManageMessages: true
+          });
+        }
+      } catch (error) {
+        console.log(`[FriendGroupSystem] Could not add admin user ${userId}`);
+      }
+    }
+    
+    for (const roleId of modPerms.administrator.roles) {
+      if (guild.roles.cache.has(roleId)) {
+        await channel.permissionOverwrites.create(roleId, {
+          ViewChannel: true,
+          SendMessages: true,
+          ManageMessages: true
+        });
+      }
+    }
+    
+    // Add moderator users and roles
+    for (const userId of modPerms.moderator.users) {
+      try {
+        const member = await guild.members.fetch(userId).catch(() => null);
+        if (member) {
+          await channel.permissionOverwrites.create(userId, {
+            ViewChannel: true,
+            SendMessages: true
+          });
+        }
+      } catch (error) {
+        console.log(`[FriendGroupSystem] Could not add mod user ${userId}`);
+      }
+    }
+    
+    for (const roleId of modPerms.moderator.roles) {
+      if (guild.roles.cache.has(roleId)) {
+        await channel.permissionOverwrites.create(roleId, {
+          ViewChannel: true,
+          SendMessages: true
+        });
+      }
+    }
+  }
+
+  /**
+   * Handle application review actions
+   */
+  async handleApplicationAction(interaction) {
+    const [action, type, applicationId] = interaction.customId.split('_');
+    const application = this.activeApplications.get(applicationId);
+
+    if (!application) {
+      return interaction.reply({
+        content: '❌ This application no longer exists.',
+        ephemeral: true
+      });
+    }
+
+    // Check permission hierarchy: Owner > AntiNuke > Administration > Moderation
+    const isOwner = interaction.guild.ownerId === interaction.user.id;
+    const ownerBypassEnabled = this.moderationSystem.config.ownerBypass;
+    
+    // Get AntiNuke config
+    const antiNukeConfig = this.configLoader.get('antiNuke');
+    const isAntiNukeWhitelisted = antiNukeConfig?.whitelist?.users?.includes(interaction.user.id) ||
+      interaction.member.roles.cache.some(role => antiNukeConfig?.whitelist?.roles?.includes(role.id));
+    const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+      interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+    
+    // Check moderation permissions
+    const modPerms = this.moderationSystem.config.permissions;
+    const hasAdminRole = interaction.member.roles.cache.some(role => 
+      modPerms.administrator.roles.includes(role.id)
+    );
+    const isAdminUser = modPerms.administrator.users.includes(interaction.user.id);
+    const hasModRole = interaction.member.roles.cache.some(role => 
+      modPerms.moderator.roles.includes(role.id)
+    );
+    const isModUser = modPerms.moderator.users.includes(interaction.user.id);
+    
+    // Check if user has any permission to review
+    const canReview = (isOwner && ownerBypassEnabled) || 
+                      isAntiNukeWhitelisted || 
+                      isAntiNukeAdmin || 
+                      hasAdminRole || 
+                      isAdminUser || 
+                      hasModRole || 
+                      isModUser;
+    
+    if (!canReview) {
+      return interaction.reply({
+        content: '❌ You do not have permission to review applications.',
+        ephemeral: true
+      });
+    }
+
+    if (application.status !== 'pending') {
+      return interaction.reply({
+        content: '❌ This application has already been reviewed.',
+        ephemeral: true
+      });
+    }
+
+    // Store permission level for logging
+    let permissionLevel = 'Unknown';
+    if (isOwner && ownerBypassEnabled) {
+      permissionLevel = 'Server Owner';
+    } else if (isAntiNukeAdmin) {
+      permissionLevel = 'AntiNuke Administrator';
+    } else if (isAntiNukeWhitelisted) {
+      permissionLevel = 'AntiNuke Whitelisted';
+    } else if (hasAdminRole || isAdminUser) {
+      permissionLevel = 'System Administrator';
+    } else if (hasModRole || isModUser) {
+      permissionLevel = 'System Moderator';
+    }
+    
+    application.reviewerPermissionLevel = permissionLevel;
+
+    if (type === 'approve') {
+      await interaction.deferReply();
+      await this.approveApplication(interaction, application);
+    } else {
+      // Show deny modal
+      const modal = new ModalBuilder()
+        .setCustomId(`fg_deny_reason_${applicationId}`)
+        .setTitle('Deny Friend Group Application');
+
+      const reasonInput = new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel('Reason for denial')
+        .setPlaceholder('Please provide a reason for denying this application')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(500);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+      await interaction.showModal(modal);
+    }
+  }
+
+  /**
+   * Handle deny modal submission
+   */
+  async handleDenyModal(interaction) {
+    const applicationId = interaction.customId.split('_').pop();
+    const application = this.activeApplications.get(applicationId);
+    
+    if (!application) {
+      return interaction.reply({
+        content: '❌ Application not found.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.deferReply();
+    
+    const reason = interaction.fields.getTextInputValue('reason');
+    await this.denyApplication(interaction, application, reason);
+  }
+
+  /**
+   * Approve application
+   */
+  async approveApplication(interaction, application) {
+    const guild = interaction.guild;
+    const user = await this.client.users.fetch(application.userId);
+    const member = await guild.members.fetch(application.userId).catch(() => null);
+
+    if (!member) {
+      return interaction.editReply({
+        content: '❌ User is no longer in the server.'
+      });
+    }
+
+    // Create temporary owner role
+    const tempRole = await this.createOrGetRole(guild, this.config.tempOwnerRole, {
+      color: 0x808080,
+      hoist: false
+    });
+
+    await member.roles.add(tempRole, `Friend group approved by ${interaction.user.tag}`);
+
+    // Store accepted group data
+    this.acceptedGroups.set(application.userId, {
+      applicationId: application.id,
+      members: application.members,
+      approvedAt: new Date().toISOString(),
+      approvedBy: interaction.user.id,
+      approverTag: interaction.user.tag,
+      guildId: guild.id,
+      tempRoleId: tempRole.id,
+      status: 'pending_setup' // Waiting for owner to set up their group
+    });
+
+    // Update application status
+    application.status = 'approved';
+    application.reviewedAt = new Date().toISOString();
+    application.reviewedBy = interaction.user.id;
+
+    this.saveGroupData();
+
+    // Send confirmation
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Application Approved')
+      .setDescription(`${user.tag}'s friend group application has been approved`)
+      .setColor(0x00ff00)
+      .addFields(
+        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+        { name: 'Temporary role assigned', value: `<@&${tempRole.id}>`, inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+
+    // DM user with instructions
+    if (this.config.notifications.dmResults) {
+      try {
+        const dmEmbed = new EmbedBuilder()
+          .setTitle('✅ Friend Group Application Approved!')
+          .setDescription('Your friend group application has been approved!')
+          .setColor(0x00ff00)
+          .addFields(
+            { 
+              name: 'Next Steps', 
+              value: `1. Use \`/renamefg\` to rename your owner role\n2. Use \`/createfgrole\` to create your friend group role\n3. Use \`/createfgvc\` to create your voice channel\n4. Use \`/fgvc role allow <role>\` to set permissions`
+            },
+            {
+              name: 'Your Members',
+              value: `You applied with ${application.members.length} members`
+            }
+          )
+          .setTimestamp();
+
+        await user.send({ embeds: [dmEmbed] });
+      } catch (error) {
+        console.log('[FriendGroupSystem] Could not DM user');
+      }
+    }
+
+    // Delete review channel after delay
+    setTimeout(async () => {
+      try {
+        const channel = guild.channels.cache.get(application.channelId);
+        if (channel) await channel.delete('Application completed');
+      } catch (error) {
+        console.error('[FriendGroupSystem] Failed to delete review channel:', error);
+      }
+    }, 10000); // 10 seconds
+
+    // Clean up application
+    this.activeApplications.delete(application.id);
+    this.userApplications.delete(application.userId);
+    this.saveGroupData();
+
+    // Log action
+    await this.logAction(guild, {
+      action: 'Friend Group Application Approved',
+      moderator: interaction.user,
+      user: user,
+      applicationId: application.id.slice(-4)
+    });
+  }
+
+  /**
+   * Deny application
+   */
+  async denyApplication(interaction, application, reason) {
+    const guild = interaction.guild;
+    const user = await this.client.users.fetch(application.userId);
+
+    // Update application
+    application.status = 'denied';
+    application.reviewedAt = new Date().toISOString();
+    application.reviewedBy = interaction.user.id;
+    application.reviewReason = reason;
+
+    this.saveGroupData();
+
+    // Send confirmation
+    const embed = new EmbedBuilder()
+      .setTitle('❌ Application Denied')
+      .setDescription(`${user.tag}'s friend group application has been denied`)
+      .setColor(0xff0000)
+      .addFields(
+        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+        { name: 'Reason', value: reason }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+
+    // DM user if enabled
+    if (this.config.notifications.dmResults) {
+      try {
+        await user.send({
+          embeds: [new EmbedBuilder()
+            .setTitle('❌ Friend Group Application Denied')
+            .setDescription(this.config.messages.applicationDenied.replace('{reason}', reason))
+            .setColor(0xff0000)
+          ]
+        });
+      } catch (error) {
+        console.log('[FriendGroupSystem] Could not DM user');
+      }
+    }
+
+    // Delete review channel after delay
+    setTimeout(async () => {
+      try {
+        const channel = guild.channels.cache.get(application.channelId);
+        if (channel) await channel.delete('Application completed');
+      } catch (error) {
+        console.error('[FriendGroupSystem] Failed to delete review channel:', error);
+      }
+    }, 10000); // 10 seconds
+
+    // Clean up
+    this.activeApplications.delete(application.id);
+    this.userApplications.delete(application.userId);
+    this.saveGroupData();
+
+    // Log action
+    await this.logAction(guild, {
+      action: 'Friend Group Application Denied',
+      moderator: interaction.user,
+      user: user,
+      applicationId: application.id.slice(-4),
+      reason: reason
+    });
+  }
+
+  /**
+   * Create friend group voice channel
+   */
+  async createVoiceChannel(guild, ownerId, name) {
+    const guildSetup = this.config.guilds?.[guild.id];
+    if (!guildSetup) {
+      throw new Error('Friend group system not set up');
+    }
+
+    const groupData = this.acceptedGroups.get(ownerId);
+    if (!groupData) {
+      throw new Error('You do not own a friend group');
+    }
+
+    // Check if already has VC
+    if (groupData.voiceChannelId) {
+      const existingVC = guild.channels.cache.get(groupData.voiceChannelId);
+      if (existingVC) {
+        throw new Error('You already have a voice channel');
+      }
+    }
+
+    const category = guild.channels.cache.get(guildSetup.categories.friendGroups);
+    if (!category) {
+      throw new Error('Friend groups category not found');
+    }
+
+    // Create voice channel
+    const voiceChannel = await guild.channels.create({
+      name: name,
+      type: ChannelType.GuildVoice,
+      parent: category.id,
+      userLimit: this.config.vcUserLimit,
+      bitrate: this.config.vcBitrate,
+      permissionOverwrites: [
+        {
+          id: guild.id, // @everyone
+          allow: [PermissionFlagsBits.ViewChannel],
+          deny: [PermissionFlagsBits.Connect]
+        },
+        {
+          id: ownerId, // Owner
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.Connect,
+            PermissionFlagsBits.Speak,
+            PermissionFlagsBits.Stream,
+            PermissionFlagsBits.MoveMembers,
+            PermissionFlagsBits.MuteMembers,
+            PermissionFlagsBits.DeafenMembers
+          ]
+        }
+      ]
+    });
+
+    // Update group data
+    groupData.voiceChannelId = voiceChannel.id;
+    groupData.voiceChannelName = name;
+    this.saveGroupData();
+
+    return voiceChannel;
+  }
+
+  /**
+   * Utility methods
+   */
+  async createOrGetRole(guild, name, options = {}) {
+    const existing = guild.roles.cache.find(r => r.name === name);
+    if (existing) return existing;
+
+    return await guild.roles.create({
+      name,
+      color: options.color || null,
+      hoist: options.hoist || false,
+      mentionable: options.mentionable || false,
+      reason: 'Friend group system'
+    });
+  }
+
+  async createOrGetCategory(guild, name) {
+    const existing = guild.channels.cache.find(c => c.name === name && c.type === ChannelType.GuildCategory);
+    if (existing) return existing;
+
+    return await guild.channels.create({
+      name,
+      type: ChannelType.GuildCategory,
+      reason: 'Friend group system setup'
+    });
+  }
+
+  getLastAttempt(userId) {
+    // Check application history for last attempt
+    for (const [id, application] of this.activeApplications) {
+      if (application.userId === userId) {
+        return new Date(application.createdAt).getTime();
+      }
+    }
+    return null;
+  }
+
+  cleanupOldData() {
+    const cutoffDate = Date.now() - (this.config.deleteDataAfterDays * 24 * 60 * 60 * 1000);
+    
+    // Clean up old denied applications
+    for (const [id, application] of this.activeApplications) {
+      if (application.status === 'denied' && 
+          application.reviewedAt &&
+          new Date(application.reviewedAt).getTime() < cutoffDate) {
+        this.activeApplications.delete(id);
+      }
+    }
+    
+    this.saveGroupData();
+  }
+
+  async logAction(guild, data) {
+    const logChannelId = this.config.logChannel || this.moderationSystem.config.logChannel;
+    if (!logChannelId) return;
+
+    const channel = guild.channels.cache.get(logChannelId);
+    if (!channel?.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`Friend Group: ${data.action}`)
+      .setColor(data.action.includes('Approved') ? 0x00ff00 : 
+                data.action.includes('Denied') ? 0xff0000 : 0x0099ff)
+      .setTimestamp();
+
+    if (data.user) {
+      embed.addFields({ name: 'User', value: `${data.user.tag} (${data.user.id})`, inline: true });
+    }
+
+    if (data.moderator) {
+      embed.addFields({ name: 'Moderator', value: `${data.moderator.tag}`, inline: true });
+    }
+
+    if (data.applicationId) {
+      embed.addFields({ name: 'Application ID', value: `#${data.applicationId}`, inline: true });
+    }
+
+    if (data.memberCount) {
+      embed.addFields({ name: 'Member Count', value: String(data.memberCount), inline: true });
+    }
+
+    if (data.reason) {
+      embed.addFields({ name: 'Reason', value: data.reason });
+    }
+
+    if (data.reviewChannel) {
+      embed.addFields({ name: 'Review Channel', value: data.reviewChannel, inline: true });
+    }
+
+    try {
+      await channel.send({ embeds: [embed] });
+    } catch (error) {
+      console.error('[FriendGroupSystem] Failed to log action:', error);
+    }
+  }
+
+  /**
+   * Disband a friend group
+   */
+  async disbandGroup(guild, ownerId) {
+    const groupData = this.acceptedGroups.get(ownerId);
+    if (!groupData || groupData.guildId !== guild.id) {
+      return { success: false, error: 'Friend group not found' };
+    }
+
+    const results = {
+      voiceChannel: false,
+      memberRole: false,
+      ownerRole: false
+    };
+
+    try {
+      // Delete voice channel
+      if (groupData.voiceChannelId) {
+        const voiceChannel = guild.channels.cache.get(groupData.voiceChannelId);
+        if (voiceChannel) {
+          await voiceChannel.delete('Friend group disbanded');
+          results.voiceChannel = true;
+        }
+      }
+
+      // Delete member role
+      if (groupData.memberRoleId) {
+        const memberRole = guild.roles.cache.get(groupData.memberRoleId);
+        if (memberRole) {
+          await memberRole.delete('Friend group disbanded');
+          results.memberRole = true;
+        }
+      }
+
+      // Delete owner role
+      if (groupData.tempRoleId) {
+        const ownerRole = guild.roles.cache.get(groupData.tempRoleId);
+        if (ownerRole) {
+          await ownerRole.delete('Friend group disbanded');
+          results.ownerRole = true;
+        }
+      }
+
+      // Remove from accepted groups
+      this.acceptedGroups.delete(ownerId);
+      this.saveGroupData();
+
+      return { success: true, results };
+    } catch (error) {
+      console.error('[FriendGroupSystem] Error disbanding group:', error);
+      return { success: false, error: error.message, results };
+    }
+  }
+
+  /**
+   * Get statistics
+   */
+  getStats() {
+    let totalApplications = 0;
+    let pendingApplications = 0;
+    let approvedApplications = 0;
+    let deniedApplications = 0;
+
+    for (const [id, application] of this.activeApplications) {
+      totalApplications++;
+      if (application.status === 'pending') pendingApplications++;
+      else if (application.status === 'approved') approvedApplications++;
+      else if (application.status === 'denied') deniedApplications++;
+    }
+
+    return {
+      totalApplications,
+      pendingApplications,
+      approvedApplications,
+      deniedApplications,
+      activeGroups: this.acceptedGroups.size
+    };
+  }
+
+  /**
+   * Save configuration
+   */
+  async saveConfig() {
+    this.configLoader.set('friendGroup', this.config);
+    return this.configLoader.save();
+  }
+}

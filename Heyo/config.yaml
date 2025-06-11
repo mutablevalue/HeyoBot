@@ -459,7 +459,7 @@ genderVerify:
     maleOnly: male-chat
     verified: verified-chat
     verifiedVC: verified-vc
-    reviewCategory: Verification Reviews
+    reviewCategory: Staff Review
     mainCategory: Gender Verification
   reviewChannelFormat: verify-{number}
   verifyEmbed:
@@ -666,3 +666,35 @@ socialLookup:
     instagram:
       enabled: true
       baseUrl: https://www.instagram.com/
+friendGroup:
+  enabled: true
+  dataFile: friend_groups.json
+  minMembers: 6
+  cooldown: 604800000  # 7 days
+  maxApplicationsPerUser: 1
+  reviewCategory: Staff Review
+  friendGroupCategory: Friendgroups
+  applicationChannelFormat: fg-app-{number}
+  tempOwnerRole: fgowner(temp)
+  defaultRoleColor: null
+  vcUserLimit: 0
+  vcBitrate: 64000
+  messages:
+    alreadyHasGroup: ❌ You already own a friend group!
+    pendingApplication: ⏳ You already have a pending application.
+    cooldownActive: ⏰ Please wait {time} before applying again.
+    notEnoughMembers: ❌ You must mention at least {min} members.
+    applicationSubmitted: ✅ Your friend group application has been submitted!
+    applicationApproved: ✅ Your friend group application has been approved! Check your DMs for instructions.
+    applicationDenied: "❌ Your friend group application has been denied. Reason: {reason}"
+    setupRequired: ❌ Friend group system is not set up. An admin needs to run `/setupfg` first.
+    errorSubmitting: ❌ Failed to submit application. Please try again later.
+  notifications:
+    notifyOnSubmit: true
+    notifyOnReview: true
+    dmResults: true
+  logChannel: null
+  deleteDataAfterDays: 30
+  maxActiveGroups: 50
+  maxActiveApplications: 20
+  guilds: {}

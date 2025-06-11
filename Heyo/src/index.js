@@ -54,6 +54,8 @@ import * as emojiCommand from "./commands/emoji.js";
 import * as genderVerifyCommands from "./commands/genderverify.js";
 import * as messageCommand from "./commands/message.js";
 import { QueueManager } from "./utils/queueManager.js";
+import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
+import * as friendGroupCommands from "./commands/friendgroup.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Polyfill __dirname and __filename for ESM
@@ -91,6 +93,7 @@ async function main() {
   const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
+  const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
   
   const linkProtection = new LinkProtection(client, config);
   linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
@@ -142,6 +145,8 @@ async function main() {
   genderVerifyCommands.setModerationSystem(moderationSystem);
   messageCommand.setModerationSystem(moderationSystem);
   messageCommand.setAntiNuke(antiNuke);
+  friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
+  friendGroupCommands.setModerationSystem(moderationSystem);  
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -171,12 +176,12 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-    const multiCommandFiles = [
-      'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
-      'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
-      'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
-      'genderverify.js'
-    ];
+const multiCommandFiles = [
+  'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
+  'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
+  'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
+  'genderverify.js', 'friendgroup.js'
+];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
       for (const cmd of commandModule.commands) {
@@ -323,6 +328,7 @@ async function main() {
     console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Gender Verify System: ${genderVerifySystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Friend Group System: ${friendGroupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
