@@ -17,6 +17,11 @@ export function setAntiNukeInstance(instance) {
   antiNukeInstance = instance;
 }
 
+// Helper function to check if user is owner with bypass enabled
+function isOwnerWithBypass(member) {
+  return moderationSystem.config.ownerBypass && member.id === member.guild.ownerId;
+}
+
 // Helper function to parse multiple users from input
 function parseMultipleUsers(input) {
   // Match user IDs and mentions
@@ -362,8 +367,8 @@ export async function executeBan(interaction) {
           continue;
         }
         
-        // Check role hierarchy
-        if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+        // Check role hierarchy (skip for owners with bypass)
+        if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
           results.failed.push({ user: user.tag, reason: 'Higher or equal role' });
           continue;
         }
@@ -459,8 +464,8 @@ export async function executeKick(interaction) {
         continue;
       }
       
-      // Check role hierarchy
-      if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+      // Check role hierarchy (skip for owners with bypass)
+      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
       }
@@ -567,8 +572,8 @@ export async function executeTimeout(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check role hierarchy
-      if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+      // Check role hierarchy (skip for owners with bypass)
+      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
       }
@@ -671,8 +676,8 @@ export async function executeMute(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check role hierarchy
-      if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+      // Check role hierarchy (skip for owners with bypass)
+      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
       }
@@ -851,8 +856,8 @@ export async function executeRole(interaction) {
     }
   }
   
-  // Check if invoker's highest role is above the target role
-  if (role.position >= interaction.member.roles.highest.position) {
+  // Check if invoker's highest role is above the target role (skip for owners with bypass)
+  if (!isOwnerWithBypass(interaction.member) && role.position >= interaction.member.roles.highest.position) {
     return interaction.reply({ 
       content: '❌ You can only manage roles below your highest role.', 
       ephemeral: true 
@@ -1199,7 +1204,8 @@ export async function executeForceNickname(interaction) {
       });
     }
 
-    if (member.roles.highest.position >= interaction.member.roles.highest.position) {
+    // Check role hierarchy (skip for owners with bypass)
+    if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
       return interaction.reply({ 
         content: '❌ You cannot force a nickname on someone with an equal or higher role.', 
         ephemeral: true 

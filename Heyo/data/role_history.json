@@ -56,6 +56,16 @@
           {
             "id": "1380398417079046205",
             "name": "admin"
+          }
+        ],
+        "timestamp": "2025-06-11T16:53:12.753Z",
+        "reason": "automatic"
+      },
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
           },
           {
             "id": "1382398271896686754",
@@ -169,6 +179,16 @@
     "username": "laflayme",
     "guildId": "1379953422241103943",
     "history": [
+      {
+        "roles": [
+          {
+            "id": "1380398417079046205",
+            "name": "admin"
+          }
+        ],
+        "timestamp": "2025-06-11T16:53:45.999Z",
+        "reason": "automatic"
+      },
       {
         "roles": [
           {
