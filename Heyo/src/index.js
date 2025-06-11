@@ -43,6 +43,7 @@ import * as filterCommands from "./commands/filter.js";
 import * as banAppealCommands from "./commands/banappeal.js";
 import * as ticketCommands from "./commands/ticket.js";
 import * as confessCommands from "./commands/confess.js";
+import * as setStatusCommand from "./commands/setstatus.js";
 import * as skullboardCommands from "./commands/skullboard.js";
 import * as snipeCommands from "./commands/snipe.js";
 import * as socialCommands from "./commands/social.js";
@@ -74,23 +75,35 @@ async function main() {
     ]
   });
 
-  // 3) Initialize all systems
+  // 3) Initialize systems with hierarchy: AntiNuke -> ModerationSystem -> Other Systems
+  
+  // Top level: AntiNuke (no dependencies)
   const antiNuke = new AntiNuke(client, config);
-  const j2cManager = new J2CManager(client, config);
+  
+  // Second level: ModerationSystem (depends on AntiNuke for hierarchy)
   const moderationSystem = new ModerationSystem(client, config);
+  moderationSystem.setAntiNuke(antiNuke); // Set AntiNuke reference for hierarchy checking
+  
+  // Third level: All other systems (depend on ModerationSystem for permissions)
+  const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
+  
   const linkProtection = new LinkProtection(client, config);
+  linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
+  
   const welcomeSystem = new WelcomeSystem(client, config);
   const roleTracker = new RoleTracker(client, config);
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
   const boosterSystem = new BoosterSystem(client, config, moderationSystem);
+  
   const filterSystem = new FilterSystem(client, config);
+  filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
+  
   const banAppealSystem = new BanAppealSystem(client, config);
   const ticketSystem = new TicketSystem(client, config);
   const confessSystem = new ConfessSystem(client, config);
-  // UPDATED: Pass antiNuke to SkullboardSystem
   const skullboardSystem = new SkullboardSystem(client, config, antiNuke);
   const snipeSystem = new SnipeSystem(client, config);
   const socialLookupSystem = new SocialLookupSystem(client, config);
@@ -115,7 +128,6 @@ async function main() {
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
-  // UPDATED: Set both skullboard system AND moderation system
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   skullboardCommands.setModerationSystem(moderationSystem);
   snipeCommands.setSnipeSystem(snipeSystem);
@@ -125,6 +137,7 @@ async function main() {
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
+  setStatusCommand.setAntiNuke(antiNuke);
 
   // 5) Prepare client.commands collection
   client.commands = new Collection();
@@ -206,103 +219,103 @@ async function main() {
   queueManager.startWorkers(workerFn);
 
   // 8) On ready, register slash commands via CommandRegistry
-  // Updated ready event section for src/index.js
-// Replace the existing client.once(Events.ClientReady) block with this:
+  client.once(Events.ClientReady, async () => {
+    console.log(`Logged in as ${client.user.tag}`);
 
-client.once(Events.ClientReady, async () => {
-  console.log(`Logged in as ${client.user.tag}`);
+    // Set bot presence (status color and activity)
+    const botConfig = config.get("bot") || {};
+    
+    if (botConfig.status) {
+      const activityTypes = {
+        'PLAYING': ActivityType.Playing,
+        'WATCHING': ActivityType.Watching,
+        'LISTENING': ActivityType.Listening,
+        'STREAMING': ActivityType.Streaming,
+        'COMPETING': ActivityType.Competing
+      };
 
-  // Set bot presence (status color and activity)
-  const botConfig = config.get("bot") || {};
-  
-  if (botConfig.status) {
-    const activityTypes = {
-      'PLAYING': ActivityType.Playing,
-      'WATCHING': ActivityType.Watching,
-      'LISTENING': ActivityType.Listening,
-      'STREAMING': ActivityType.Streaming,
-      'COMPETING': ActivityType.Competing
-    };
+      const presenceStatus = {
+        'GREEN': 'online',     // Green dot
+        'YELLOW': 'idle',      // Yellow dot
+        'RED': 'dnd',          // Red dot (Do Not Disturb)
+        'GRAY': 'invisible',   // Gray dot
+        'GREY': 'invisible'    // Alternative spelling
+      };
 
-    const presenceStatus = {
-      'GREEN': 'online',     // Green dot
-      'YELLOW': 'idle',      // Yellow dot
-      'RED': 'dnd',          // Red dot (Do Not Disturb)
-      'GRAY': 'invisible',   // Gray dot
-      'GREY': 'invisible'    // Alternative spelling
-    };
+      const activityType = activityTypes[botConfig.status.type] || ActivityType.Playing;
+      const activityOptions = {
+        name: botConfig.status.text || 'with commands',
+        type: activityType
+      };
 
-    const activityType = activityTypes[botConfig.status.type] || ActivityType.Playing;
-    const activityOptions = {
-      name: botConfig.status.text || 'with commands',
-      type: activityType
-    };
+      if (botConfig.status.url && activityType === ActivityType.Streaming) {
+        activityOptions.url = botConfig.status.url;
+      }
 
-    if (botConfig.status.url && activityType === ActivityType.Streaming) {
-      activityOptions.url = botConfig.status.url;
+      // Set presence with both activity and status
+      const presenceData = {
+        activities: [activityOptions],
+        status: presenceStatus[botConfig.status.color?.toUpperCase()] || 'online'
+      };
+
+      client.user.setPresence(presenceData);
+      console.log(`✅ Bot presence set to: ${presenceData.status} - ${activityOptions.name}`);
     }
 
-    // Set presence with both activity and status
-    const presenceData = {
-      activities: [activityOptions],
-      status: presenceStatus[botConfig.status.color?.toUpperCase()] || 'online'
-    };
+    // ADD CLEANUP INTERVAL FOR ANTINUKE CONTENT MODERATION
+    setInterval(() => {
+      if (antiNuke.contentTracking) {
+        antiNuke.cleanup();
+      }
+    }, 60000); // Run cleanup every minute
 
-    client.user.setPresence(presenceData);
-    console.log(`✅ Bot presence set to: ${presenceData.status} - ${activityOptions.name}`);
-  }
-
-  // ADD CLEANUP INTERVAL FOR ANTINUKE CONTENT MODERATION
-  setInterval(() => {
-    if (antiNuke.contentTracking) {
-      antiNuke.cleanup();
+    const registry = new CommandRegistry(config.get("token"));
+    for (const [, cmd] of client.commands) {
+      registry.addCommand(cmd);
     }
-  }, 60000); // Run cleanup every minute
 
-  const registry = new CommandRegistry(config.get("token"));
-  for (const [, cmd] of client.commands) {
-    registry.addCommand(cmd);
-  }
+    const guildId = config.get("developmentGuildId");
+    const guild   = client.guilds.cache.get(guildId);
 
-  const guildId = config.get("developmentGuildId");
-  const guild   = client.guilds.cache.get(guildId);
-
-  try {
-    if (guild) {
-      await registry.registerCommands(client.user.id, guildId);
-      console.log(`Registered ${client.commands.size} commands to guild ${guild.name}.`);
-    } else {
-      await registry.registerCommands(client.user.id);
-      console.log(`Registered ${client.commands.size} commands globally.`);
+    try {
+      if (guild) {
+        await registry.registerCommands(client.user.id, guildId);
+        console.log(`Registered ${client.commands.size} commands to guild ${guild.name}.`);
+      } else {
+        await registry.registerCommands(client.user.id);
+        console.log(`Registered ${client.commands.size} commands globally.`);
+      }
+    } catch (err) {
+      console.error("Error registering slash commands:", err);
     }
-  } catch (err) {
-    console.error("Error registering slash commands:", err);
-  }
 
-  // Log system status
-  console.log('\n=== System Status ===');
-  console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
-  console.log('J2C Manager: Active');
-  console.log('Moderation System: Active');
-  console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Leaderboard System: ${leaderboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Event Hosting: ${eventHostingSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Booster System: ${boosterSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Filter System: ${filterSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Ban Appeal System: ${banAppealSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Confess System: ${confessSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Skullboard System: ${skullboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
-  console.log('Fun Commands: Active');
-  console.log('====================\n');
-});
+    // Log system status
+    console.log('\n=== System Status ===');
+    console.log('HIERARCHY: AntiNuke → ModerationSystem → Other Systems');
+    console.log(`Owner Bypass: ${moderationSystem.config.ownerBypass ? 'ENABLED' : 'DISABLED'}`);
+    console.log('---');
+    console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
+    console.log('Moderation System: Active (Centralized Permissions)');
+    console.log('J2C Manager: Active');
+    console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Link Protection: ${linkProtection.config.enabled ? 'Active (using centralized perms)' : 'Disabled'}`);
+    console.log(`Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Leaderboard System: ${leaderboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Event Hosting: ${eventHostingSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Booster System: ${boosterSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Filter System: ${filterSystem.config.enabled ? 'Active (lightweight, using centralized perms)' : 'Disabled'}`);
+    console.log(`Ban Appeal System: ${banAppealSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Confess System: ${confessSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Skullboard System: ${skullboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log('Fun Commands: Active');
+    console.log('====================\n');
+  });
 
   // 9) Handle slash command interactions
   client.on(Events.InteractionCreate, async (interaction) => {

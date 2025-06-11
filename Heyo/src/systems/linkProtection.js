@@ -1,50 +1,46 @@
 // src/systems/linkProtection.js
-import { PermissionFlagsBits } from 'discord.js';
-
 export class LinkProtection {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
     
-    // Load link protection config
+    // Reference to moderation system (will be set by index.js)
+    this.moderationSystem = null;
+    
     const linkConfig = this.configLoader.get('linkProtection') || {};
     this.config = {
       enabled: linkConfig.enabled ?? true,
-      // URL patterns to detect
       patterns: linkConfig.patterns || [
         /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/gi,
         /discord\.gg\/[a-zA-Z0-9]+/gi,
         /discordapp\.com\/invite\/[a-zA-Z0-9]+/gi
       ],
-      // Who is allowed to post links
       allowed: {
-        // Users who can always post links
         users: linkConfig.allowed?.users || [],
-        // Roles that can post links
         roles: linkConfig.allowed?.roles || [],
-        // The specific link permission role from moderation system
         useLinkPermRole: linkConfig.allowed?.useLinkPermRole ?? true
       },
-      // Channels where link protection is disabled
       exemptChannels: linkConfig.exemptChannels || [],
-      // Log channel for deleted links
       logChannel: linkConfig.logChannel || null,
-      // Delete message options
       deleteMessage: linkConfig.deleteMessage ?? true,
-      // Warning message
       warningMessage: linkConfig.warningMessage || '❌ You do not have permission to send links in this channel.',
-      // Send warning as ephemeral reply
       ephemeralWarning: linkConfig.ephemeralWarning ?? true
     };
 
-    // Set up event listeners
-    this.setupEventListeners();
+    if (this.config.enabled) {
+      this.setupEventListeners();
+    }
+  }
+
+  /**
+   * Set moderation system reference
+   */
+  setModerationSystem(moderationSystem) {
+    this.moderationSystem = moderationSystem;
   }
 
   /**
    * Check if a message contains links
-   * @param {string} content 
-   * @returns {boolean}
    */
   containsLinks(content) {
     return this.config.patterns.some(pattern => {
@@ -56,45 +52,49 @@ export class LinkProtection {
   }
 
   /**
-   * Check if a member can send links
-   * @param {import("discord.js").GuildMember} member 
-   * @param {import("discord.js").Channel} channel 
-   * @returns {boolean}
+   * Check if a member can send links using centralized permissions
    */
   canSendLinks(member, channel) {
-    // Server owner can always send links
-    if (member.id === member.guild.ownerId) return true;
-
-    // Discord admins can always send links
-    if (member.permissions.has(PermissionFlagsBits.Administrator)) return true;
-
-    // Check exempt channels
-    if (this.config.exemptChannels.includes(channel.id)) return true;
-
-    // Check allowed users
-    if (this.config.allowed.users.includes(member.id)) return true;
-
-    // Check allowed roles
-    const hasAllowedRole = member.roles.cache.some(role => 
-      this.config.allowed.roles.includes(role.id)
-    );
-    if (hasAllowedRole) return true;
-
-    // Check for link permission role from moderation system
-    if (this.config.allowed.useLinkPermRole) {
-      const modConfig = this.configLoader.get('moderation');
-      const linkPermRoleId = modConfig?.permRoles?.link;
-      if (linkPermRoleId && member.roles.cache.has(linkPermRoleId)) {
-        return true;
-      }
+    // Use centralized permission check if available
+    if (this.moderationSystem) {
+      const permCheck = this.moderationSystem.checkGlobalPermission(member, 'send_links', {
+        customCheck: (mem) => {
+          // Check exempt channels
+          if (this.config.exemptChannels.includes(channel.id)) return true;
+          
+          // Check allowed users
+          if (this.config.allowed.users.includes(mem.id)) return true;
+          
+          // Check allowed roles
+          if (mem.roles.cache.some(role => this.config.allowed.roles.includes(role.id))) return true;
+          
+          // Check link permission role from moderation config
+          if (this.config.allowed.useLinkPermRole) {
+            const modConfig = this.configLoader.get('moderation');
+            const linkPermRoleId = modConfig?.permRoles?.link;
+            if (linkPermRoleId && mem.roles.cache.has(linkPermRoleId)) {
+              return true;
+            }
+          }
+          
+          return false;
+        },
+        customReason: 'Link permission'
+      });
+      
+      return permCheck.allowed;
     }
-
+    
+    // Fallback if moderation system not available
+    if (this.config.exemptChannels.includes(channel.id)) return true;
+    if (this.config.allowed.users.includes(member.id)) return true;
+    if (member.roles.cache.some(role => this.config.allowed.roles.includes(role.id))) return true;
+    
     return false;
   }
 
   /**
    * Log link deletion
-   * @param {import("discord.js").Message} message 
    */
   async logDeletion(message) {
     if (!this.config.logChannel) return;
@@ -121,22 +121,16 @@ export class LinkProtection {
   }
 
   /**
-   * Set up event listeners
+   * Setup event listeners
    */
   setupEventListeners() {
-    if (!this.config.enabled) return;
-
     this.client.on('messageCreate', async (message) => {
-      // Ignore bots and DMs
       if (message.author.bot || !message.guild) return;
 
-      // Check if message contains links
       if (!this.containsLinks(message.content)) return;
 
-      // Check if member can send links
       if (this.canSendLinks(message.member, message.channel)) return;
 
-      // Delete the message
       if (this.config.deleteMessage) {
         try {
           await message.delete();
@@ -146,31 +140,19 @@ export class LinkProtection {
         }
       }
 
-      // Send warning message
       if (this.config.warningMessage) {
         try {
-          if (this.config.ephemeralWarning && message.interaction) {
-            // If it's from an interaction, reply ephemerally
-            await message.interaction.reply({
-              content: this.config.warningMessage,
-              ephemeral: true
-            });
-          } else {
-            // Otherwise, send a regular message that auto-deletes
-            const warning = await message.channel.send(this.config.warningMessage);
-            setTimeout(() => warning.delete().catch(() => {}), 5000);
-          }
+          const warning = await message.channel.send(this.config.warningMessage);
+          setTimeout(() => warning.delete().catch(() => {}), 5000);
         } catch (error) {
           console.error('[LinkProtection] Failed to send warning:', error);
         }
       }
     });
 
-    // Also monitor message updates
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
       if (!newMessage.guild || newMessage.author.bot) return;
       
-      // Check if the edit added links
       if (!this.containsLinks(oldMessage.content) && this.containsLinks(newMessage.content)) {
         if (!this.canSendLinks(newMessage.member, newMessage.channel)) {
           if (this.config.deleteMessage) {
@@ -188,8 +170,6 @@ export class LinkProtection {
 
   /**
    * Add a user to the allowed list
-   * @param {string} userId 
-   * @returns {Promise<boolean>}
    */
   async addAllowedUser(userId) {
     if (!this.config.allowed.users.includes(userId)) {
@@ -202,8 +182,6 @@ export class LinkProtection {
 
   /**
    * Remove a user from the allowed list
-   * @param {string} userId 
-   * @returns {Promise<boolean>}
    */
   async removeAllowedUser(userId) {
     const index = this.config.allowed.users.indexOf(userId);
@@ -217,8 +195,6 @@ export class LinkProtection {
 
   /**
    * Add a role to the allowed list
-   * @param {string} roleId 
-   * @returns {Promise<boolean>}
    */
   async addAllowedRole(roleId) {
     if (!this.config.allowed.roles.includes(roleId)) {
@@ -231,8 +207,6 @@ export class LinkProtection {
 
   /**
    * Remove a role from the allowed list
-   * @param {string} roleId 
-   * @returns {Promise<boolean>}
    */
   async removeAllowedRole(roleId) {
     const index = this.config.allowed.roles.indexOf(roleId);

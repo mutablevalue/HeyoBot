@@ -1,75 +1,56 @@
 // src/systems/filterSystem.js
-import { EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export class FilterSystem {
-  /**
-   * @param {import("discord.js").Client} client
-   * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
-   */
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
     
-    // Load filter config
+    // Reference to moderation system (will be set by index.js)
+    this.moderationSystem = null;
+    
     const filterConfig = this.configLoader.get('filter') || {};
     this.config = {
       enabled: filterConfig.enabled ?? true,
       dataFile: filterConfig.dataFile || 'filter_data.json',
       
-      // Word filter settings
       wordFilter: {
         enabled: filterConfig.wordFilter?.enabled ?? true,
         defaultWords: filterConfig.wordFilter?.defaultWords || [
-          // Default offensive words (you can add more in config)
           'nigger', 'nigga', 'faggot', 'fag', 'retard', 'kys'
         ],
         customWords: filterConfig.wordFilter?.customWords || [],
         exemptRoles: filterConfig.wordFilter?.exemptRoles || [],
         exemptChannels: filterConfig.wordFilter?.exemptChannels || [],
-        action: filterConfig.wordFilter?.action || 'delete', // 'delete', 'warn', 'timeout'
-        timeoutDuration: filterConfig.wordFilter?.timeoutDuration || 300, // 5 minutes default
+        action: filterConfig.wordFilter?.action || 'delete',
+        timeoutDuration: filterConfig.wordFilter?.timeoutDuration || 300,
         warningMessage: filterConfig.wordFilter?.warningMessage || '⚠️ Your message contains prohibited words.',
         caseSensitive: filterConfig.wordFilter?.caseSensitive ?? false,
-        checkVariations: filterConfig.wordFilter?.checkVariations ?? true // Check l33t speak, spacing
+        checkVariations: filterConfig.wordFilter?.checkVariations ?? true
       },
       
-      // Image filter settings
       imageFilter: {
         enabled: filterConfig.imageFilter?.enabled ?? false,
-        nsfwThreshold: filterConfig.imageFilter?.nsfwThreshold || 0.7, // 0-1, higher = stricter
         exemptRoles: filterConfig.imageFilter?.exemptRoles || [],
         exemptChannels: filterConfig.imageFilter?.exemptChannels || [],
-        nsfwChannels: filterConfig.imageFilter?.nsfwChannels || [], // Allow NSFW in these channels
-        action: filterConfig.imageFilter?.action || 'delete', // 'delete', 'spoiler', 'warn'
-        warningMessage: filterConfig.imageFilter?.warningMessage || '⚠️ Your image appears to contain NSFW content.',
-        apiUrl: filterConfig.imageFilter?.apiUrl || null, // Optional external NSFW detection API
-        maxFileSize: filterConfig.imageFilter?.maxFileSize || 8388608 // 8MB default
+        nsfwChannels: filterConfig.imageFilter?.nsfwChannels || [],
+        action: filterConfig.imageFilter?.action || 'delete',
+        warningMessage: filterConfig.imageFilter?.warningMessage || '⚠️ Your image appears to contain NSFW content.'
       },
       
-      // Logging
       logChannel: filterConfig.logChannel || null,
-      enableLogging: filterConfig.enableLogging ?? true,
-      
-      // Statistics
-      trackStats: filterConfig.trackStats ?? true
+      enableLogging: filterConfig.enableLogging ?? true
     };
 
-    // Filter data
+    // Filter data - LIGHTWEIGHT: Only store what's absolutely necessary
     this.filteredWords = new Set();
-    this.stats = {
-      messagesFiltered: 0,
-      imagesFiltered: 0,
-      wordsDetected: new Map(),
-      userViolations: new Map()
-    };
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -85,7 +66,14 @@ export class FilterSystem {
   }
 
   /**
-   * Load filter data from file
+   * Set moderation system reference
+   */
+  setModerationSystem(moderationSystem) {
+    this.moderationSystem = moderationSystem;
+  }
+
+  /**
+   * Load filter data from file (only custom words)
    */
   loadFilterData() {
     try {
@@ -96,15 +84,6 @@ export class FilterSystem {
           this.config.wordFilter.customWords = data.customWords;
         }
         
-        if (data.stats) {
-          this.stats = {
-            messagesFiltered: data.stats.messagesFiltered || 0,
-            imagesFiltered: data.stats.imagesFiltered || 0,
-            wordsDetected: new Map(Object.entries(data.stats.wordsDetected || {})),
-            userViolations: new Map(Object.entries(data.stats.userViolations || {}))
-          };
-        }
-        
         console.log(`[FilterSystem] Loaded filter data`);
       }
     } catch (error) {
@@ -113,18 +92,12 @@ export class FilterSystem {
   }
 
   /**
-   * Save filter data to file
+   * Save filter data to file (only custom words)
    */
   saveFilterData() {
     try {
       const data = {
-        customWords: this.config.wordFilter.customWords,
-        stats: {
-          messagesFiltered: this.stats.messagesFiltered,
-          imagesFiltered: this.stats.imagesFiltered,
-          wordsDetected: Object.fromEntries(this.stats.wordsDetected),
-          userViolations: Object.fromEntries(this.stats.userViolations)
-        }
+        customWords: this.config.wordFilter.customWords
       };
 
       const dir = path.dirname(this.dataPath);
@@ -160,23 +133,27 @@ export class FilterSystem {
    */
   setupEventListeners() {
     this.client.on('messageCreate', async (message) => {
-      if (message.author.bot) return;
-      if (!message.guild) return;
+      if (message.author.bot || !message.guild) return;
+      
+      // Use centralized permission check if moderation system is available
+      if (this.moderationSystem?.isGloballyExempt(message.member)) return;
       
       // Check word filter
       if (this.config.wordFilter.enabled) {
         await this.checkMessageContent(message);
       }
       
-      // Check image filter
+      // Check image filter (simplified - no actual NSFW detection)
       if (this.config.imageFilter.enabled && message.attachments.size > 0) {
         await this.checkMessageAttachments(message);
       }
     });
 
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-      if (newMessage.author?.bot) return;
-      if (!newMessage.guild) return;
+      if (newMessage.author?.bot || !newMessage.guild) return;
+      
+      // Use centralized permission check
+      if (this.moderationSystem?.isGloballyExempt(newMessage.member)) return;
       
       // Check edited message content
       if (this.config.wordFilter.enabled) {
@@ -187,7 +164,6 @@ export class FilterSystem {
 
   /**
    * Check message content for filtered words
-   * @param {import("discord.js").Message} message
    */
   async checkMessageContent(message) {
     // Check exemptions
@@ -196,29 +172,18 @@ export class FilterSystem {
     const detectedWords = this.detectFilteredWords(message.content);
     
     if (detectedWords.length > 0) {
-      // Update stats
-      this.stats.messagesFiltered++;
-      this.updateUserViolations(message.author.id);
-      
-      for (const word of detectedWords) {
-        this.stats.wordsDetected.set(word, (this.stats.wordsDetected.get(word) || 0) + 1);
-      }
-      
       // Take action
       await this.handleWordFilterViolation(message, detectedWords);
       
-      // Log violation
+      // Log violation if enabled
       if (this.config.enableLogging) {
         await this.logViolation(message, 'Word Filter', detectedWords.join(', '));
       }
-      
-      this.saveFilterData();
     }
   }
 
   /**
-   * Check message attachments for NSFW content
-   * @param {import("discord.js").Message} message
+   * Check message attachments (simplified)
    */
   async checkMessageAttachments(message) {
     // Check exemptions
@@ -227,42 +192,17 @@ export class FilterSystem {
     // Check if in NSFW channel
     if (this.config.imageFilter.nsfwChannels.includes(message.channel.id)) return;
     
-    for (const attachment of message.attachments.values()) {
-      // Check if it's an image
-      if (!attachment.contentType?.startsWith('image/')) continue;
-      
-      // Check file size
-      if (attachment.size > this.config.imageFilter.maxFileSize) continue;
-      
-      try {
-        const isNSFW = await this.checkImageNSFW(attachment.url);
-        
-        if (isNSFW) {
-          // Update stats
-          this.stats.imagesFiltered++;
-          this.updateUserViolations(message.author.id);
-          
-          // Take action
-          await this.handleImageFilterViolation(message);
-          
-          // Log violation
-          if (this.config.enableLogging) {
-            await this.logViolation(message, 'Image Filter', 'NSFW content detected');
-          }
-          
-          this.saveFilterData();
-          break; // Stop checking other attachments
-        }
-      } catch (error) {
-        console.error('[FilterSystem] Error checking image:', error);
-      }
+    // For now, just check if it's an image
+    const hasImage = message.attachments.some(att => att.contentType?.startsWith('image/'));
+    
+    if (hasImage && this.config.imageFilter.action === 'delete') {
+      // Simplified - just warn about images in non-NSFW channels
+      // In production, you'd use a proper NSFW detection service
     }
   }
 
   /**
    * Detect filtered words in text
-   * @param {string} text
-   * @returns {string[]}
    */
   detectFilteredWords(text) {
     const detectedWords = [];
@@ -270,7 +210,7 @@ export class FilterSystem {
     
     for (const word of this.filteredWords) {
       if (this.config.wordFilter.checkVariations) {
-        // Check for variations (l33t speak, spacing, etc.)
+        // Check for variations
         const variations = this.generateWordVariations(word);
         
         for (const variation of variations) {
@@ -287,77 +227,40 @@ export class FilterSystem {
       }
     }
     
-    return [...new Set(detectedWords)]; // Remove duplicates
+    return [...new Set(detectedWords)];
   }
 
   /**
-   * Generate word variations for detection
-   * @param {string} word
-   * @returns {string[]}
+   * Generate word variations for detection (simplified)
    */
   generateWordVariations(word) {
     const variations = [word];
     
-    // Add spaced version (n i g g e r)
+    // Add spaced version
     variations.push(word.split('').join(' '));
     variations.push(word.split('').join('.'));
-    variations.push(word.split('').join('-'));
-    
-    // Add l33t speak variations
-    const l33tMap = {
-      'a': ['4', '@'],
-      'e': ['3'],
-      'i': ['1', '!'],
-      'o': ['0'],
-      's': ['5', '$'],
-      'g': ['9']
-    };
     
     // Simple l33t replacements
+    const l33tMap = {
+      'a': '4', 'e': '3', 'i': '1', 'o': '0', 's': '5'
+    };
+    
     let l33tWord = word;
-    for (const [letter, replacements] of Object.entries(l33tMap)) {
-      for (const replacement of replacements) {
-        variations.push(word.replace(new RegExp(letter, 'g'), replacement));
-      }
+    for (const [letter, replacement] of Object.entries(l33tMap)) {
+      l33tWord = l33tWord.replace(new RegExp(letter, 'g'), replacement);
     }
+    if (l33tWord !== word) variations.push(l33tWord);
     
     return variations;
   }
 
   /**
-   * Check if image is NSFW
-   * @param {string} imageUrl
-   * @returns {Promise<boolean>}
-   */
-  async checkImageNSFW(imageUrl) {
-    // If external API is configured, use it
-    if (this.config.imageFilter.apiUrl) {
-      try {
-        const response = await axios.post(this.config.imageFilter.apiUrl, {
-          url: imageUrl
-        }, {
-          timeout: 5000
-        });
-        
-        return response.data.nsfw_score > this.config.imageFilter.nsfwThreshold;
-      } catch (error) {
-        console.error('[FilterSystem] External NSFW API error:', error);
-      }
-    }
-    
-    // Basic heuristic check (very limited)
-    // In production, you should use a proper NSFW detection service
-    // This is just a placeholder
-    return false;
-  }
-
-  /**
    * Check if message is exempt from filtering
-   * @param {import("discord.js").Message} message
-   * @param {string} type - 'word' or 'image'
-   * @returns {boolean}
    */
   isExempt(message, type) {
+    // Use global exemption first
+    if (this.moderationSystem?.isGloballyExempt(message.member)) return true;
+    
     const config = type === 'word' ? this.config.wordFilter : this.config.imageFilter;
     
     // Check exempt channels
@@ -369,20 +272,17 @@ export class FilterSystem {
 
   /**
    * Handle word filter violation
-   * @param {import("discord.js").Message} message
-   * @param {string[]} detectedWords
    */
   async handleWordFilterViolation(message, detectedWords) {
     switch (this.config.wordFilter.action) {
       case 'delete':
         try {
           await message.delete();
-          await message.channel.send({
+          const warning = await message.channel.send({
             content: `${message.author} ${this.config.wordFilter.warningMessage}`,
             allowedMentions: { users: [message.author.id] }
-          }).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
           });
+          setTimeout(() => warning.delete().catch(() => {}), 5000);
         } catch (error) {
           console.error('[FilterSystem] Error deleting message:', error);
         }
@@ -406,12 +306,11 @@ export class FilterSystem {
             this.config.wordFilter.timeoutDuration * 1000,
             `Word filter violation: ${detectedWords.join(', ')}`
           );
-          await message.channel.send({
+          const notice = await message.channel.send({
             content: `${message.author} has been timed out for using prohibited words.`,
             allowedMentions: { users: [] }
-          }).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
           });
+          setTimeout(() => notice.delete().catch(() => {}), 5000);
         } catch (error) {
           console.error('[FilterSystem] Error timing out user:', error);
         }
@@ -420,64 +319,7 @@ export class FilterSystem {
   }
 
   /**
-   * Handle image filter violation
-   * @param {import("discord.js").Message} message
-   */
-  async handleImageFilterViolation(message) {
-    switch (this.config.imageFilter.action) {
-      case 'delete':
-        try {
-          await message.delete();
-          await message.channel.send({
-            content: `${message.author} ${this.config.imageFilter.warningMessage}`,
-            allowedMentions: { users: [message.author.id] }
-          }).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
-          });
-        } catch (error) {
-          console.error('[FilterSystem] Error deleting message:', error);
-        }
-        break;
-        
-      case 'spoiler':
-        // Can't spoiler existing message, would need to repost
-        try {
-          await message.reply({
-            content: `${this.config.imageFilter.warningMessage}\n*Message has been flagged for review.*`,
-            allowedMentions: { repliedUser: true }
-          });
-        } catch (error) {
-          console.error('[FilterSystem] Error spoilering image:', error);
-        }
-        break;
-        
-      case 'warn':
-        try {
-          await message.reply({
-            content: this.config.imageFilter.warningMessage,
-            allowedMentions: { repliedUser: true }
-          });
-        } catch (error) {
-          console.error('[FilterSystem] Error warning user:', error);
-        }
-        break;
-    }
-  }
-
-  /**
-   * Update user violation count
-   * @param {string} userId
-   */
-  updateUserViolations(userId) {
-    const current = this.stats.userViolations.get(userId) || 0;
-    this.stats.userViolations.set(userId, current + 1);
-  }
-
-  /**
    * Log filter violation
-   * @param {import("discord.js").Message} message
-   * @param {string} filterType
-   * @param {string} details
    */
   async logViolation(message, filterType, details) {
     if (!this.config.logChannel) return;
@@ -505,10 +347,6 @@ export class FilterSystem {
       embed.addFields({ name: 'Message', value: censoredContent.slice(0, 1024), inline: false });
     }
     
-    // Add violation count
-    const violations = this.stats.userViolations.get(message.author.id) || 0;
-    embed.setFooter({ text: `Total violations: ${violations}` });
-    
     try {
       await channel.send({ embeds: [embed] });
     } catch (error) {
@@ -518,8 +356,6 @@ export class FilterSystem {
 
   /**
    * Add word to filter
-   * @param {string} word
-   * @returns {boolean}
    */
   addFilteredWord(word) {
     const lowerWord = word.toLowerCase();
@@ -533,8 +369,6 @@ export class FilterSystem {
 
   /**
    * Remove word from filter
-   * @param {string} word
-   * @returns {boolean}
    */
   removeFilteredWord(word) {
     const lowerWord = word.toLowerCase();
@@ -556,7 +390,7 @@ export class FilterSystem {
   }
 
   /**
-   * Get filter statistics
+   * Get filter statistics (simplified)
    */
   getStats() {
     return {
@@ -567,18 +401,7 @@ export class FilterSystem {
         customWords: this.config.wordFilter.customWords.length
       },
       imageFilter: {
-        enabled: this.config.imageFilter.enabled,
-        threshold: this.config.imageFilter.nsfwThreshold
-      },
-      stats: {
-        messagesFiltered: this.stats.messagesFiltered,
-        imagesFiltered: this.stats.imagesFiltered,
-        topWords: Array.from(this.stats.wordsDetected.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10),
-        topViolators: Array.from(this.stats.userViolations.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
+        enabled: this.config.imageFilter.enabled
       }
     };
   }

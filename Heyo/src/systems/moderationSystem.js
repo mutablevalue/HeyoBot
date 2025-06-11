@@ -9,24 +9,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export class ModerationSystem {
-  /**
-   * @param {import("discord.js").Client} client
-   * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
-   */
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
     
-    // Get moderation config from config loader
-    // Config loader should provide complete config with all values
     this.config = this.configLoader.get('moderation');
-    
-    // Validate required config exists
     if (!this.config) {
       throw new Error('[ModerationSystem] Moderation configuration not found in config.yaml');
     }
     
-    // Validate config structure
     this.validateConfig();
     
     // Cooldown tracking
@@ -38,15 +29,91 @@ export class ModerationSystem {
     this.loadForcedNicknames();
     
     // Mute role tracking for each guild
-    this.muteRoles = new Map(); // guildId -> roleId
+    this.muteRoles = new Map();
     
-    // Set up event listeners for nickname changes
+    // Reference to AntiNuke system (will be set by index.js)
+    this.antiNuke = null;
+    
     this.setupNicknameMonitoring();
   }
 
   /**
-   * Validate configuration structure
+   * Set AntiNuke reference for hierarchy checking
    */
+  setAntiNuke(antiNuke) {
+    this.antiNuke = antiNuke;
+  }
+
+  /**
+   * CENTRALIZED PERMISSION CHECK - All systems should use this
+   * Checks hierarchy: AntiNuke Admin -> Owner Bypass -> Discord Admin -> System Permissions
+   * @param {import("discord.js").GuildMember} member 
+   * @param {string} action - The action being performed
+   * @param {Object} options - Additional options
+   * @returns {{allowed: boolean, reason: string, level: string}}
+   */
+  checkGlobalPermission(member, action, options = {}) {
+    // 1. Check AntiNuke admin status (highest priority)
+    if (this.antiNuke) {
+      const antiNukeConfig = this.antiNuke.config;
+      if (antiNukeConfig.adminUsers?.includes(member.id)) {
+        return { allowed: true, reason: 'AntiNuke Admin', level: 'antinuke_admin' };
+      }
+      if (member.roles.cache.some(role => antiNukeConfig.adminRoles?.includes(role.id))) {
+        return { allowed: true, reason: 'AntiNuke Admin Role', level: 'antinuke_admin' };
+      }
+    }
+    
+    // 2. Server owner bypass (if enabled)
+    if (this.config.ownerBypass && member.id === member.guild.ownerId) {
+      return { allowed: true, reason: 'Server Owner (bypass enabled)', level: 'owner' };
+    }
+    
+    // 3. Discord Administrator permission
+    if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return { allowed: true, reason: 'Discord Administrator', level: 'discord_admin' };
+    }
+    
+    // 4. Check system-specific permissions if provided
+    if (options.requireModeration) {
+      const modCheck = this.checkPermission(member, options.command || action);
+      if (modCheck.allowed) {
+        return { 
+          allowed: true, 
+          reason: modCheck.reason, 
+          level: modCheck.level 
+        };
+      }
+    }
+    
+    // 5. Check custom permission callback if provided
+    if (options.customCheck && typeof options.customCheck === 'function') {
+      const customResult = options.customCheck(member);
+      if (customResult) {
+        return { 
+          allowed: true, 
+          reason: options.customReason || 'Custom permission', 
+          level: 'custom' 
+        };
+      }
+    }
+    
+    return { 
+      allowed: false, 
+      reason: 'No permission', 
+      level: null 
+    };
+  }
+
+  /**
+   * Check if user is exempt from all restrictions
+   * Used by filter systems, link protection, etc.
+   */
+  isGloballyExempt(member) {
+    const check = this.checkGlobalPermission(member, 'exempt', {});
+    return check.allowed;
+  }
+
   validateConfig() {
     const required = [
       'ownerBypass',
@@ -66,23 +133,17 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Load forced nicknames from file
-   */
   loadForcedNicknames() {
     try {
       if (fs.existsSync(this.forcedNicknamesPath)) {
         const data = JSON.parse(fs.readFileSync(this.forcedNicknamesPath, 'utf8'));
         for (const [userId, value] of Object.entries(data)) {
-          // Handle both old format (string) and new format (object)
           if (typeof value === 'string') {
-            // Old format - convert to new format
             this.forcedNicknamesMap.set(userId, {
               nickname: value,
               guildId: null
             });
           } else {
-            // New format
             this.forcedNicknamesMap.set(userId, value);
           }
         }
@@ -93,9 +154,6 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Save forced nicknames to file
-   */
   saveForcedNicknames() {
     try {
       const data = Object.fromEntries(this.forcedNicknamesMap);
@@ -109,21 +167,15 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Set up nickname monitoring
-   */
   setupNicknameMonitoring() {
-    // Monitor member updates for nickname changes
     this.client.on('guildMemberUpdate', async (oldMember, newMember) => {
       const forcedData = this.forcedNicknamesMap.get(newMember.id);
       if (!forcedData) return;
 
-      // Check if nickname was changed
       if (newMember.nickname !== forcedData.nickname) {
         try {
           await newMember.setNickname(forcedData.nickname, 'Forced nickname - user attempted to change');
           
-          // Log the attempt
           await this.logAction(newMember.guild, {
             action: 'Forced Nickname Revert',
             moderator: this.client.user,
@@ -137,15 +189,11 @@ export class ModerationSystem {
       }
     });
 
-    // Periodic check to ensure nicknames haven't been changed
     setInterval(() => {
       this.checkForcedNicknames();
     }, this.config.forcedNicknames.checkInterval);
   }
 
-  /**
-   * Check all forced nicknames
-   */
   async checkForcedNicknames() {
     for (const [userId, forcedData] of this.forcedNicknamesMap) {
       for (const guild of this.client.guilds.cache.values()) {
@@ -161,13 +209,7 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Get or create the forced nickname role
-   * @param {import("discord.js").Guild} guild 
-   * @returns {Promise<import("discord.js").Role|null>}
-   */
   async getOrCreateForcedNicknameRole(guild) {
-    // First check if role ID is configured and exists
     if (this.config.forcedNicknames.roleId) {
       const existingRole = guild.roles.cache.get(this.config.forcedNicknames.roleId);
       if (existingRole) {
@@ -175,7 +217,6 @@ export class ModerationSystem {
       }
     }
 
-    // Create new role
     try {
       const role = await guild.roles.create({
         name: 'Forced Nickname',
@@ -184,7 +225,6 @@ export class ModerationSystem {
         reason: 'Role for users with forced nicknames'
       });
 
-      // Update config with new role ID
       this.config.forcedNicknames.roleId = role.id;
       await this.saveConfig();
 
@@ -195,16 +235,9 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Get or create mute role for a guild
-   * @param {import("discord.js").Guild} guild
-   * @returns {Promise<import("discord.js").Role>}
-   */
   async getOrCreateMuteRole(guild) {
-    // Check if we have a cached mute role for this guild
     let muteRoleId = this.muteRoles.get(guild.id);
     
-    // If not cached, check if configured role exists
     if (!muteRoleId && this.config.permMuteRole?.roleId) {
       const configuredRole = guild.roles.cache.get(this.config.permMuteRole.roleId);
       if (configuredRole) {
@@ -213,13 +246,11 @@ export class ModerationSystem {
       }
     }
     
-    // Check if cached role still exists
     if (muteRoleId) {
       const existingRole = guild.roles.cache.get(muteRoleId);
       if (existingRole) return existingRole;
     }
     
-    // Create new mute role
     try {
       const muteRole = await guild.roles.create({
         name: this.config.permMuteRole?.defaultName || 'Muted',
@@ -228,7 +259,6 @@ export class ModerationSystem {
         reason: 'Mute role for moderation'
       });
       
-      // Set up channel overwrites
       for (const channel of guild.channels.cache.values()) {
         if (channel.isTextBased() || channel.isVoiceBased()) {
           try {
@@ -248,7 +278,6 @@ export class ModerationSystem {
         }
       }
       
-      // Cache the role
       this.muteRoles.set(guild.id, muteRole.id);
       
       return muteRole;
@@ -258,13 +287,6 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Force a nickname on a user
-   * @param {string} guildId 
-   * @param {string} userId 
-   * @param {string} nickname 
-   * @returns {Promise<boolean>}
-   */
   async forceNickname(guildId, userId, nickname) {
     try {
       const guild = this.client.guilds.cache.get(guildId);
@@ -273,18 +295,14 @@ export class ModerationSystem {
       const member = await guild.members.fetch(userId);
       if (!member) return false;
 
-      // Set the nickname
       await member.setNickname(nickname, 'Forced nickname by moderator');
       
-      // Get or create the forced nickname role
       const forcedNicknameRole = await this.getOrCreateForcedNicknameRole(guild);
       
       if (forcedNicknameRole) {
-        // Add the role to the member
         await member.roles.add(forcedNicknameRole, 'Forced nickname applied');
       }
       
-      // Save to forced nicknames
       this.forcedNicknamesMap.set(userId, {
         nickname: nickname,
         guildId: guildId
@@ -298,12 +316,6 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Remove forced nickname from a user
-   * @param {string} guildId 
-   * @param {string} userId 
-   * @returns {Promise<boolean>}
-   */
   async removeForcedNickname(guildId, userId) {
     try {
       const forcedData = this.forcedNicknamesMap.get(userId);
@@ -313,7 +325,6 @@ export class ModerationSystem {
       if (guild) {
         const member = await guild.members.fetch(userId).catch(() => null);
         if (member) {
-          // Remove the forced nickname role if configured
           if (this.config.forcedNicknames.roleId) {
             const forcedNicknameRole = guild.roles.cache.get(this.config.forcedNicknames.roleId);
             if (forcedNicknameRole && member.roles.cache.has(forcedNicknameRole.id)) {
@@ -321,7 +332,6 @@ export class ModerationSystem {
             }
           }
           
-          // Reset their nickname
           await member.setNickname(null, 'Forced nickname removed by moderator');
         }
       }
@@ -336,54 +346,35 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Get forced nickname for a user
-   * @param {string} userId 
-   * @returns {string|null}
-   */
   getForcedNickname(userId) {
     const data = this.forcedNicknamesMap.get(userId);
     return data ? data.nickname : null;
   }
 
-  /**
-   * Save configuration back to disk
-   */
   async saveConfig() {
     this.configLoader.set('moderation', this.config);
     return this.configLoader.save();
   }
 
-  /**
-   * Check if a member has permission to use a specific command
-   * @param {import("discord.js").GuildMember} member 
-   * @param {string} commandName 
-   * @returns {{allowed: boolean, level: string|null, reason: string}}
-   */
   checkPermission(member, commandName) {
-    // Server owner always has permission if ownerBypass is enabled
     if (this.config.ownerBypass && member.id === member.guild.ownerId) {
       return { allowed: true, level: 'owner', reason: 'Server owner (bypass enabled)' };
     }
 
-    // Check Discord Administrator permission
     if (member.permissions.has(PermissionFlagsBits.Administrator)) {
       return { allowed: true, level: 'discord_admin', reason: 'Discord Administrator permission' };
     }
 
-    // Check administrator level
     if (this.hasPermissionLevel(member, 'administrator')) {
       if (this.config.permissions.administrator.commands.includes(commandName)) {
         return { allowed: true, level: 'administrator', reason: 'Administrator level access' };
       }
     }
 
-    // Check moderator level
     if (this.hasPermissionLevel(member, 'moderator')) {
       if (this.config.permissions.moderator.commands.includes(commandName)) {
         return { allowed: true, level: 'moderator', reason: 'Moderator level access' };
       }
-      // If moderator tries to use admin command
       if (this.config.permissions.administrator.commands.includes(commandName)) {
         return { 
           allowed: false, 
@@ -396,28 +387,15 @@ export class ModerationSystem {
     return { allowed: false, level: null, reason: 'No permission to use moderation commands' };
   }
 
-  /**
-   * Check if member has a specific permission level
-   * @param {import("discord.js").GuildMember} member 
-   * @param {string} level - 'administrator' or 'moderator'
-   * @returns {boolean}
-   */
   hasPermissionLevel(member, level) {
     const perms = this.config.permissions[level];
     if (!perms) return false;
 
-    // Check user whitelist
     if (perms.users.includes(member.id)) return true;
 
-    // Check role whitelist
     return member.roles.cache.some(role => perms.roles.includes(role.id));
   }
 
-  /**
-   * Get all permission levels for a member
-   * @param {import("discord.js").GuildMember} member 
-   * @returns {string[]}
-   */
   getMemberPermissionLevels(member) {
     const levels = [];
 
@@ -440,12 +418,6 @@ export class ModerationSystem {
     return levels;
   }
 
-  /**
-   * Check command cooldown
-   * @param {string} userId 
-   * @param {string} commandName 
-   * @returns {{onCooldown: boolean, timeLeft: number}}
-   */
   checkCooldown(userId, commandName) {
     const cooldownTime = (this.config.cooldowns[commandName] || this.config.cooldowns.default) * 1000;
     const key = `${userId}-${commandName}`;
@@ -460,17 +432,11 @@ export class ModerationSystem {
     }
 
     this.cooldowns.set(key, now);
-    // Clean up old cooldowns
     setTimeout(() => this.cooldowns.delete(key), cooldownTime);
 
     return { onCooldown: false, timeLeft: 0 };
   }
 
-  /**
-   * Log moderation action
-   * @param {import("discord.js").Guild} guild 
-   * @param {Object} data 
-   */
   async logAction(guild, data) {
     if (!this.config.logChannel) return;
 
@@ -499,12 +465,6 @@ export class ModerationSystem {
     }
   }
 
-  /**
-   * Add a user to a permission level
-   * @param {string} level - 'administrator' or 'moderator'
-   * @param {string} userId 
-   * @returns {Promise<boolean>}
-   */
   async addUserToLevel(level, userId) {
     if (!this.config.permissions[level]) return false;
 
@@ -516,12 +476,6 @@ export class ModerationSystem {
     return false;
   }
 
-  /**
-   * Remove a user from a permission level
-   * @param {string} level 
-   * @param {string} userId 
-   * @returns {Promise<boolean>}
-   */
   async removeUserFromLevel(level, userId) {
     if (!this.config.permissions[level]) return false;
 
@@ -534,12 +488,6 @@ export class ModerationSystem {
     return false;
   }
 
-  /**
-   * Add a role to a permission level
-   * @param {string} level 
-   * @param {string} roleId 
-   * @returns {Promise<boolean>}
-   */
   async addRoleToLevel(level, roleId) {
     if (!this.config.permissions[level]) return false;
 
@@ -551,12 +499,6 @@ export class ModerationSystem {
     return false;
   }
 
-  /**
-   * Remove a role from a permission level
-   * @param {string} level 
-   * @param {string} roleId 
-   * @returns {Promise<boolean>}
-   */
   async removeRoleFromLevel(level, roleId) {
     if (!this.config.permissions[level]) return false;
 
@@ -569,18 +511,11 @@ export class ModerationSystem {
     return false;
   }
 
-  /**
-   * Update permission roles (called by setupperms command)
-   * @param {Object} roles 
-   */
   async updatePermRoles(roles) {
     this.config.permRoles = roles;
     await this.saveConfig();
   }
 
-  /**
-   * Get statistics about moderation system
-   */
   getStats() {
     return {
       administrators: {
