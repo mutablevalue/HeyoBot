@@ -24,6 +24,14 @@ function isOwnerWithBypass(member) {
 
 // Helper function to parse multiple users from input
 function parseMultipleUsers(input) {
+  // Handle null or undefined input
+  if (!input) {
+    return [];
+  }
+  
+  // Convert to string if needed
+  input = String(input);
+  
   // Match user IDs and mentions
   const userPattern = /<@!?(\d+)>|(\d{17,19})/g;
   const matches = [...input.matchAll(userPattern)];
@@ -328,6 +336,14 @@ export async function executeBan(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to ban.', 
+      ephemeral: true 
+    });
+  }
+  
   const userIds = parseMultipleUsers(usersInput);
   
   if (userIds.length === 0) {
@@ -428,6 +444,14 @@ export async function executeKick(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to kick.', 
+      ephemeral: true 
+    });
+  }
+  
   const userIds = parseMultipleUsers(usersInput);
   
   if (userIds.length === 0) {
@@ -524,6 +548,14 @@ export async function executeTimeout(interaction) {
   const usersInput = interaction.options.getString('users');
   const duration = interaction.options.getString('duration');
   const reason = interaction.options.getString('reason') || 'No reason provided';
+  
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to timeout.', 
+      ephemeral: true 
+    });
+  }
   
   const userIds = parseMultipleUsers(usersInput);
   
@@ -643,6 +675,14 @@ export async function executeMute(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to mute.', 
+      ephemeral: true 
+    });
+  }
+  
   const userIds = parseMultipleUsers(usersInput);
   
   if (userIds.length === 0) {
@@ -741,6 +781,14 @@ export async function executeMute(interaction) {
 export async function executeUnmute(interaction) {
   const usersInput = interaction.options.getString('users');
   
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to unmute.', 
+      ephemeral: true 
+    });
+  }
+  
   const userIds = parseMultipleUsers(usersInput);
   
   if (userIds.length === 0) {
@@ -836,6 +884,14 @@ export async function executeRole(interaction) {
   const usersInput = interaction.options.getString('users');
   const role = interaction.options.getRole('role');
   const action = interaction.options.getString('action');
+  
+  // Safety check for null input
+  if (!usersInput) {
+    return interaction.reply({ 
+      content: '❌ Please provide at least one user to manage roles for.', 
+      ephemeral: true 
+    });
+  }
   
   const userIds = parseMultipleUsers(usersInput);
   
