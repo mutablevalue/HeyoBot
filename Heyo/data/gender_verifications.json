@@ -1,0 +1,33 @@
+{
+  "activeVerifications": {},
+  "userVerifications": {},
+  "acceptedUsers": {
+    "1135418923572023317": {
+      "gender": "male",
+      "images": {
+        "idPhoto": "https://media.discordapp.net/attachments/1379953422241103946/1382445007239385260/sample20license_1524574793278.png?ex=684b2dbe&is=6849dc3e&hm=7b9bae9f784d324385caaabe75e8296081e845d73329605d7f02f05acdadd71b&=&format=webp&quality=lossless&width=1150&height=735",
+        "selfie": "https://media.discordapp.net/attachments/1379953422241103946/1382445007239385260/sample20license_1524574793278.png?ex=684b2dbe&is=6849dc3e&hm=7b9bae9f784d324385caaabe75e8296081e845d73329605d7f02f05acdadd71b&=&format=webp&quality=lossless&width=1150&height=735"
+      },
+      "approvedAt": "2025-06-11T19:53:10.493Z",
+      "approvedBy": "1235002473698299956",
+      "approverTag": "notarustdev"
+    }
+  },
+  "guilds": {
+    "1379953422241103943": {
+      "guildId": "1379953422241103943",
+      "roles": {
+        "female": "1382443997255172098",
+        "male": "1382443998223929354"
+      },
+      "channels": {
+        "verify": "1382440891993559181",
+        "female": "1382440892501327943",
+        "male": "1382440893310697545",
+        "reviewCategory": "1382440890659897455"
+      },
+      "panelMessageId": "1382443999096340500",
+      "createdAt": "2025-06-11T19:39:45.492Z"
+    }
+  }
+}

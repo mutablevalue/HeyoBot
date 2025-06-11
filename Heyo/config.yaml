@@ -49,6 +49,10 @@ moderation:
         - restoreroles
         - emoji
         - setupskullboard
+        - setupgenderverify
+        - verifyuser
+        - verifylist
+        - verifystatus
     moderator:
       users:
         - "345678901234567890"
@@ -62,6 +66,8 @@ moderation:
         - unmute
         - purge
         - emoji
+        - verifylist
+        - verifystatus
   permRoles:
     vc: "1380755737906647060"
     pic: "1380755738950893658"
@@ -84,6 +90,9 @@ moderation:
     timeout: 5
     role: 3
     setupskullboard: 30
+    setupgenderverify: 60
+    verifyuser: 10
+    verifylist: 5
   forcedNicknames:
     dataFile: forced_nicknames.json
     checkInterval: 5000
@@ -123,6 +132,72 @@ moderation:
       requiresAntiNukeWhitelist: true
       maxUsers: 20
       cooldownMultiplier: 1.5
+genderVerify:
+  enabled: true
+  dataFile: gender_verifications.json
+  cooldown: 86400000  # 24 hours in milliseconds
+  maxAttemptsPerUser: 3
+  roleNames:
+    female: Verified Female
+    male: Verified Male
+  channelNames:
+    verify: verify
+    femaleOnly: female-chat
+    maleOnly: male-chat
+    reviewCategory: Verification Reviews
+  reviewChannelFormat: verify-{number}
+  verifyEmbed:
+    title: ✅ Gender Verification
+    description: |
+      To access gender-specific channels, you need to verify your identity.
+      
+      **Requirements:**
+      • A photo of your ID (only showing your photo and birthdate)
+      • A selfie holding your ID or a second form of ID
+      
+      **Privacy Notice:**
+      Your information will only be used for verification and will be deleted after the process.
+    color: 39423  # 0x0099ff in decimal
+    footer: Click the button below to start
+    buttonLabel: Start Verification
+    buttonEmoji: ✅
+  formModal:
+    title: Gender Verification Form
+    genderField:
+      label: Gender
+      placeholder: "Enter: male or female"
+      required: true
+    idPhotoField:
+      label: ID Photo URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    selfieField:
+      label: Selfie/Second ID URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    notesField:
+      label: Additional Notes (Optional)
+      placeholder: Any additional information for reviewers
+      required: false
+  messages:
+    alreadyVerified: ✅ You are already verified!
+    pendingVerification: ⏳ You already have a pending verification request.
+    cooldownActive: ⏰ Please wait {time} before submitting another verification.
+    maxAttemptsReached: ❌ You have reached the maximum number of verification attempts.
+    invalidGender: ❌ Please enter either "male" or "female".
+    invalidUrls: ❌ Please provide valid image URLs.
+    submitted: ✅ Your verification has been submitted! You will be notified once reviewed.
+    approved: ✅ Your verification has been approved! You now have access to gender-specific channels.
+    denied: "❌ Your verification has been denied. Reason: {reason}"
+    errorSubmitting: ❌ Failed to submit verification. Please try again later.
+  notifications:
+    notifyOnSubmit: true
+    notifyOnReview: true
+    dmResults: true
+  logChannel: "1380422918017650719"  # Uses moderation log channel
+  deleteDataAfterDays: 30
+  requireAge18: true
+  guilds: {}
 afk:
   enabled: true
   dataFile: afk_data.json

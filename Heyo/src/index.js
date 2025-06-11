@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Complete file with all systems integrated
+// Complete file with all systems integrated including Gender Verification
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -27,6 +27,7 @@ import { SkullboardSystem } from "./systems/skullboardSystem.js";
 import { SnipeSystem } from "./systems/snipeSystem.js";
 import { SocialLookupSystem } from "./systems/socialLookupSystem.js";
 import { EntranceSystem } from "./systems/entranceSystem.js";
+import { GenderVerifySystem } from "./systems/genderVerifySystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -50,6 +51,8 @@ import * as socialCommands from "./commands/social.js";
 import * as setupEntranceCommand from "./commands/setupentrance.js";
 import * as antiNukeCommand from "./commands/antinuke.js";
 import * as emojiCommand from "./commands/emoji.js";
+import * as genderVerifyCommands from "./commands/genderverify.js";
+import * as messageCommand from "./commands/message.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +111,7 @@ async function main() {
   const snipeSystem = new SnipeSystem(client, config);
   const socialLookupSystem = new SocialLookupSystem(client, config);
   const entranceSystem = new EntranceSystem(client, config);
+  const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
 
   // 4) Pass systems into commands that need them
   antiNukeCommand.setAntiNuke(antiNuke);
@@ -134,6 +138,10 @@ async function main() {
   socialCommands.setSocialLookupSystem(socialLookupSystem);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
   emojiCommand.setModerationSystem(moderationSystem);
+  genderVerifyCommands.setGenderVerifySystem(genderVerifySystem);
+  genderVerifyCommands.setModerationSystem(moderationSystem);
+  messageCommand.setModerationSystem(moderationSystem);
+  messageCommand.setAntiNuke(antiNuke);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -166,7 +174,8 @@ async function main() {
     const multiCommandFiles = [
       'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
       'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
-      'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js'
+      'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
+      'genderverify.js'
     ];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
@@ -313,6 +322,7 @@ async function main() {
     console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Gender Verify System: ${genderVerifySystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
