@@ -38,6 +38,7 @@ export class BoosterSystem {
       rolePosition: boosterConfig.rolePosition || null,
       roleHoist: boosterConfig.roleHoist ?? false,
       roleMentionable: boosterConfig.roleMentionable ?? false,
+      minBoostsForHoist: boosterConfig.minBoostsForHoist ?? 2, // Minimum boosts to choose hoist option
       
       // Cleanup
       checkInterval: boosterConfig.checkInterval || 86400000, // 24 hours in ms
@@ -48,7 +49,7 @@ export class BoosterSystem {
     };
 
     // Booster perks tracking
-    this.boosterPerks = new Map(); // userId -> { claimed: Date, roles: [], channels: [], permRoles: [] }
+    this.boosterPerks = new Map(); // userId -> { claimed: Date, roles: [], channels: [], permRoles: [], boostCount: number }
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -93,6 +94,26 @@ export class BoosterSystem {
   }
 
   /**
+   * Get user's boost count
+   * @param {import("discord.js").GuildMember} member 
+   * @returns {number}
+   */
+  getUserBoostCount(member) {
+    // Count how many times the user has boosted (Discord shows this in member.premiumSinceTimestamp)
+    // For now, we'll check if they're boosting and estimate based on boost level
+    if (!member.premiumSince) return 0;
+    
+    // Check guild boost level and member's boost status
+    // This is a simplified approach - in reality, you'd need to track individual boost counts
+    const guild = member.guild;
+    const boostLevel = guild.premiumTier;
+    
+    // For now, return 1 if they're boosting, 2 if guild is level 2+
+    if (boostLevel >= 2) return 2;
+    return 1;
+  }
+
+  /**
    * Setup event listeners
    */
   setupEventListeners() {
@@ -111,6 +132,16 @@ export class BoosterSystem {
       // Check if member lost boost
       if (oldMember.premiumSince && !newMember.premiumSince) {
         await this.removeBoosterPerks(newMember.guild.id, newMember.id, 'Lost server boost');
+      }
+      
+      // Update boost count if still boosting
+      if (newMember.premiumSince) {
+        const perks = this.boosterPerks.get(newMember.id);
+        if (perks) {
+          perks.boostCount = this.getUserBoostCount(newMember);
+          this.boosterPerks.set(newMember.id, perks);
+          this.saveBoosterData();
+        }
       }
     });
 
@@ -220,6 +251,7 @@ export class BoosterSystem {
       const perks = existingPerks || { roles: [], channels: [] };
       perks.claimed = new Date().toISOString();
       perks.permRoles = rolesToAdd;
+      perks.boostCount = this.getUserBoostCount(member);
       this.boosterPerks.set(member.id, perks);
       this.saveBoosterData();
 
@@ -338,9 +370,10 @@ export class BoosterSystem {
    * Create booster role
    * @param {import("discord.js").Guild} guild 
    * @param {import("discord.js").GuildMember} member 
+   * @param {Object} options
    * @returns {Promise<{success: boolean, role?: import("discord.js").Role, error?: string}>}
    */
-  async createBoosterRole(guild, member) {
+  async createBoosterRole(guild, member, options = {}) {
     // Check if user has claimed perks
     const perks = this.boosterPerks.get(member.id);
     if (!perks || !perks.permRoles?.length) {
@@ -354,23 +387,27 @@ export class BoosterSystem {
 
     try {
       // Format role name
-      const roleName = this.config.roleNameFormat
+      const roleName = options.name || this.config.roleNameFormat
         .replace('{username}', member.user.username)
         .replace('{tag}', member.user.tag)
         .replace('{id}', member.user.id);
 
       // Determine color
-      let color = this.config.roleColor;
+      let color = options.color || this.config.roleColor;
       if (color === 'Random') {
         color = Math.floor(Math.random() * 16777215); // Random color
       }
+
+      // Check if user can set hoist
+      const canSetHoist = this.getUserBoostCount(member) >= this.config.minBoostsForHoist;
+      const hoist = canSetHoist ? (options.hoist ?? this.config.roleHoist) : false;
 
       // Create role
       const roleOptions = {
         name: roleName,
         color: color,
-        hoist: this.config.roleHoist,
-        mentionable: this.config.roleMentionable,
+        hoist: hoist,
+        mentionable: options.mentionable ?? this.config.roleMentionable,
         reason: `Booster role for ${member.user.tag}`
       };
 
@@ -402,6 +439,74 @@ export class BoosterSystem {
     } catch (error) {
       console.error('[BoosterSystem] Error creating booster role:', error);
       return { success: false, error: 'Failed to create role. ' + error.message };
+    }
+  }
+
+  /**
+   * Edit booster role
+   * @param {import("discord.js").Guild} guild 
+   * @param {import("discord.js").GuildMember} member 
+   * @param {Object} options
+   * @returns {Promise<{success: boolean, role?: import("discord.js").Role, error?: string}>}
+   */
+  async editBoosterRole(guild, member, options = {}) {
+    const perks = this.boosterPerks.get(member.id);
+    if (!perks || !perks.roles?.length) {
+      return { success: false, error: 'You do not have a personal role to edit.' };
+    }
+
+    try {
+      // Find the user's role
+      const roleId = perks.roles.find(id => guild.roles.cache.has(id));
+      if (!roleId) {
+        return { success: false, error: 'Your personal role could not be found.' };
+      }
+
+      const role = guild.roles.cache.get(roleId);
+      
+      // Build edit options
+      const editOptions = {};
+      
+      if (options.name) {
+        editOptions.name = options.name;
+      }
+      
+      if (options.color !== undefined) {
+        editOptions.color = options.color === 'Random' ? 
+          Math.floor(Math.random() * 16777215) : options.color;
+      }
+      
+      if (options.hoist !== undefined) {
+        // Check if user can set hoist
+        const canSetHoist = this.getUserBoostCount(member) >= this.config.minBoostsForHoist;
+        if (canSetHoist) {
+          editOptions.hoist = options.hoist;
+        } else if (options.hoist) {
+          return { success: false, error: `You need at least ${this.config.minBoostsForHoist} boosts to make your role displayable.` };
+        }
+      }
+      
+      if (options.mentionable !== undefined) {
+        editOptions.mentionable = options.mentionable;
+      }
+
+      // Edit the role
+      await role.edit(editOptions, `Edited by ${member.user.tag}`);
+
+      // Log edit
+      if (this.config.enableLogging) {
+        await this.logAction(guild, {
+          action: 'Booster Role Edited',
+          user: member.user,
+          role: role,
+          changes: Object.keys(editOptions).join(', ')
+        });
+      }
+
+      return { success: true, role };
+    } catch (error) {
+      console.error('[BoosterSystem] Error editing booster role:', error);
+      return { success: false, error: 'Failed to edit role. ' + error.message };
     }
   }
 
@@ -470,6 +575,23 @@ export class BoosterSystem {
       console.error('[BoosterSystem] Error deleting items:', error);
       return { success: false, error: 'Failed to delete items. ' + error.message };
     }
+  }
+
+  /**
+   * Remove all booster perks (command version)
+   * @param {string} guildId 
+   * @param {string} userId 
+   * @returns {Promise<{success: boolean, error?: string}>}
+   */
+  async removeAllBoosterPerks(guildId, userId) {
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return { success: false, error: 'Guild not found' };
+
+    const perks = this.boosterPerks.get(userId);
+    if (!perks) return { success: false, error: 'No booster perks found' };
+
+    await this.removeBoosterPerks(guildId, userId, 'User requested removal');
+    return { success: true };
   }
 
   /**
@@ -561,7 +683,7 @@ export class BoosterSystem {
 
     const embed = {
       title: `Booster System: ${data.action}`,
-      color: data.action.includes('Created') || data.action.includes('Claimed') ? 0x00ff00 : 0xff0000,
+      color: data.action.includes('Created') || data.action.includes('Claimed') || data.action.includes('Edited') ? 0x00ff00 : 0xff0000,
       fields: [],
       timestamp: new Date().toISOString()
     };
@@ -624,6 +746,14 @@ export class BoosterSystem {
       embed.fields.push({
         name: 'Type',
         value: data.type,
+        inline: true
+      });
+    }
+
+    if (data.changes) {
+      embed.fields.push({
+        name: 'Changes',
+        value: data.changes,
         inline: true
       });
     }

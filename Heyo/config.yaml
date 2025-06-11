@@ -52,6 +52,7 @@ moderation:
         - createchannel
         - deletechannel
         - restoreroles
+        - emoji
     moderator:
       users:
         - "345678901234567890"
@@ -64,6 +65,7 @@ moderation:
         - mute
         - unmute
         - purge
+        - emoji
   permRoles:
     vc: "1380755737906647060"
     pic: "1380755738950893658"
@@ -308,9 +310,10 @@ boosterSystem:
   rolePosition: null
   roleHoist: false
   roleMentionable: false
+  minBoostsForHoist: 2  # Add this line - minimum boosts to choose hoist option
   checkInterval: 86400000
   logChannel: null
-  enableLogging: true
+  enableLogging: false
 ticketSystem:
   enabled: false
   dataFile: tickets.json

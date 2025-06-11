@@ -48,6 +48,7 @@ import * as snipeCommands from "./commands/snipe.js";
 import * as socialCommands from "./commands/social.js";
 import * as setupEntranceCommand from "./commands/setupentrance.js";
 import * as antiNukeCommand from "./commands/antinuke.js";
+import * as emojiCommand from "./commands/emoji.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,6 +118,7 @@ async function main() {
   snipeCommands.setSnipeSystem(snipeSystem);
   socialCommands.setSocialLookupSystem(socialLookupSystem);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
+  emojiCommand.setModerationSystem(moderationSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
