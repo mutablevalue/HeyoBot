@@ -506,3 +506,120 @@ socialLookup:
     instagram:
       enabled: true
       baseUrl: 'https://www.instagram.com/'
+# Ticket System Configuration
+ticketSystem:
+  enabled: false
+  dataFile: 'tickets.json'
+  
+  # Basic Settings
+  maxTicketsPerUser: 3
+  cooldown: 60000  # 1 minute in milliseconds
+  channelNameFormat: 'ticket-{number}'  # Variables: {number}, {username}, {category}
+  
+  # Auto-delete Settings
+  autoDelete:
+    enabled: true
+    timeout: 300000  # 5 minutes in milliseconds
+  
+  # Default Channels (set via setup command)
+  defaultCategoryId: null  # Category where tickets are created
+  logChannel: null  # Channel for ticket logs
+  transcriptChannel: null  # Channel for ticket transcripts
+  
+  # Panel Configuration
+  panelEmbed:
+    title: '🎫 Support Tickets'
+    description: 'Need help? Create a ticket and our support team will assist you!'
+    color: 0x0099ff
+    footer: 'Our support team will respond as soon as possible'
+    buttonLabel: 'Create Ticket'
+    buttonEmoji: '🎫'
+  
+  # Welcome Message
+  welcomeMessage: |
+    Thank you for creating a ticket! 
+    
+    Please describe your issue in detail and our support team will assist you shortly.
+    
+    • Be patient - we'll respond as soon as possible
+    • Provide all relevant information
+    • Be respectful to our support team
+  
+  # Ticket Categories (configured via setup)
+  categories: []
+  # Example category structure:
+  # - id: 'support'
+  #   name: 'General Support'
+  #   description: 'General help and questions'
+  #   emoji: '❓'
+  #   supportRole: '123456789012345678'  # Role ID
+  #   categoryId: null  # Optional specific category channel
+  #   welcomeMessage: 'Custom welcome message for this category'
+  #   color: 0x0099ff
+  
+  # Permissions
+  closeOwnTicket: true  # Allow users to close their own tickets
+  transcriptOnClose: true  # Generate transcript when ticket is closed
+  dmTranscripts: false  # DM transcripts to ticket creator
+  
+  # Limits
+  maxActiveTickets: 50  # Maximum active tickets at once
+  transcriptMessageLimit: 1000  # Max messages to include in transcript
+  autoCloseInactiveDays: 7  # Close inactive tickets after X days (0 = disabled)
+  
+  # Button Configuration
+  buttons:
+    close:
+      label: 'Close Ticket'
+      emoji: '🔒'
+      style: 'Danger'  # Primary, Secondary, Success, Danger
+    claim:
+      label: 'Claim Ticket'
+      emoji: '🎫'
+      style: 'Primary'
+    delete:
+      label: 'Delete Ticket'
+      emoji: '🗑️'
+      style: 'Danger'
+    transcript:
+      label: 'Save Transcript'
+      emoji: '📄'
+      style: 'Secondary'
+  
+  # Notification Settings
+  notifications:
+    pingSupport: true  # Ping support role on ticket creation
+    pingUser: true  # Ping user when ticket is created
+    notifyOnClaim: true  # Notify when ticket is claimed
+    notifyOnClose: true  # Notify when ticket is closed
+  
+  # Message Templates
+  messages:
+    ticketCreated: '✅ Your ticket has been created: {channel}'
+    ticketClosed: '🔒 This ticket has been closed by {user}'
+    ticketClaimed: '🎫 {user} has claimed this ticket'
+    ticketDeleting: '🗑️ Deleting ticket in {seconds} seconds...'
+    maxTicketsReached: '❌ You already have {max} open ticket(s). Please close one before creating another.'
+    cooldownActive: '❌ Please wait {time} seconds before creating another ticket.'
+    noPermission: '❌ You do not have permission to {action} this ticket.'
+    transcriptSaved: '✅ Transcript saved!'
+    errorCreating: '❌ Failed to create ticket. Please try again later.'
+    errorTranscript: '❌ Failed to generate transcript.'
+  
+  # Logging
+  enableLogging: true
+  logActions:
+    - 'create'
+    - 'close'
+    - 'claim'
+    - 'delete'
+    - 'add_user'
+    - 'remove_user'
+    - 'rename'
+  
+  # Statistics
+  stats:
+    totalTickets: 0
+    totalClosed: 0
+    averageResponseTime: 0
+    averageResolutionTime: 0

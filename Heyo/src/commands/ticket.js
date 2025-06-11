@@ -3,7 +3,11 @@ import {
   SlashCommandBuilder,
   PermissionFlagsBits,
   EmbedBuilder,
-  ChannelType
+  ChannelType,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder
 } from 'discord.js';
 
 let ticketSystem = null;
@@ -16,6 +20,199 @@ export const ticketData = new SlashCommandBuilder()
   .setName('ticket')
   .setDescription('Manage ticket system')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+  .addSubcommandGroup(group =>
+    group
+      .setName('setup')
+      .setDescription('Setup ticket system')
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('init')
+          .setDescription('Initialize ticket system with basic settings')
+          .addChannelOption(option =>
+            option
+              .setName('category')
+              .setDescription('Category where ticket channels will be created')
+              .addChannelTypes(ChannelType.GuildCategory)
+              .setRequired(true)
+          )
+          .addChannelOption(option =>
+            option
+              .setName('log_channel')
+              .setDescription('Channel for ticket logs')
+              .addChannelTypes(ChannelType.GuildText)
+              .setRequired(true)
+          )
+          .addChannelOption(option =>
+            option
+              .setName('transcript_channel')
+              .setDescription('Channel for ticket transcripts')
+              .addChannelTypes(ChannelType.GuildText)
+              .setRequired(false)
+          )
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('category')
+          .setDescription('Add a ticket category')
+          .addStringOption(option =>
+            option
+              .setName('id')
+              .setDescription('Unique ID for the category (e.g., support, report)')
+              .setRequired(true)
+          )
+          .addStringOption(option =>
+            option
+              .setName('name')
+              .setDescription('Display name for the category')
+              .setRequired(true)
+          )
+          .addStringOption(option =>
+            option
+              .setName('description')
+              .setDescription('Category description')
+              .setRequired(true)
+          )
+          .addRoleOption(option =>
+            option
+              .setName('support_role')
+              .setDescription('Role that can manage tickets in this category')
+              .setRequired(true)
+          )
+          .addStringOption(option =>
+            option
+              .setName('emoji')
+              .setDescription('Emoji for this category')
+              .setRequired(false)
+          )
+          .addChannelOption(option =>
+            option
+              .setName('category_channel')
+              .setDescription('Specific category channel for these tickets (optional)')
+              .addChannelTypes(ChannelType.GuildCategory)
+              .setRequired(false)
+          )
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('remove_category')
+          .setDescription('Remove a ticket category')
+          .addStringOption(option =>
+            option
+              .setName('id')
+              .setDescription('Category ID to remove')
+              .setRequired(true)
+              .setAutocomplete(true)
+          )
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('settings')
+          .setDescription('Configure ticket system settings')
+          .addIntegerOption(option =>
+            option
+              .setName('max_tickets')
+              .setDescription('Maximum tickets per user (1-10)')
+              .setMinValue(1)
+              .setMaxValue(10)
+              .setRequired(false)
+          )
+          .addIntegerOption(option =>
+            option
+              .setName('cooldown')
+              .setDescription('Cooldown between ticket creation in seconds (0-3600)')
+              .setMinValue(0)
+              .setMaxValue(3600)
+              .setRequired(false)
+          )
+          .addBooleanOption(option =>
+            option
+              .setName('auto_delete')
+              .setDescription('Auto-delete closed tickets')
+              .setRequired(false)
+          )
+          .addIntegerOption(option =>
+            option
+              .setName('delete_after')
+              .setDescription('Delete tickets after X seconds when closed (60-86400)')
+              .setMinValue(60)
+              .setMaxValue(86400)
+              .setRequired(false)
+          )
+          .addIntegerOption(option =>
+            option
+              .setName('max_active')
+              .setDescription('Maximum active tickets in server (10-500)')
+              .setMinValue(10)
+              .setMaxValue(500)
+              .setRequired(false)
+          )
+          .addIntegerOption(option =>
+            option
+              .setName('inactive_days')
+              .setDescription('Auto-close inactive tickets after X days (0=disabled, 1-30)')
+              .setMinValue(0)
+              .setMaxValue(30)
+              .setRequired(false)
+          )
+          .addBooleanOption(option =>
+            option
+              .setName('dm_transcripts')
+              .setDescription('DM transcripts to ticket creators')
+              .setRequired(false)
+          )
+          .addBooleanOption(option =>
+            option
+              .setName('close_own')
+              .setDescription('Allow users to close their own tickets')
+              .setRequired(false)
+          )
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('panel_message')
+          .setDescription('Customize the ticket panel message')
+          .addStringOption(option =>
+            option
+              .setName('title')
+              .setDescription('Panel embed title')
+              .setMaxLength(256)
+              .setRequired(false)
+          )
+          .addStringOption(option =>
+            option
+              .setName('description')
+              .setDescription('Panel embed description')
+              .setMaxLength(4096)
+              .setRequired(false)
+          )
+          .addStringOption(option =>
+            option
+              .setName('footer')
+              .setDescription('Panel embed footer')
+              .setMaxLength(2048)
+              .setRequired(false)
+          )
+          .addStringOption(option =>
+            option
+              .setName('button_label')
+              .setDescription('Button label text')
+              .setMaxLength(80)
+              .setRequired(false)
+          )
+          .addStringOption(option =>
+            option
+              .setName('welcome_message')
+              .setDescription('Message sent when ticket is created')
+              .setMaxLength(2000)
+              .setRequired(false)
+          )
+      )
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('view')
+          .setDescription('View current ticket system configuration')
+      )
+  )
   .addSubcommand(subcommand =>
     subcommand
       .setName('panel')
@@ -37,6 +234,12 @@ export const ticketData = new SlashCommandBuilder()
         option
           .setName('description')
           .setDescription('Panel description')
+          .setRequired(false)
+      )
+      .addStringOption(option =>
+        option
+          .setName('categories')
+          .setDescription('Comma-separated category IDs to include (leave empty for all)')
           .setRequired(false)
       )
   )
@@ -80,19 +283,19 @@ export const ticketData = new SlashCommandBuilder()
   )
   .addSubcommand(subcommand =>
     subcommand
-      .setName('forceclose')
-      .setDescription('Force close a ticket')
+      .setName('close')
+      .setDescription('Close a ticket')
       .addChannelOption(option =>
         option
           .setName('channel')
-          .setDescription('Ticket channel to close')
+          .setDescription('Ticket channel to close (current channel if not specified)')
           .addChannelTypes(ChannelType.GuildText)
-          .setRequired(true)
+          .setRequired(false)
       )
       .addStringOption(option =>
         option
           .setName('reason')
-          .setDescription('Reason for force closing')
+          .setDescription('Reason for closing')
           .setRequired(false)
       )
   );
@@ -102,7 +305,12 @@ export async function execute(interaction) {
     return interaction.reply({ content: '❌ Ticket system not loaded.', ephemeral: true });
   }
 
+  const subcommandGroup = interaction.options.getSubcommandGroup();
   const subcommand = interaction.options.getSubcommand();
+
+  if (subcommandGroup === 'setup') {
+    return executeSetup(interaction, subcommand);
+  }
 
   switch (subcommand) {
     case 'panel':
@@ -115,22 +323,408 @@ export async function execute(interaction) {
       return executeRename(interaction);
     case 'stats':
       return executeStats(interaction);
-    case 'forceclose':
-      return executeForceClose(interaction);
+    case 'close':
+      return executeClose(interaction);
   }
+}
+
+async function executeSetup(interaction, subcommand) {
+  // Admin only
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return interaction.reply({
+      content: '❌ Only administrators can setup the ticket system.',
+      ephemeral: true
+    });
+  }
+
+  switch (subcommand) {
+    case 'init':
+      return executeSetupInit(interaction);
+    case 'category':
+      return executeSetupCategory(interaction);
+    case 'remove_category':
+      return executeSetupRemoveCategory(interaction);
+    case 'settings':
+      return executeSetupSettings(interaction);
+    case 'panel_message':
+      return executeSetupPanelMessage(interaction);
+    case 'view':
+      return executeSetupView(interaction);
+  }
+}
+
+async function executeSetupInit(interaction) {
+  const category = interaction.options.getChannel('category');
+  const logChannel = interaction.options.getChannel('log_channel');
+  const transcriptChannel = interaction.options.getChannel('transcript_channel');
+
+  await interaction.deferReply();
+
+  try {
+    // Initialize basic config if not exists
+    if (!ticketSystem.config.categories) {
+      ticketSystem.config.categories = [];
+    }
+
+    // Set channels
+    ticketSystem.config.defaultCategoryId = category.id;
+    ticketSystem.config.logChannel = logChannel.id;
+    if (transcriptChannel) {
+      ticketSystem.config.transcriptChannel = transcriptChannel.id;
+    }
+
+    // Enable system
+    ticketSystem.config.enabled = true;
+
+    // Set default settings if not present
+    ticketSystem.config.maxTicketsPerUser = ticketSystem.config.maxTicketsPerUser || 3;
+    ticketSystem.config.cooldown = ticketSystem.config.cooldown || 60000;
+    ticketSystem.config.channelNameFormat = ticketSystem.config.channelNameFormat || 'ticket-{number}';
+    
+    if (!ticketSystem.config.autoDelete) {
+      ticketSystem.config.autoDelete = {
+        enabled: true,
+        timeout: 300000 // 5 minutes
+      };
+    }
+
+    // Save config
+    await ticketSystem.saveConfig();
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Ticket System Initialized')
+      .setDescription('Basic ticket system setup completed!')
+      .setColor(0x00ff00)
+      .addFields(
+        { name: 'Ticket Category', value: `${category}`, inline: true },
+        { name: 'Log Channel', value: `${logChannel}`, inline: true },
+        { name: 'Transcript Channel', value: transcriptChannel ? `${transcriptChannel}` : 'Not set', inline: true }
+      )
+      .setFooter({ text: 'Use /ticket setup category to add ticket categories' })
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    console.error('[Ticket Setup] Error initializing:', error);
+    await interaction.editReply({
+      content: '❌ Failed to initialize ticket system.'
+    });
+  }
+}
+
+async function executeSetupCategory(interaction) {
+  const id = interaction.options.getString('id').toLowerCase().replace(/\s+/g, '-');
+  const name = interaction.options.getString('name');
+  const description = interaction.options.getString('description');
+  const supportRole = interaction.options.getRole('support_role');
+  const emoji = interaction.options.getString('emoji') || '🎫';
+  const categoryChannel = interaction.options.getChannel('category_channel');
+
+  await interaction.deferReply();
+
+  try {
+    // Check if category already exists
+    const existing = ticketSystem.config.categories.find(c => c.id === id);
+    if (existing) {
+      return interaction.editReply({
+        content: `❌ A category with ID \`${id}\` already exists.`
+      });
+    }
+
+    // Create new category
+    const newCategory = {
+      id,
+      name,
+      description,
+      supportRole: supportRole.id,
+      emoji,
+      categoryId: categoryChannel?.id || ticketSystem.config.defaultCategoryId,
+      welcomeMessage: `Welcome to your ${name} ticket! A member of <@&${supportRole.id}> will assist you shortly.`,
+      color: 0x0099ff
+    };
+
+    ticketSystem.config.categories.push(newCategory);
+    await ticketSystem.saveConfig();
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Ticket Category Added')
+      .setDescription(`Successfully added new ticket category!`)
+      .setColor(0x00ff00)
+      .addFields(
+        { name: 'ID', value: `\`${id}\``, inline: true },
+        { name: 'Name', value: name, inline: true },
+        { name: 'Emoji', value: emoji, inline: true },
+        { name: 'Description', value: description, inline: false },
+        { name: 'Support Role', value: `${supportRole}`, inline: true },
+        { name: 'Category Channel', value: categoryChannel ? `${categoryChannel}` : 'Default', inline: true }
+      )
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    console.error('[Ticket Setup] Error adding category:', error);
+    await interaction.editReply({
+      content: '❌ Failed to add ticket category.'
+    });
+  }
+}
+
+async function executeSetupRemoveCategory(interaction) {
+  const id = interaction.options.getString('id');
+
+  const category = ticketSystem.config.categories.find(c => c.id === id);
+  if (!category) {
+    return interaction.reply({
+      content: `❌ Category with ID \`${id}\` not found.`,
+      ephemeral: true
+    });
+  }
+
+  // Confirm deletion
+  const embed = new EmbedBuilder()
+    .setTitle('⚠️ Confirm Category Deletion')
+    .setDescription(`Are you sure you want to delete the **${category.name}** category?`)
+    .setColor(0xffff00)
+    .addFields(
+      { name: 'Category', value: category.name, inline: true },
+      { name: 'ID', value: `\`${category.id}\``, inline: true }
+    );
+
+  const row = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(`ticket_confirm_delete_${id}`)
+        .setLabel('Confirm Delete')
+        .setStyle(ButtonStyle.Danger),
+      new ButtonBuilder()
+        .setCustomId('ticket_cancel_delete')
+        .setLabel('Cancel')
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+  const response = await interaction.reply({
+    embeds: [embed],
+    components: [row],
+    fetchReply: true
+  });
+
+  const collector = response.createMessageComponentCollector({ time: 30000 });
+
+  collector.on('collect', async i => {
+    if (i.user.id !== interaction.user.id) {
+      return i.reply({ content: 'Only the command user can confirm.', ephemeral: true });
+    }
+
+    if (i.customId === `ticket_confirm_delete_${id}`) {
+      // Remove category
+      const index = ticketSystem.config.categories.findIndex(c => c.id === id);
+      ticketSystem.config.categories.splice(index, 1);
+      await ticketSystem.saveConfig();
+
+      await i.update({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('✅ Category Removed')
+            .setDescription(`Successfully removed category **${category.name}**.`)
+            .setColor(0x00ff00)
+        ],
+        components: []
+      });
+    } else {
+      await i.update({
+        content: 'Cancelled.',
+        embeds: [],
+        components: []
+      });
+    }
+
+    collector.stop();
+  });
+
+  collector.on('end', collected => {
+    if (collected.size === 0) {
+      interaction.editReply({
+        content: 'Command timed out.',
+        embeds: [],
+        components: []
+      });
+    }
+  });
+}
+
+async function executeSetupSettings(interaction) {
+  const maxTickets = interaction.options.getInteger('max_tickets');
+  const cooldown = interaction.options.getInteger('cooldown');
+  const autoDelete = interaction.options.getBoolean('auto_delete');
+  const deleteAfter = interaction.options.getInteger('delete_after');
+  const maxActive = interaction.options.getInteger('max_active');
+  const inactiveDays = interaction.options.getInteger('inactive_days');
+  const dmTranscripts = interaction.options.getBoolean('dm_transcripts');
+  const closeOwn = interaction.options.getBoolean('close_own');
+
+  await interaction.deferReply();
+
+  try {
+    const changes = [];
+
+    if (maxTickets !== null) {
+      ticketSystem.config.maxTicketsPerUser = maxTickets;
+      changes.push(`Max tickets per user: **${maxTickets}**`);
+    }
+
+    if (cooldown !== null) {
+      ticketSystem.config.cooldown = cooldown * 1000; // Convert to ms
+      changes.push(`Cooldown: **${cooldown} seconds**`);
+    }
+
+    if (autoDelete !== null) {
+      ticketSystem.config.autoDelete.enabled = autoDelete;
+      changes.push(`Auto-delete: **${autoDelete ? 'Enabled' : 'Disabled'}**`);
+    }
+
+    if (deleteAfter !== null) {
+      ticketSystem.config.autoDelete.timeout = deleteAfter * 1000; // Convert to ms
+      changes.push(`Delete after: **${deleteAfter} seconds**`);
+    }
+
+    if (maxActive !== null) {
+      ticketSystem.config.maxActiveTickets = maxActive;
+      changes.push(`Max active tickets: **${maxActive}**`);
+    }
+
+    if (inactiveDays !== null) {
+      ticketSystem.config.autoCloseInactiveDays = inactiveDays;
+      changes.push(`Auto-close after: **${inactiveDays === 0 ? 'Disabled' : `${inactiveDays} days`}**`);
+      
+      // Restart inactive check if needed
+      if (inactiveDays > 0 && ticketSystem.config.enabled) {
+        ticketSystem.setupInactiveCheck();
+      }
+    }
+
+    if (dmTranscripts !== null) {
+      ticketSystem.config.dmTranscripts = dmTranscripts;
+      changes.push(`DM transcripts: **${dmTranscripts ? 'Enabled' : 'Disabled'}**`);
+    }
+
+    if (closeOwn !== null) {
+      ticketSystem.config.closeOwnTicket = closeOwn;
+      changes.push(`Users can close own tickets: **${closeOwn ? 'Yes' : 'No'}**`);
+    }
+
+    if (changes.length === 0) {
+      return interaction.editReply({
+        content: '❌ No settings were provided.'
+      });
+    }
+
+    await ticketSystem.saveConfig();
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ Ticket Settings Updated')
+      .setDescription('Successfully updated ticket system settings:')
+      .setColor(0x00ff00)
+      .addFields({
+        name: 'Changes',
+        value: changes.join('\n')
+      })
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    console.error('[Ticket Setup] Error updating settings:', error);
+    await interaction.editReply({
+      content: '❌ Failed to update settings.'
+    });
+  }
+}
+
+async function executeSetupView(interaction) {
+  const config = ticketSystem.config;
+
+  const embed = new EmbedBuilder()
+    .setTitle('📋 Ticket System Configuration')
+    .setColor(0x0099ff)
+    .addFields(
+      { name: 'Status', value: config.enabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+      { name: 'Max Tickets/User', value: `${config.maxTicketsPerUser}`, inline: true },
+      { name: 'Cooldown', value: `${config.cooldown / 1000} seconds`, inline: true },
+      { name: 'Log Channel', value: config.logChannel ? `<#${config.logChannel}>` : 'Not set', inline: true },
+      { name: 'Transcript Channel', value: config.transcriptChannel ? `<#${config.transcriptChannel}>` : 'Not set', inline: true },
+      { name: 'Default Category', value: config.defaultCategoryId ? `<#${config.defaultCategoryId}>` : 'Not set', inline: true },
+      { name: 'Auto-Delete', value: config.autoDelete?.enabled ? `Yes (${config.autoDelete.timeout / 1000}s)` : 'No', inline: true },
+      { name: 'Channel Format', value: `\`${config.channelNameFormat}\``, inline: true },
+      { name: 'Max Active Tickets', value: config.maxActiveTickets ? `${config.maxActiveTickets}` : 'Unlimited', inline: true },
+      { name: 'Auto-Close Inactive', value: config.autoCloseInactiveDays ? `${config.autoCloseInactiveDays} days` : 'Disabled', inline: true },
+      { name: 'DM Transcripts', value: config.dmTranscripts ? 'Yes' : 'No', inline: true },
+      { name: 'Users Can Close', value: config.closeOwnTicket ? 'Yes' : 'No', inline: true }
+    );
+
+  // Add categories
+  if (config.categories && config.categories.length > 0) {
+    const categoryList = config.categories.map(cat => 
+      `${cat.emoji} **${cat.name}** (\`${cat.id}\`)\n└ Support: <@&${cat.supportRole}>`
+    ).join('\n\n');
+
+    embed.addFields({
+      name: `Categories (${config.categories.length})`,
+      value: categoryList.length > 1024 ? categoryList.substring(0, 1021) + '...' : categoryList,
+      inline: false
+    });
+  } else {
+    embed.addFields({
+      name: 'Categories',
+      value: 'No categories configured',
+      inline: false
+    });
+  }
+
+  // Add stats
+  const stats = ticketSystem.getStats();
+  embed.addFields({
+    name: 'Statistics',
+    value: `Total Created: **${stats.totalTickets}**\nTotal Closed: **${stats.totalClosed}**\nActive Now: **${stats.activeTickets}**`,
+    inline: false
+  });
+
+  await interaction.reply({ embeds: [embed] });
 }
 
 async function executePanel(interaction) {
   const channel = interaction.options.getChannel('channel');
   const title = interaction.options.getString('title');
   const description = interaction.options.getString('description');
+  const categoriesInput = interaction.options.getString('categories');
 
   await interaction.deferReply({ ephemeral: true });
 
   try {
+    // Check if system is configured
+    if (!ticketSystem.config.categories || ticketSystem.config.categories.length === 0) {
+      return interaction.editReply({
+        content: '❌ No ticket categories configured. Use `/ticket setup category` to add categories first.'
+      });
+    }
+
     const options = {};
     if (title) options.title = title;
     if (description) options.description = description;
+
+    // Filter categories if specified
+    if (categoriesInput) {
+      const categoryIds = categoriesInput.split(',').map(id => id.trim());
+      const categories = ticketSystem.config.categories.filter(cat => 
+        categoryIds.includes(cat.id)
+      );
+      
+      if (categories.length === 0) {
+        return interaction.editReply({
+          content: '❌ No valid categories found with the specified IDs.'
+        });
+      }
+      
+      options.categories = categories;
+    }
 
     const message = await ticketSystem.createTicketPanel(channel, options);
 
@@ -153,6 +747,49 @@ async function executePanel(interaction) {
     });
   }
 }
+
+async function executeClose(interaction) {
+  const channel = interaction.options.getChannel('channel') || interaction.channel;
+  const reason = interaction.options.getString('reason') || 'Closed by staff';
+
+  // Check if it's a ticket
+  const ticket = ticketSystem.activeTickets.get(channel.id);
+  if (!ticket) {
+    return interaction.reply({
+      content: '❌ This is not a valid ticket channel.',
+      ephemeral: true
+    });
+  }
+
+  // Check permissions
+  const category = ticketSystem.config.categories.find(c => c.id === ticket.category);
+  const canClose = interaction.user.id === ticket.userId ||
+                  interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) ||
+                  (category?.supportRole && interaction.member.roles.cache.has(category.supportRole));
+
+  if (!canClose) {
+    return interaction.reply({
+      content: '❌ You do not have permission to close this ticket.',
+      ephemeral: true
+    });
+  }
+
+  // Trigger close through ticket system
+  const closeButton = {
+    customId: 'ticket_close',
+    user: interaction.user,
+    channel: channel,
+    reply: interaction.reply.bind(interaction),
+    deferReply: interaction.deferReply.bind(interaction),
+    editReply: interaction.editReply.bind(interaction),
+    member: interaction.member,
+    guild: interaction.guild
+  };
+
+  await ticketSystem.handleClose(closeButton, ticket);
+}
+
+// Keep other functions (executeAdd, executeRemove, executeRename, executeStats) as they were
 
 async function executeAdd(interaction) {
   const user = interaction.options.getUser('user');
@@ -332,47 +969,21 @@ async function executeStats(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function executeForceClose(interaction) {
-  const channel = interaction.options.getChannel('channel');
-  const reason = interaction.options.getString('reason') || 'Force closed by administrator';
-
-  // Check if it's a ticket
-  const ticket = ticketSystem.activeTickets.get(channel.id);
-  if (!ticket) {
-    return interaction.reply({
-      content: '❌ That channel is not a ticket.',
-      ephemeral: true
-    });
-  }
-
-  await interaction.deferReply();
-
-  try {
-    // Close the ticket
-    ticketSystem.closeTicket(channel.id, interaction.user.id, reason);
+// Autocomplete handler
+export async function autocomplete(interaction) {
+  const focusedOption = interaction.options.getFocused(true);
+  
+  if (focusedOption.name === 'id' && interaction.options.getSubcommand() === 'remove_category') {
+    const categories = ticketSystem.config.categories || [];
+    const choices = categories.map(cat => ({
+      name: `${cat.name} (${cat.id})`,
+      value: cat.id
+    }));
     
-    // Delete the channel
-    await channel.delete(reason);
-
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket Force Closed')
-      .setDescription(`Ticket #${ticket.id} has been force closed.`)
-      .addFields(
-        { name: 'Channel', value: channel.name, inline: true },
-        { name: 'Reason', value: reason, inline: false }
-      )
-      .setColor(0xff0000)
-      .setTimestamp();
-
-    await interaction.editReply({ embeds: [embed] });
-  } catch (error) {
-    console.error('[Ticket Command] Error force closing:', error);
-    await interaction.editReply({
-      content: '❌ Failed to force close ticket.'
-    });
+    await interaction.respond(choices.slice(0, 25));
   }
 }
 
 export const commands = [
-  { data: ticketData, execute }
+  { data: ticketData, execute, autocomplete }
 ];

@@ -26,12 +26,10 @@ export class TicketSystem {
     this.configLoader = configLoader;
     
     // Get ticket config from config loader
-    this.config = this.configLoader.get('ticketSystem');
+    this.config = this.configLoader.get('ticketSystem') || {};
     
-    // Validate config
-    if (!this.config) {
-      throw new Error('[TicketSystem] Ticket configuration not found in config.yaml');
-    }
+    // Initialize default config if not exists
+    this.initializeDefaultConfig();
     
     // Active tickets tracking
     this.activeTickets = new Map(); // channelId -> ticket data
@@ -39,13 +37,114 @@ export class TicketSystem {
     this.ticketPanels = new Map(); // messageId -> panel data
     
     // Load data
-    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
+    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'tickets.json');
     this.loadTicketData();
 
     // Setup event listeners
     if (this.config.enabled) {
       this.setupEventListeners();
+      
+      // Setup inactive ticket checking
+      if (this.config.autoCloseInactiveDays > 0) {
+        this.setupInactiveCheck();
+      }
     }
+  }
+
+  /**
+   * Initialize default configuration
+   */
+  initializeDefaultConfig() {
+    const defaults = {
+      enabled: false,
+      dataFile: 'tickets.json',
+      maxTicketsPerUser: 3,
+      cooldown: 60000, // 1 minute
+      channelNameFormat: 'ticket-{number}',
+      autoDelete: {
+        enabled: true,
+        timeout: 300000 // 5 minutes
+      },
+      defaultCategoryId: null,
+      logChannel: null,
+      transcriptChannel: null,
+      categories: [],
+      panelEmbed: {
+        title: '🎫 Support Tickets',
+        description: 'Need help? Create a ticket and our support team will assist you!',
+        color: 0x0099ff,
+        footer: 'Our support team will respond as soon as possible',
+        buttonLabel: 'Create Ticket',
+        buttonEmoji: '🎫'
+      },
+      welcomeMessage: 'Thank you for creating a ticket!\n\nPlease describe your issue in detail and our support team will assist you shortly.',
+      closeOwnTicket: true,
+      transcriptOnClose: true,
+      dmTranscripts: false,
+      maxActiveTickets: 50,
+      transcriptMessageLimit: 1000,
+      autoCloseInactiveDays: 7,
+      buttons: {
+        close: { label: 'Close Ticket', emoji: '🔒', style: 'Danger' },
+        claim: { label: 'Claim Ticket', emoji: '🎫', style: 'Primary' },
+        delete: { label: 'Delete Ticket', emoji: '🗑️', style: 'Danger' },
+        transcript: { label: 'Save Transcript', emoji: '📄', style: 'Secondary' }
+      },
+      notifications: {
+        pingSupport: true,
+        pingUser: true,
+        notifyOnClaim: true,
+        notifyOnClose: true
+      },
+      messages: {
+        ticketCreated: '✅ Your ticket has been created: {channel}',
+        ticketClosed: '🔒 This ticket has been closed by {user}',
+        ticketClaimed: '🎫 {user} has claimed this ticket',
+        ticketDeleting: '🗑️ Deleting ticket in {seconds} seconds...',
+        maxTicketsReached: '❌ You already have {max} open ticket(s). Please close one before creating another.',
+        cooldownActive: '❌ Please wait {time} seconds before creating another ticket.',
+        noPermission: '❌ You do not have permission to {action} this ticket.',
+        transcriptSaved: '✅ Transcript saved!',
+        errorCreating: '❌ Failed to create ticket. Please try again later.',
+        errorTranscript: '❌ Failed to generate transcript.'
+      },
+      enableLogging: true,
+      logActions: ['create', 'close', 'claim', 'delete', 'add_user', 'remove_user', 'rename'],
+      stats: {
+        totalTickets: 0,
+        totalClosed: 0,
+        averageResponseTime: 0,
+        averageResolutionTime: 0
+      }
+    };
+
+    // Deep merge with existing config
+    this.config = this.deepMerge(defaults, this.config);
+  }
+
+  /**
+   * Deep merge utility
+   */
+  deepMerge(target, source) {
+    const output = { ...target };
+    if (this.isObject(target) && this.isObject(source)) {
+      Object.keys(source).forEach(key => {
+        if (this.isObject(source[key])) {
+          if (!(key in target)) {
+            Object.assign(output, { [key]: source[key] });
+          } else {
+            output[key] = this.deepMerge(target[key], source[key]);
+          }
+        } else {
+          Object.assign(output, { [key]: source[key] });
+        }
+      });
+    }
+    return output;
+  }
+
+  isObject(item) {
+    return item && typeof item === 'object' && !Array.isArray(item);
   }
 
   /**
@@ -73,6 +172,11 @@ export class TicketSystem {
           this.ticketPanels = new Map(Object.entries(data.ticketPanels));
         }
         
+        // Restore stats
+        if (data.stats) {
+          this.config.stats = { ...this.config.stats, ...data.stats };
+        }
+        
         console.log(`[TicketSystem] Loaded ${this.activeTickets.size} active tickets`);
       }
     } catch (error) {
@@ -91,11 +195,7 @@ export class TicketSystem {
           Array.from(this.userTickets.entries()).map(([k, v]) => [k, Array.from(v)])
         ),
         ticketPanels: Object.fromEntries(this.ticketPanels),
-        stats: {
-          totalTickets: this.config.stats?.totalTickets || 0,
-          totalClosed: this.config.stats?.totalClosed || 0,
-          averageResponseTime: this.config.stats?.averageResponseTime || 0
-        }
+        stats: this.config.stats
       };
 
       const dir = path.dirname(this.dataPath);
@@ -118,7 +218,7 @@ export class TicketSystem {
       if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
       
       // Handle ticket creation
-      if (interaction.customId.startsWith('ticket_create_')) {
+      if (interaction.customId === 'ticket_create_category' || interaction.customId.startsWith('ticket_create_')) {
         await this.handleTicketCreate(interaction);
       }
       
@@ -137,6 +237,57 @@ export class TicketSystem {
   }
 
   /**
+   * Setup inactive ticket checking
+   */
+  setupInactiveCheck() {
+    // Check every 6 hours
+    setInterval(async () => {
+      const now = Date.now();
+      const maxInactiveMs = this.config.autoCloseInactiveDays * 24 * 60 * 60 * 1000;
+
+      for (const [channelId, ticket] of this.activeTickets) {
+        if (ticket.status === 'closed') continue;
+
+        try {
+          const channel = this.client.channels.cache.get(channelId);
+          if (!channel) {
+            this.deleteTicket(channelId);
+            continue;
+          }
+
+          // Get last message time
+          const messages = await channel.messages.fetch({ limit: 1 });
+          const lastMessage = messages.first();
+          const lastActivity = lastMessage ? lastMessage.createdTimestamp : new Date(ticket.createdAt).getTime();
+
+          if (now - lastActivity > maxInactiveMs) {
+            // Close inactive ticket
+            await this.closeTicket(channelId, this.client.user.id, 'Inactivity');
+            
+            // Send notification
+            const inactiveEmbed = new EmbedBuilder()
+              .setTitle('⏰ Ticket Closed Due to Inactivity')
+              .setDescription(`This ticket has been automatically closed after ${this.config.autoCloseInactiveDays} days of inactivity.`)
+              .setColor(0xff9900)
+              .setTimestamp();
+
+            await channel.send({ embeds: [inactiveEmbed] });
+
+            // Schedule deletion
+            if (this.config.autoDelete.enabled) {
+              setTimeout(() => {
+                this.deleteTicket(channelId);
+              }, this.config.autoDelete.timeout);
+            }
+          }
+        } catch (error) {
+          console.error('[TicketSystem] Error checking inactive ticket:', error);
+        }
+      }
+    }, 6 * 60 * 60 * 1000); // 6 hours
+  }
+
+  /**
    * Create a ticket panel
    * @param {import("discord.js").TextChannel} channel
    * @param {Object} options
@@ -145,6 +296,10 @@ export class TicketSystem {
   async createTicketPanel(channel, options = {}) {
     const categories = options.categories || this.config.categories;
     
+    if (!categories || categories.length === 0) {
+      throw new Error('No ticket categories configured');
+    }
+
     const embed = new EmbedBuilder()
       .setTitle(options.title || this.config.panelEmbed.title)
       .setDescription(options.description || this.config.panelEmbed.description)
@@ -173,7 +328,7 @@ export class TicketSystem {
       const button = new ButtonBuilder()
         .setCustomId(`ticket_create_${categories[0].id}`)
         .setLabel(options.buttonLabel || this.config.panelEmbed.buttonLabel)
-        .setEmoji(options.buttonEmoji || this.config.panelEmbed.buttonEmoji)
+        .setEmoji(options.buttonEmoji || categories[0].emoji || this.config.panelEmbed.buttonEmoji)
         .setStyle(ButtonStyle.Primary);
       
       components.push(new ActionRowBuilder().addComponents(button));
@@ -203,6 +358,20 @@ export class TicketSystem {
   async handleTicketCreate(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
+    // Check if system is properly configured
+    if (!this.config.categories || this.config.categories.length === 0) {
+      return interaction.editReply({
+        content: '❌ Ticket system is not properly configured. Please contact an administrator.'
+      });
+    }
+
+    // Check if max active tickets reached
+    if (this.config.maxActiveTickets && this.activeTickets.size >= this.config.maxActiveTickets) {
+      return interaction.editReply({
+        content: '❌ The ticket system has reached its maximum capacity. Please try again later.'
+      });
+    }
+
     // Get category
     let categoryId;
     if (interaction.isStringSelectMenu()) {
@@ -226,7 +395,7 @@ export class TicketSystem {
 
     if (activeUserTickets.length >= this.config.maxTicketsPerUser) {
       return interaction.editReply({
-        content: `❌ You already have ${this.config.maxTicketsPerUser} open ticket(s). Please close one before creating another.`
+        content: this.config.messages.maxTicketsReached.replace('{max}', this.config.maxTicketsPerUser)
       });
     }
 
@@ -240,7 +409,7 @@ export class TicketSystem {
       if (timeSince < this.config.cooldown) {
         const timeLeft = Math.ceil((this.config.cooldown - timeSince) / 1000);
         return interaction.editReply({
-          content: `❌ Please wait ${timeLeft} seconds before creating another ticket.`
+          content: this.config.messages.cooldownActive.replace('{time}', timeLeft)
         });
       }
     }
@@ -250,13 +419,13 @@ export class TicketSystem {
       const ticket = await this.createTicket(interaction.guild, interaction.user, category);
       
       await interaction.editReply({
-        content: `✅ Your ticket has been created: ${ticket.channel}`,
+        content: this.config.messages.ticketCreated.replace('{channel}', ticket.channel),
         ephemeral: true
       });
     } catch (error) {
       console.error('[TicketSystem] Error creating ticket:', error);
       await interaction.editReply({
-        content: '❌ Failed to create ticket. Please try again later.'
+        content: this.config.messages.errorCreating
       });
     }
   }
@@ -270,14 +439,13 @@ export class TicketSystem {
    */
   async createTicket(guild, user, category) {
     // Generate ticket number
-    this.config.stats = this.config.stats || { totalTickets: 0 };
     this.config.stats.totalTickets++;
     const ticketNumber = String(this.config.stats.totalTickets).padStart(4, '0');
     
     // Create channel name
     const channelName = this.config.channelNameFormat
       .replace('{number}', ticketNumber)
-      .replace('{username}', user.username)
+      .replace('{username}', user.username.toLowerCase().replace(/[^a-z0-9-]/g, ''))
       .replace('{category}', category.name.toLowerCase().replace(/\s+/g, '-'));
 
     // Create channel
@@ -310,22 +478,29 @@ export class TicketSystem {
 
     // Add support role permissions
     if (category.supportRole) {
-      channelOptions.permissionOverwrites.push({
-        id: category.supportRole,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.AttachFiles,
-          PermissionFlagsBits.EmbedLinks,
-          PermissionFlagsBits.ReadMessageHistory,
-          PermissionFlagsBits.ManageMessages
-        ]
-      });
+      const role = guild.roles.cache.get(category.supportRole);
+      if (role) {
+        channelOptions.permissionOverwrites.push({
+          id: category.supportRole,
+          allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.AttachFiles,
+            PermissionFlagsBits.EmbedLinks,
+            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.ManageMessages
+          ]
+        });
+      }
     }
 
     // Set parent category
-    if (category.categoryId) {
-      channelOptions.parent = category.categoryId;
+    const parentCategory = category.categoryId || this.config.defaultCategoryId;
+    if (parentCategory) {
+      const categoryChannel = guild.channels.cache.get(parentCategory);
+      if (categoryChannel && categoryChannel.type === ChannelType.GuildCategory) {
+        channelOptions.parent = parentCategory;
+      }
     }
 
     const channel = await guild.channels.create(channelOptions);
@@ -371,18 +546,26 @@ export class TicketSystem {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('ticket_close')
-          .setLabel('Close Ticket')
-          .setEmoji('🔒')
-          .setStyle(ButtonStyle.Danger),
+          .setLabel(this.config.buttons.close.label)
+          .setEmoji(this.config.buttons.close.emoji)
+          .setStyle(ButtonStyle[this.config.buttons.close.style]),
         new ButtonBuilder()
           .setCustomId('ticket_claim')
-          .setLabel('Claim Ticket')
-          .setEmoji('🎫')
-          .setStyle(ButtonStyle.Primary)
+          .setLabel(this.config.buttons.claim.label)
+          .setEmoji(this.config.buttons.claim.emoji)
+          .setStyle(ButtonStyle[this.config.buttons.claim.style])
       );
 
+    const pingContent = [];
+    if (this.config.notifications.pingSupport && category.supportRole) {
+      pingContent.push(`<@&${category.supportRole}>`);
+    }
+    if (this.config.notifications.pingUser) {
+      pingContent.push(`${user}`);
+    }
+
     await channel.send({
-      content: category.supportRole ? `<@&${category.supportRole}> ${user}` : `${user}`,
+      content: pingContent.join(' ') || null,
       embeds: [welcomeEmbed],
       components: [actionRow]
     });
@@ -405,6 +588,12 @@ export class TicketSystem {
    * @param {import("discord.js").ButtonInteraction} interaction
    */
   async handleTicketAction(interaction) {
+    // Skip setup-related buttons
+    if (interaction.customId.startsWith('ticket_confirm_delete_') || 
+        interaction.customId === 'ticket_cancel_delete') {
+      return;
+    }
+
     const ticket = this.activeTickets.get(interaction.channel.id);
     if (!ticket) {
       return interaction.reply({
@@ -439,13 +628,13 @@ export class TicketSystem {
   async handleClose(interaction, ticket) {
     // Check permissions
     const category = this.config.categories.find(c => c.id === ticket.category);
-    const canClose = interaction.user.id === ticket.userId ||
+    const canClose = (this.config.closeOwnTicket && interaction.user.id === ticket.userId) ||
                     interaction.member.permissions.has(PermissionFlagsBits.ManageChannels) ||
                     (category?.supportRole && interaction.member.roles.cache.has(category.supportRole));
 
     if (!canClose) {
       return interaction.reply({
-        content: '❌ You do not have permission to close this ticket.',
+        content: this.config.messages.noPermission.replace('{action}', 'close'),
         ephemeral: true
       });
     }
@@ -465,7 +654,7 @@ export class TicketSystem {
     // Create closed embed
     const closedEmbed = new EmbedBuilder()
       .setTitle('🔒 Ticket Closed')
-      .setDescription(`This ticket has been closed by ${interaction.user}.`)
+      .setDescription(this.config.messages.ticketClosed.replace('{user}', interaction.user))
       .setColor(0xff0000)
       .setTimestamp();
 
@@ -473,14 +662,14 @@ export class TicketSystem {
       .addComponents(
         new ButtonBuilder()
           .setCustomId('ticket_delete')
-          .setLabel('Delete Ticket')
-          .setEmoji('🗑️')
-          .setStyle(ButtonStyle.Danger),
+          .setLabel(this.config.buttons.delete.label)
+          .setEmoji(this.config.buttons.delete.emoji)
+          .setStyle(ButtonStyle[this.config.buttons.delete.style]),
         new ButtonBuilder()
           .setCustomId('ticket_transcript')
-          .setLabel('Save Transcript')
-          .setEmoji('📄')
-          .setStyle(ButtonStyle.Secondary)
+          .setLabel(this.config.buttons.transcript.label)
+          .setEmoji(this.config.buttons.transcript.emoji)
+          .setStyle(ButtonStyle[this.config.buttons.transcript.style])
       );
 
     await interaction.editReply({
@@ -500,7 +689,7 @@ export class TicketSystem {
     this.saveTicketData();
 
     // Log action
-    if (this.config.enableLogging) {
+    if (this.config.enableLogging && this.config.logActions.includes('close')) {
       await this.logAction(interaction.guild, {
         action: 'Ticket Closed',
         ticket: ticket,
@@ -522,7 +711,7 @@ export class TicketSystem {
 
     if (!canClaim) {
       return interaction.reply({
-        content: '❌ You do not have permission to claim tickets.',
+        content: this.config.messages.noPermission.replace('{action}', 'claim'),
         ephemeral: true
       });
     }
@@ -539,12 +728,13 @@ export class TicketSystem {
     ticket.claimedBy = interaction.user.id;
     this.saveTicketData();
 
+    const message = this.config.messages.ticketClaimed.replace('{user}', interaction.user);
     await interaction.reply({
-      content: `🎫 ${interaction.user} has claimed this ticket.`
+      content: message
     });
 
     // Log action
-    if (this.config.enableLogging) {
+    if (this.config.enableLogging && this.config.logActions.includes('claim')) {
       await this.logAction(interaction.guild, {
         action: 'Ticket Claimed',
         ticket: ticket,
@@ -564,18 +754,19 @@ export class TicketSystem {
 
     if (!canDelete) {
       return interaction.reply({
-        content: '❌ You do not have permission to delete tickets.',
+        content: this.config.messages.noPermission.replace('{action}', 'delete'),
         ephemeral: true
       });
     }
 
+    const deleteDelay = 5; // seconds
     await interaction.reply({
-      content: '🗑️ Deleting ticket in 5 seconds...'
+      content: this.config.messages.ticketDeleting.replace('{seconds}', deleteDelay)
     });
 
     setTimeout(async () => {
       await this.deleteTicket(interaction.channel.id);
-    }, 5000);
+    }, deleteDelay * 1000);
   }
 
   /**
@@ -597,7 +788,7 @@ export class TicketSystem {
             .setTitle(`Transcript - Ticket #${ticket.id}`)
             .setDescription(`Ticket created by <@${ticket.userId}>`)
             .addFields(
-              { name: 'Category', value: ticket.category, inline: true },
+              { name: 'Category', value: this.config.categories.find(c => c.id === ticket.category)?.name || ticket.category, inline: true },
               { name: 'Created', value: `<t:${Math.floor(new Date(ticket.createdAt).getTime() / 1000)}:F>`, inline: true },
               { name: 'Closed', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true }
             )
@@ -614,8 +805,24 @@ export class TicketSystem {
         }
       }
 
+      // DM transcript if enabled
+      if (this.config.dmTranscripts) {
+        try {
+          const user = await this.client.users.fetch(ticket.userId);
+          await user.send({
+            content: `Here is the transcript of your ticket #${ticket.id}:`,
+            files: [{
+              attachment: Buffer.from(transcript),
+              name: `transcript-${ticket.id}.txt`
+            }]
+          });
+        } catch (error) {
+          console.error('[TicketSystem] Failed to DM transcript:', error);
+        }
+      }
+
       await interaction.editReply({
-        content: '✅ Transcript saved!',
+        content: this.config.messages.transcriptSaved,
         files: [{
           attachment: Buffer.from(transcript),
           name: `transcript-${ticket.id}.txt`
@@ -624,7 +831,7 @@ export class TicketSystem {
     } catch (error) {
       console.error('[TicketSystem] Error generating transcript:', error);
       await interaction.editReply({
-        content: '❌ Failed to generate transcript.'
+        content: this.config.messages.errorTranscript
       });
     }
   }
@@ -635,7 +842,7 @@ export class TicketSystem {
    * @returns {Promise<string>}
    */
   async generateTranscript(channel) {
-    const messages = await channel.messages.fetch({ limit: 100 });
+    const messages = await channel.messages.fetch({ limit: Math.min(this.config.transcriptMessageLimit, 100) });
     const transcript = [];
     
     transcript.push(`Ticket Transcript - ${channel.name}`);
@@ -695,7 +902,6 @@ export class TicketSystem {
     }
 
     // Update stats
-    this.config.stats = this.config.stats || {};
     this.config.stats.totalClosed = (this.config.stats.totalClosed || 0) + 1;
 
     this.saveTicketData();
@@ -726,6 +932,12 @@ export class TicketSystem {
    */
   async logAction(guild, data) {
     if (!this.config.enableLogging || !this.config.logChannel) return;
+
+    // Check if this action should be logged
+    const actionType = data.action.toLowerCase().replace(/ticket\s+/i, '').replace(/\s+/g, '_');
+    if (this.config.logActions && !this.config.logActions.some(a => actionType.includes(a))) {
+      return;
+    }
 
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;

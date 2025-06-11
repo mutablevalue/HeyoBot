@@ -268,6 +268,9 @@ async function main() {
   });
 
   // 9) Handle slash command interactions
+ // Update this section in index.js starting at line ~245 (the interaction handler)
+
+  // 9) Handle slash command interactions
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
@@ -283,6 +286,18 @@ async function main() {
             ephemeral: true
           });
         }
+      }
+    } else if (interaction.isAutocomplete()) {
+      // Handle autocomplete interactions
+      const command = client.commands.get(interaction.commandName);
+      if (!command || !command.autocomplete) return;
+
+      try {
+        await command.autocomplete(interaction);
+      } catch (err) {
+        console.error(`Error handling autocomplete for /${interaction.commandName}:`, err);
+        // Autocomplete errors should be silent to the user
+        await interaction.respond([]).catch(() => {});
       }
     } else if (interaction.isButton()) {
       // Handle button interactions
