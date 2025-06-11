@@ -1,4 +1,14 @@
 // src/commands/genderverify.js
+/**
+ * Gender Verification System Commands
+ * 
+ * Permission Tiers:
+ * - Server Owner → Can configure & bypass verification
+ * - AntiNuke Admin → Can configure & bypass verification  
+ * - System Admin → Can configure & bypass verification
+ * - System Moderator → Can review verifications only
+ * - Regular User → Must complete verification
+ */
 import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 
 let genderVerifySystem = null;
@@ -16,8 +26,12 @@ export const commands = [
   {
     data: new SlashCommandBuilder()
       .setName('setupgenderverify')
-      .setDescription('Setup the gender verification system')
+      .setDescription('Setup the gender verification system (Owner/AntiNuke/Admin only)')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .addStringOption(option =>
+        option.setName('category_name')
+          .setDescription('Name for the main verification category')
+          .setRequired(false))
       .addStringOption(option =>
         option.setName('female_role_name')
           .setDescription('Name for the verified female role')
@@ -25,6 +39,14 @@ export const commands = [
       .addStringOption(option =>
         option.setName('male_role_name')
           .setDescription('Name for the verified male role')
+          .setRequired(false))
+      .addStringOption(option =>
+        option.setName('female_role_color')
+          .setDescription('Hex color for female role (e.g., #FF69B4)')
+          .setRequired(false))
+      .addStringOption(option =>
+        option.setName('male_role_color')
+          .setDescription('Hex color for male role (e.g., #0099FF)')
           .setRequired(false))
       .addStringOption(option =>
         option.setName('verify_channel_name')
@@ -37,6 +59,14 @@ export const commands = [
       .addStringOption(option =>
         option.setName('male_channel_name')
           .setDescription('Name for the male-only channel')
+          .setRequired(false))
+      .addStringOption(option =>
+        option.setName('verified_channel_name')
+          .setDescription('Name for the verified members chat')
+          .setRequired(false))
+      .addStringOption(option =>
+        option.setName('verified_vc_name')
+          .setDescription('Name for the verified members voice channel')
           .setRequired(false))
       .addStringOption(option =>
         option.setName('message_title')
@@ -67,29 +97,64 @@ export const commands = [
         });
       }
 
-      // Check permissions using centralized system (includes AntiNuke hierarchy)
-      const permCheck = moderationSystem.checkGlobalPermission(
-        interaction.member,
-        'setupgenderverify',
-        { requireModeration: true, command: 'setupgenderverify' }
-      );
+      // Check permission hierarchy: Owner > AntiNuke > Administration > Moderation
+      const isOwner = interaction.guild.ownerId === interaction.user.id;
+      const ownerBypassEnabled = moderationSystem.config.ownerBypass;
+      const antiNukeConfig = moderationSystem.configLoader.get('antiNuke');
+      const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+      const isSystemAdmin = moderationSystem.config.permissions.administrator.users.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => 
+          moderationSystem.config.permissions.administrator.roles.includes(role.id)
+        );
       
-      if (!permCheck.allowed) {
+      // Check permissions in order: Owner > AntiNuke > Admin
+      const hasPermission = (isOwner && ownerBypassEnabled) || isAntiNukeAdmin || isSystemAdmin;
+      
+      if (!hasPermission) {
+        let errorMessage = '❌ You do not have permission to configure the gender verification system.\n\n';
+        errorMessage += 'Required permissions (any of the following):\n';
+        errorMessage += '• Server Owner (with `ownerBypass` enabled in config)\n';
+        errorMessage += '• AntiNuke Administrator\n';
+        errorMessage += '• System Administrator';
+        
         return interaction.reply({
-          content: `❌ ${permCheck.reason}`,
+          content: errorMessage,
           ephemeral: true
         });
       }
 
       await interaction.deferReply();
 
+      // Debug log for permission check
+      console.log(`[GenderVerify] Setup attempt by ${interaction.user.tag}:`, {
+        isOwner,
+        ownerBypassEnabled,
+        isAntiNukeAdmin,
+        isSystemAdmin,
+        hasPermission
+      });
+
+      // Parse color options
+      const parseColor = (colorStr) => {
+        if (!colorStr) return null;
+        // Remove # if present and convert to integer
+        const hex = colorStr.replace('#', '');
+        return parseInt(hex, 16);
+      };
+
       // Get options
       const options = {
+        mainCategoryName: interaction.options.getString('category_name'),
         femaleRoleName: interaction.options.getString('female_role_name'),
         maleRoleName: interaction.options.getString('male_role_name'),
+        femaleRoleColor: parseColor(interaction.options.getString('female_role_color')),
+        maleRoleColor: parseColor(interaction.options.getString('male_role_color')),
         verifyChannelName: interaction.options.getString('verify_channel_name'),
         femaleChannelName: interaction.options.getString('female_channel_name'),
         maleChannelName: interaction.options.getString('male_channel_name'),
+        verifiedChannelName: interaction.options.getString('verified_channel_name'),
+        verifiedVCName: interaction.options.getString('verified_vc_name'),
         messageTitle: interaction.options.getString('message_title'),
         messageDescription: interaction.options.getString('message_description'),
         messageFooter: interaction.options.getString('message_footer'),
@@ -106,22 +171,34 @@ export const commands = [
           .setDescription(result.message)
           .setColor(0x00ff00)
           .addFields(
+            { name: 'Category', value: `All channels created in **${options.mainCategoryName || 'Gender Verification'}** category`, inline: false },
             { name: 'Female Role', value: `<@&${result.setup.roles.female}>`, inline: true },
             { name: 'Male Role', value: `<@&${result.setup.roles.male}>`, inline: true },
             { name: 'Verify Channel', value: `<#${result.setup.channels.verify}>`, inline: true },
             { name: 'Female Channel', value: `<#${result.setup.channels.female}>`, inline: true },
-            { name: 'Male Channel', value: `<#${result.setup.channels.male}>`, inline: true }
+            { name: 'Male Channel', value: `<#${result.setup.channels.male}>`, inline: true },
+            { name: 'Verified Chat', value: `<#${result.setup.channels.verified}>`, inline: true },
+            { name: 'Verified VC', value: `<#${result.setup.channels.verifiedVC}>`, inline: true }
           )
           .setTimestamp();
 
         await interaction.editReply({ embeds: [embed] });
 
-        // Log the setup
+        // Log the setup with permission level
         if (moderationSystem) {
+          let permissionLevel = 'Unknown';
+          if (isOwner && ownerBypassEnabled) {
+            permissionLevel = 'Server Owner';
+          } else if (isAntiNukeAdmin) {
+            permissionLevel = 'AntiNuke Administrator';
+          } else if (isSystemAdmin) {
+            permissionLevel = 'System Administrator';
+          }
+          
           await moderationSystem.logAction(interaction.guild, {
             action: 'Gender Verification Setup',
             moderator: interaction.user,
-            additional: 'System configured successfully'
+            additional: `System configured successfully by ${permissionLevel}`
           });
         }
       } else {
@@ -154,19 +231,21 @@ export const commands = [
         });
       }
 
-      // Check permissions using centralized system
-      const permCheck = moderationSystem.checkGlobalPermission(
-        interaction.member,
-        'verifystats',
-        { 
-          requireModeration: true, 
-          command: 'verifystats',
-          customCheck: (member) => member.permissions.has(PermissionFlagsBits.ManageRoles),
-          customReason: 'Has ManageRoles permission'
-        }
-      );
+      // Check permission hierarchy for stats viewing
+      const isOwner = interaction.guild.ownerId === interaction.user.id;
+      const ownerBypassEnabled = moderationSystem.config.ownerBypass;
+      const antiNukeConfig = moderationSystem.configLoader.get('antiNuke');
+      const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+      const modPerms = moderationSystem.config.permissions;
+      const hasModPerms = interaction.member.roles.cache.some(role => 
+        modPerms.administrator.roles.includes(role.id) || 
+        modPerms.moderator.roles.includes(role.id)
+      ) || modPerms.administrator.users.includes(interaction.user.id) || 
+        modPerms.moderator.users.includes(interaction.user.id);
       
-      if (!permCheck.allowed) {
+      if (!((isOwner && ownerBypassEnabled) || isAntiNukeAdmin || hasModPerms || 
+            interaction.member.permissions.has(PermissionFlagsBits.ManageRoles))) {
         return interaction.reply({
           content: '❌ You do not have permission to view verification stats.',
           ephemeral: true
@@ -196,7 +275,7 @@ export const commands = [
   {
     data: new SlashCommandBuilder()
       .setName('verifyuser')
-      .setDescription('Manually verify a user (bypass verification process)')
+      .setDescription('Manually verify a user without review process (Owner/AntiNuke/Admin only)')
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addUserOption(option =>
         option.setName('user')
@@ -219,16 +298,29 @@ export const commands = [
         });
       }
 
-      // Check permissions using centralized system (includes AntiNuke hierarchy)
-      const permCheck = moderationSystem.checkGlobalPermission(
-        interaction.member,
-        'verifyuser',
-        { requireModeration: true, command: 'verifyuser' }
-      );
+      // Check permission hierarchy: Owner > AntiNuke > Administration > Moderation
+      const isOwner = interaction.guild.ownerId === interaction.user.id;
+      const ownerBypassEnabled = moderationSystem.config.ownerBypass;
+      const antiNukeConfig = moderationSystem.configLoader.get('antiNuke');
+      const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+      const isSystemAdmin = moderationSystem.config.permissions.administrator.users.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => 
+          moderationSystem.config.permissions.administrator.roles.includes(role.id)
+        );
       
-      if (!permCheck.allowed) {
+      // Check permissions in order: Owner > AntiNuke > Admin
+      const hasPermission = (isOwner && ownerBypassEnabled) || isAntiNukeAdmin || isSystemAdmin;
+      
+      if (!hasPermission) {
+        let errorMessage = '❌ You do not have permission to manually verify users.\n\n';
+        errorMessage += 'Required permissions (any of the following):\n';
+        errorMessage += '• Server Owner (with `ownerBypass` enabled in config)\n';
+        errorMessage += '• AntiNuke Administrator\n';
+        errorMessage += '• System Administrator';
+        
         return interaction.reply({
-          content: `❌ ${permCheck.reason}`,
+          content: errorMessage,
           ephemeral: true
         });
       }
@@ -268,6 +360,17 @@ export const commands = [
         const roleId = gender === 'female' ? guildSetup.roles.female : guildSetup.roles.male;
         await member.roles.add(roleId, `Manually verified by ${interaction.user.tag}`);
 
+        // Add to accepted users
+        genderVerifySystem.acceptedUsers.set(user.id, {
+          gender: gender,
+          images: { manual: true },
+          approvedAt: new Date().toISOString(),
+          approvedBy: interaction.user.id,
+          approverTag: interaction.user.tag,
+          guildId: interaction.guild.id
+        });
+        genderVerifySystem.saveVerificationData();
+
         const embed = new EmbedBuilder()
           .setTitle('✅ User Manually Verified')
           .setDescription(`${user} has been verified as ${gender}`)
@@ -280,13 +383,22 @@ export const commands = [
 
         await interaction.editReply({ embeds: [embed] });
 
-        // Log action
+        // Log action with permission level
         if (moderationSystem) {
+          let permissionLevel = 'Unknown';
+          if (isOwner && ownerBypassEnabled) {
+            permissionLevel = 'Server Owner';
+          } else if (isAntiNukeAdmin) {
+            permissionLevel = 'AntiNuke Administrator';
+          } else if (isSystemAdmin) {
+            permissionLevel = 'System Administrator';
+          }
+          
           await moderationSystem.logAction(interaction.guild, {
             action: 'Manual Gender Verification',
             moderator: interaction.user,
             target: `${user.tag} (${user.id})`,
-            additional: `Verified as ${gender}`
+            additional: `Verified as ${gender} by ${permissionLevel}`
           });
         }
       } catch (error) {
@@ -312,19 +424,21 @@ export const commands = [
         });
       }
 
-      // Check permissions
-      const permCheck = moderationSystem.checkGlobalPermission(
-        interaction.member,
-        'verifystatus',
-        { 
-          requireModeration: true, 
-          command: 'verifystatus',
-          customCheck: (member) => member.permissions.has(PermissionFlagsBits.ManageRoles),
-          customReason: 'Has ManageRoles permission'
-        }
-      );
+      // Check permission hierarchy for status viewing
+      const isOwner = interaction.guild.ownerId === interaction.user.id;
+      const ownerBypassEnabled = moderationSystem.config.ownerBypass;
+      const antiNukeConfig = moderationSystem.configLoader.get('antiNuke');
+      const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+        interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+      const modPerms = moderationSystem.config.permissions;
+      const hasModPerms = interaction.member.roles.cache.some(role => 
+        modPerms.administrator.roles.includes(role.id) || 
+        modPerms.moderator.roles.includes(role.id)
+      ) || modPerms.administrator.users.includes(interaction.user.id) || 
+        modPerms.moderator.users.includes(interaction.user.id);
       
-      if (!permCheck.allowed) {
+      if (!((isOwner && ownerBypassEnabled) || isAntiNukeAdmin || hasModPerms || 
+            interaction.member.permissions.has(PermissionFlagsBits.ManageRoles))) {
         return interaction.reply({
           content: '❌ You do not have permission to check verification status.',
           ephemeral: true
@@ -350,6 +464,9 @@ export const commands = [
         const verifyChannel = guild.channels.cache.get(guildSetup.channels.verify);
         const femaleChannel = guild.channels.cache.get(guildSetup.channels.female);
         const maleChannel = guild.channels.cache.get(guildSetup.channels.male);
+        const verifiedChannel = guild.channels.cache.get(guildSetup.channels.verified);
+        const verifiedVC = guild.channels.cache.get(guildSetup.channels.verifiedVC);
+        const mainCategory = guild.channels.cache.get(guildSetup.channels.mainCategory);
         const reviewCategory = guild.channels.cache.get(guildSetup.channels.reviewCategory);
         const femaleRole = guild.roles.cache.get(guildSetup.roles.female);
         const maleRole = guild.roles.cache.get(guildSetup.roles.male);
@@ -357,9 +474,12 @@ export const commands = [
         embed.setDescription('✅ Gender verification is set up')
           .addFields(
             { name: 'Setup Date', value: `<t:${Math.floor(new Date(guildSetup.createdAt).getTime() / 1000)}:F>`, inline: false },
+            { name: 'Main Category', value: mainCategory ? mainCategory.name : '❌ Not found', inline: false },
             { name: 'Verify Channel', value: verifyChannel ? `<#${verifyChannel.id}>` : '❌ Not found', inline: true },
             { name: 'Female Channel', value: femaleChannel ? `<#${femaleChannel.id}>` : '❌ Not found', inline: true },
             { name: 'Male Channel', value: maleChannel ? `<#${maleChannel.id}>` : '❌ Not found', inline: true },
+            { name: 'Verified Chat', value: verifiedChannel ? `<#${verifiedChannel.id}>` : '❌ Not found', inline: true },
+            { name: 'Verified VC', value: verifiedVC ? `<#${verifiedVC.id}>` : '❌ Not found', inline: true },
             { name: 'Review Category', value: reviewCategory ? reviewCategory.name : '❌ Not found', inline: true },
             { name: 'Female Role', value: femaleRole ? `<@&${femaleRole.id}>` : '❌ Not found', inline: true },
             { name: 'Male Role', value: maleRole ? `<@&${maleRole.id}>` : '❌ Not found', inline: true },

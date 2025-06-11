@@ -1,4 +1,31 @@
 // src/systems/genderVerifySystem.js
+/**
+ * Gender Verification System
+ * 
+ * A comprehensive system for gender-based role verification with photo ID review.
+ * 
+ * Permission Hierarchy (respects moderation system config):
+ * 1. Server Owner (if ownerBypass enabled) → Full control + bypass verification
+ * 2. AntiNuke Administrators → Full control + bypass verification
+ * 3. System Administrators → Full control + bypass verification
+ * 4. System Moderators → Can only review pending verifications
+ * 5. Regular Users → Must complete verification process
+ * 
+ * Channel Visibility:
+ * - verify → Everyone can see, only bot can send (verification panel)
+ * - female-chat → Everyone can see, only verified females can send
+ * - male-chat → Everyone can see, only verified males can send
+ * - verified-chat → Hidden from unverified, both genders can send
+ * - verified-vc → Hidden from unverified, both genders can join
+ * 
+ * Features:
+ * - Photo ID verification with review process
+ * - Gender-specific channels with controlled access
+ * - Automatic role assignment upon approval
+ * - Full audit logging with permission levels
+ * - Data persistence across restarts
+ * - Configurable cooldowns and limits
+ */
 import { 
   EmbedBuilder, 
   ActionRowBuilder, 
@@ -23,6 +50,13 @@ export class GenderVerifySystem {
    * @param {import("discord.js").Client} client
    * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
    * @param {import("./moderationSystem.js").ModerationSystem} moderationSystem
+   * 
+   * Permission Hierarchy:
+   * 1. Server Owner (with ownerBypass enabled) - Can configure system and bypass verification
+   * 2. AntiNuke Admins - Can configure system and bypass verification
+   * 3. System Administrators - Can configure system and bypass verification
+   * 4. System Moderators - Can only review verifications
+   * 5. Regular Users - Must complete verification
    */
   constructor(client, configLoader, moderationSystem) {
     console.log('[GenderVerifySystem] Initializing...');
@@ -44,7 +78,7 @@ export class GenderVerifySystem {
     // Active verifications tracking
     this.activeVerifications = new Map(); // verificationId -> verification data
     this.userVerifications = new Map(); // userId -> verificationId
-    this.acceptedUsers = new Map(); // userId -> {gender, images, approvedAt, approvedBy}
+    this.acceptedUsers = new Map(); // userId -> {gender, images, approvedAt, approvedBy, guildId}
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'gender_verifications.json');
@@ -74,11 +108,18 @@ export class GenderVerifySystem {
         female: 'Verified Female',
         male: 'Verified Male'
       },
+      roleColors: {
+        female: 0x99aab5,  // Default gray
+        male: 0x99aab5     // Default gray
+      },
       channelNames: {
-        verify: 'verify',
-        femaleOnly: 'female-chat',
-        maleOnly: 'male-chat',
-        reviewCategory: 'Verification Reviews'
+        verify: 'verify',           // Public view, no send
+        femaleOnly: 'female-chat',  // Public view, female-only send
+        maleOnly: 'male-chat',      // Public view, male-only send
+        verified: 'verified-chat',  // Hidden, all verified can send
+        verifiedVC: 'verified-vc',  // Hidden, all verified can join
+        reviewCategory: 'Verification Reviews',
+        mainCategory: 'Gender Verification'
       },
       reviewChannelFormat: 'verify-{number}',
       verifyEmbed: {
@@ -285,15 +326,20 @@ export class GenderVerifySystem {
     }
 
     try {
-      // Create or get roles
+      // Create or get roles with customizable colors (default to neutral gray)
       const femaleRole = await this.createOrGetRole(guild, 
         options.femaleRoleName || this.config.roleNames.female,
-        { color: 0xff69b4, hoist: true }
+        { color: options.femaleRoleColor || 0x99aab5, hoist: true }
       );
       
       const maleRole = await this.createOrGetRole(guild,
         options.maleRoleName || this.config.roleNames.male,
-        { color: 0x0099ff, hoist: true }
+        { color: options.maleRoleColor || 0x99aab5, hoist: true }
+      );
+
+      // Create main category for all verification channels
+      const mainCategory = await this.createOrGetCategory(guild,
+        options.mainCategoryName || this.config.channelNames.mainCategory
       );
 
       // Create review category
@@ -301,37 +347,45 @@ export class GenderVerifySystem {
         options.reviewCategoryName || this.config.channelNames.reviewCategory
       );
 
-      // Create channels
+      // Create channels in main category
+      // Verify channel - Everyone can see but not send messages
       const verifyChannel = await this.createOrGetChannel(guild, {
         name: options.verifyChannelName || this.config.channelNames.verify,
         type: ChannelType.GuildText,
+        parent: mainCategory.id,
         topic: 'Submit your gender verification here',
         permissionOverwrites: [
           {
             id: guild.id, // @everyone
             allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
             deny: [PermissionFlagsBits.SendMessages]
+          },
+          {
+            id: this.client.user.id, // Bot
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
           }
         ]
       });
 
+      // Gender-specific channels - Everyone can see, only respective gender can send
       const femaleChannel = await this.createOrGetChannel(guild, {
         name: options.femaleChannelName || this.config.channelNames.femaleOnly,
         type: ChannelType.GuildText,
+        parent: mainCategory.id,
         topic: 'Female-only chat',
         permissionOverwrites: [
           {
             id: guild.id, // @everyone
-            allow: [PermissionFlagsBits.ViewChannel],
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
             deny: [PermissionFlagsBits.SendMessages]
+          },
+          {
+            id: this.client.user.id, // Bot
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
           },
           {
             id: femaleRole.id,
             allow: [PermissionFlagsBits.SendMessages]
-          },
-          {
-            id: maleRole.id,
-            deny: [PermissionFlagsBits.SendMessages]
           }
         ]
       });
@@ -339,23 +393,123 @@ export class GenderVerifySystem {
       const maleChannel = await this.createOrGetChannel(guild, {
         name: options.maleChannelName || this.config.channelNames.maleOnly,
         type: ChannelType.GuildText,
+        parent: mainCategory.id,
         topic: 'Male-only chat',
         permissionOverwrites: [
           {
             id: guild.id, // @everyone
-            allow: [PermissionFlagsBits.ViewChannel],
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
             deny: [PermissionFlagsBits.SendMessages]
+          },
+          {
+            id: this.client.user.id, // Bot
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
           },
           {
             id: maleRole.id,
             allow: [PermissionFlagsBits.SendMessages]
-          },
-          {
-            id: femaleRole.id,
-            deny: [PermissionFlagsBits.SendMessages]
           }
         ]
       });
+
+      // Create verified-only channels (completely invisible to non-verified)
+      const verifiedChannel = await this.createOrGetChannel(guild, {
+        name: options.verifiedChannelName || 'verified-chat',
+        type: ChannelType.GuildText,
+        parent: mainCategory.id,
+        topic: 'Chat for all verified members',
+        permissionOverwrites: [
+          {
+            id: guild.id, // @everyone
+            deny: [PermissionFlagsBits.ViewChannel]
+          },
+          {
+            id: this.client.user.id, // Bot
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageMessages]
+          },
+          {
+            id: femaleRole.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+          },
+          {
+            id: maleRole.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
+          }
+        ]
+      });
+
+      const verifiedVC = await this.createOrGetChannel(guild, {
+        name: options.verifiedVCName || 'verified-vc',
+        type: ChannelType.GuildVoice,
+        parent: mainCategory.id,
+        userLimit: 0,
+        permissionOverwrites: [
+          {
+            id: guild.id, // @everyone
+            deny: [PermissionFlagsBits.ViewChannel]
+          },
+          {
+            id: this.client.user.id, // Bot
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]
+          },
+          {
+            id: femaleRole.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]
+          },
+          {
+            id: maleRole.id,
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect, PermissionFlagsBits.Speak]
+          }
+        ]
+      });
+
+      // Add staff permissions to all channels
+      if (this.moderationSystem) {
+        const modPerms = this.moderationSystem.config.permissions;
+        const channels = [femaleChannel, maleChannel, verifiedChannel, verifiedVC];
+        
+        // Add admin roles with full permissions
+        for (const roleId of modPerms.administrator.roles) {
+          if (guild.roles.cache.has(roleId)) {
+            for (const channel of channels) {
+              if (channel.type === ChannelType.GuildText) {
+                await channel.permissionOverwrites.create(roleId, {
+                  ViewChannel: true,
+                  SendMessages: true,
+                  ManageMessages: true
+                });
+              } else {
+                await channel.permissionOverwrites.create(roleId, {
+                  ViewChannel: true,
+                  Connect: true,
+                  Speak: true,
+                  MoveMembers: true
+                });
+              }
+            }
+          }
+        }
+        
+        // Add moderator roles with limited permissions
+        for (const roleId of modPerms.moderator.roles) {
+          if (guild.roles.cache.has(roleId)) {
+            for (const channel of channels) {
+              if (channel.type === ChannelType.GuildText) {
+                await channel.permissionOverwrites.create(roleId, {
+                  ViewChannel: true,
+                  SendMessages: true
+                });
+              } else {
+                await channel.permissionOverwrites.create(roleId, {
+                  ViewChannel: true,
+                  Connect: true,
+                  Speak: true
+                });
+              }
+            }
+          }
+        }
+      }
 
       // Send verification panel with custom message if provided
       const panelOptions = {};
@@ -377,6 +531,9 @@ export class GenderVerifySystem {
           verify: verifyChannel.id,
           female: femaleChannel.id,
           male: maleChannel.id,
+          verified: verifiedChannel.id,
+          verifiedVC: verifiedVC.id,
+          mainCategory: mainCategory.id,
           reviewCategory: reviewCategory.id
         },
         panelMessageId: panel.id,
@@ -485,10 +642,55 @@ export class GenderVerifySystem {
       });
     }
 
-    // Check if user is globally exempt (AntiNuke admin, owner with bypass, etc.)
-    if (this.moderationSystem.isGloballyExempt(member)) {
+    // Check permission hierarchy for exemptions: Owner > AntiNuke > Administration
+    const isOwner = interaction.guild.ownerId === interaction.user.id;
+    const ownerBypassEnabled = this.moderationSystem.config.ownerBypass;
+    
+    // Check if user is server owner with bypass enabled
+    if (isOwner && ownerBypassEnabled) {
+      // Log exemption
+      await this.logAction(interaction.guild, {
+        action: 'Verification Exemption',
+        user: interaction.user,
+        additional: 'Server Owner - Automatic exemption'
+      });
+      
       return interaction.reply({
-        content: '✅ You are exempt from verification requirements due to your permissions.',
+        content: '✅ Server owners are exempt from verification requirements.',
+        ephemeral: true
+      });
+    }
+    
+    // Check if user is an AntiNuke admin
+    const antiNukeConfig = this.configLoader.get('antiNuke');
+    const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+      member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
+    
+    if (isAntiNukeAdmin) {
+      // Log exemption
+      await this.logAction(interaction.guild, {
+        action: 'Verification Exemption',
+        user: interaction.user,
+        additional: 'AntiNuke Administrator - Automatic exemption'
+      });
+      
+      return interaction.reply({
+        content: '✅ AntiNuke administrators are exempt from verification requirements.',
+        ephemeral: true
+      });
+    }
+    
+    // Check if user is globally exempt (has administrator permissions in moderation system)
+    if (this.moderationSystem.isGloballyExempt(member)) {
+      // Log exemption
+      await this.logAction(interaction.guild, {
+        action: 'Verification Exemption',
+        user: interaction.user,
+        additional: 'System Administrator - Automatic exemption'
+      });
+      
+      return interaction.reply({
+        content: '✅ System administrators are exempt from verification requirements.',
         ephemeral: true
       });
     }
@@ -622,58 +824,58 @@ export class GenderVerifySystem {
 
       console.log('[GenderVerifySystem] Validation passed, creating verification...');
 
-    try {
-      console.log(`[GenderVerifySystem] Starting verification creation for user ${interaction.user.tag}`);
-      console.log(`[GenderVerifySystem] Current guild ID: ${interaction.guild.id}`);
-      console.log(`[GenderVerifySystem] Available guild setups:`, Object.keys(this.config.guilds || {}));
-      console.log(`[GenderVerifySystem] Guild setup exists: ${!!this.config.guilds?.[interaction.guild.id]}`);
-      
-      // Create verification request
-      const verification = await this.createVerification(interaction, {
-        gender,
-        idPhoto,
-        selfie,
-        notes
-      });
+      try {
+        console.log(`[GenderVerifySystem] Starting verification creation for user ${interaction.user.tag}`);
+        console.log(`[GenderVerifySystem] Current guild ID: ${interaction.guild.id}`);
+        console.log(`[GenderVerifySystem] Available guild setups:`, Object.keys(this.config.guilds || {}));
+        console.log(`[GenderVerifySystem] Guild setup exists: ${!!this.config.guilds?.[interaction.guild.id]}`);
+        
+        // Create verification request
+        const verification = await this.createVerification(interaction, {
+          gender,
+          idPhoto,
+          selfie,
+          notes
+        });
 
-      console.log(`[GenderVerifySystem] Verification created successfully: ${verification.id}`);
+        console.log(`[GenderVerifySystem] Verification created successfully: ${verification.id}`);
 
-      // Send success message
-      const successEmbed = new EmbedBuilder()
-        .setTitle('✅ Verification Submitted')
-        .setDescription(this.config.messages.submitted)
-        .setColor(0x00ff00)
-        .addFields(
-          { name: 'Verification ID', value: `#${verification.id.slice(-4)}`, inline: true },
-          { name: 'Gender', value: gender.charAt(0).toUpperCase() + gender.slice(1), inline: true },
-          { name: 'Status', value: 'Pending Review', inline: true }
-        )
-        .setFooter({ text: 'You will be notified via DM once your verification is reviewed.' })
-        .setTimestamp();
+        // Send success message
+        const successEmbed = new EmbedBuilder()
+          .setTitle('✅ Verification Submitted')
+          .setDescription(this.config.messages.submitted)
+          .setColor(0x00ff00)
+          .addFields(
+            { name: 'Verification ID', value: `#${verification.id.slice(-4)}`, inline: true },
+            { name: 'Gender', value: gender.charAt(0).toUpperCase() + gender.slice(1), inline: true },
+            { name: 'Status', value: 'Pending Review', inline: true }
+          )
+          .setFooter({ text: 'You will be notified via DM once your verification is reviewed.' })
+          .setTimestamp();
 
-      await interaction.editReply({
-        embeds: [successEmbed],
-        ephemeral: true
-      });
-      
-      console.log('[GenderVerifySystem] Successfully sent submission confirmation to user');
+        await interaction.editReply({
+          embeds: [successEmbed],
+          ephemeral: true
+        });
+        
+        console.log('[GenderVerifySystem] Successfully sent submission confirmation to user');
 
-    } catch (error) {
-      console.error('[GenderVerifySystem] Error in handleModalSubmit:', error);
-      console.error('[GenderVerifySystem] Error stack:', error.stack);
-      
-      // Provide more detailed error message
-      let errorMessage = this.config.messages.errorSubmitting;
-      if (error.message.includes('Guild setup not found')) {
-        errorMessage = '❌ Gender verification is not properly set up in this server. Please ask an admin to run /setupgenderverify';
-      } else if (error.message.includes('category not found')) {
-        errorMessage = '❌ Review category not found. Please contact an administrator to fix the setup.';
+      } catch (error) {
+        console.error('[GenderVerifySystem] Error in handleModalSubmit:', error);
+        console.error('[GenderVerifySystem] Error stack:', error.stack);
+        
+        // Provide more detailed error message
+        let errorMessage = this.config.messages.errorSubmitting;
+        if (error.message.includes('Guild setup not found')) {
+          errorMessage = '❌ Gender verification is not properly set up in this server. Please ask an admin to run /setupgenderverify';
+        } else if (error.message.includes('category not found')) {
+          errorMessage = '❌ Review category not found. Please contact an administrator to fix the setup.';
+        }
+        
+        await interaction.editReply({
+          content: errorMessage + `\n\nError: ${error.message}`
+        });
       }
-      
-      await interaction.editReply({
-        content: errorMessage + `\n\nError: ${error.message}`
-      });
-    }
     } catch (error) {
       console.error('[GenderVerifySystem] Fatal error in handleModalSubmit:', error);
       await interaction.editReply({
@@ -904,32 +1106,51 @@ export class GenderVerifySystem {
       });
     }
 
-    // Use centralized permission check (includes AntiNuke hierarchy)
-    const permCheck = this.moderationSystem.checkGlobalPermission(
-      interaction.member, 
-      'review verifications',
-      { 
-        customCheck: (member) => {
-          // Allow if member has any moderator/admin role or permissions
-          const modPerms = this.moderationSystem.config.permissions;
-          const hasModRole = member.roles.cache.some(role => 
-            modPerms.administrator.roles.includes(role.id) || 
-            modPerms.moderator.roles.includes(role.id)
-          );
-          const isModUser = modPerms.administrator.users.includes(member.id) || 
-                           modPerms.moderator.users.includes(member.id);
-          return hasModRole || isModUser;
-        },
-        customReason: 'Has moderator permissions'
-      }
-    );
+    // Check permission hierarchy: Owner > AntiNuke > Administration > Moderation
+    const isOwner = interaction.guild.ownerId === interaction.user.id;
+    const ownerBypassEnabled = this.moderationSystem.config.ownerBypass;
+    const antiNukeConfig = this.configLoader.get('antiNuke');
+    const isAntiNukeAdmin = antiNukeConfig?.adminUsers?.includes(interaction.user.id) ||
+      interaction.member.roles.cache.some(role => antiNukeConfig?.adminRoles?.includes(role.id));
     
-    if (!permCheck.allowed) {
-      return interaction.reply({
-        content: `❌ You do not have permission to review verifications.`,
-        ephemeral: true
-      });
+    let permissionLevel = 'Unknown';
+    
+    // Server owner can always review
+    if (isOwner && ownerBypassEnabled) {
+      permissionLevel = 'Server Owner';
+    } else if (isAntiNukeAdmin) {
+      permissionLevel = 'AntiNuke Administrator';
+    } else {
+      // Check if user has moderator permissions
+      const modPerms = this.moderationSystem.config.permissions;
+      const hasAdminRole = interaction.member.roles.cache.some(role => 
+        modPerms.administrator.roles.includes(role.id)
+      );
+      const isAdminUser = modPerms.administrator.users.includes(interaction.member.id);
+      const hasModRole = interaction.member.roles.cache.some(role => 
+        modPerms.moderator.roles.includes(role.id)
+      );
+      const isModUser = modPerms.moderator.users.includes(interaction.member.id);
+      
+      if (hasAdminRole || isAdminUser) {
+        permissionLevel = 'System Administrator';
+      } else if (hasModRole || isModUser) {
+        permissionLevel = 'System Moderator';
+      } else {
+        return interaction.reply({
+          content: `❌ You do not have permission to review verifications.`,
+          ephemeral: true
+        });
+      }
     }
+    
+    // Store permission level for logging
+    verification.reviewerPermissionLevel = permissionLevel;
+
+    // Update verification with reviewer info before processing
+    verification.reviewedBy = interaction.user.id;
+    verification.reviewerTag = interaction.user.tag;
+    verification.reviewerPermissionLevel = permissionLevel;
 
     if (verification.status !== 'pending') {
       return interaction.reply({
@@ -938,7 +1159,11 @@ export class GenderVerifySystem {
       });
     }
 
-    await interaction.deferReply();
+    // Defer reply after permission check but before processing
+    if (type === 'approve') {
+      await interaction.deferReply();
+    }
+    // For deny, we don't defer because we show a modal first
 
     try {
       if (type === 'approve') {
@@ -948,9 +1173,11 @@ export class GenderVerifySystem {
       }
     } catch (error) {
       console.error('[GenderVerifySystem] Error handling verification action:', error);
-      await interaction.editReply({
-        content: '❌ Failed to process verification.'
-      });
+      if (type === 'approve') {
+        await interaction.editReply({
+          content: '❌ Failed to process verification.'
+        });
+      }
     }
   }
 
@@ -979,7 +1206,8 @@ export class GenderVerifySystem {
       images: verification.images,
       approvedAt: new Date().toISOString(),
       approvedBy: interaction.user.id,
-      approverTag: interaction.user.tag
+      approverTag: interaction.user.tag,
+      guildId: guild.id
     });
 
     // Update verification status
@@ -1038,7 +1266,8 @@ export class GenderVerifySystem {
       moderator: interaction.user,
       user: user,
       verificationId: verification.id.slice(-4),
-      gender: verification.gender
+      gender: verification.gender,
+      additional: `Reviewed by ${verification.reviewerPermissionLevel || 'Unknown'}`
     });
   }
 
@@ -1133,7 +1362,8 @@ export class GenderVerifySystem {
       moderator: interaction.user,
       user: user,
       verificationId: verification.id.slice(-4),
-      reason: reason
+      reason: reason,
+      additional: `Reviewed by ${verification.reviewerPermissionLevel || 'Unknown'}`
     });
   }
 
@@ -1154,7 +1384,7 @@ export class GenderVerifySystem {
   }
 
   async createOrGetChannel(guild, options) {
-    const existing = guild.channels.cache.find(c => c.name === options.name);
+    const existing = guild.channels.cache.find(c => c.name === options.name && c.parent?.id === options.parent);
     if (existing) return existing;
 
     return await guild.channels.create(options);
@@ -1186,7 +1416,11 @@ export class GenderVerifySystem {
       maleRole: guild.roles.cache.has(setup.roles.male),
       verifyChannel: guild.channels.cache.has(setup.channels.verify),
       femaleChannel: guild.channels.cache.has(setup.channels.female),
-      maleChannel: guild.channels.cache.has(setup.channels.male)
+      maleChannel: guild.channels.cache.has(setup.channels.male),
+      verifiedChannel: guild.channels.cache.has(setup.channels.verified),
+      verifiedVC: guild.channels.cache.has(setup.channels.verifiedVC),
+      mainCategory: guild.channels.cache.has(setup.channels.mainCategory),
+      reviewCategory: guild.channels.cache.has(setup.channels.reviewCategory)
     };
 
     const isSetup = Object.values(checks).every(v => v);
@@ -1251,11 +1485,56 @@ export class GenderVerifySystem {
       embed.addFields({ name: 'Reason', value: data.reason });
     }
 
+    if (data.reviewChannel) {
+      embed.addFields({ name: 'Review Channel', value: data.reviewChannel, inline: true });
+    }
+
+    if (data.additional) {
+      embed.addFields({ name: 'Additional Info', value: data.additional });
+    }
+
+    if (data.target) {
+      embed.addFields({ name: 'Target', value: data.target, inline: true });
+    }
+
     try {
       await channel.send({ embeds: [embed] });
     } catch (error) {
       console.error('[GenderVerifySystem] Failed to log action:', error);
     }
+  }
+
+  /**
+   * Get statistics
+   */
+  getStats() {
+    let totalSubmitted = 0;
+    let totalApproved = 0;
+    let totalDenied = 0;
+    let activePending = 0;
+
+    // Count from active verifications
+    for (const [id, verification] of this.activeVerifications) {
+      totalSubmitted++;
+      if (verification.status === 'pending') {
+        activePending++;
+      } else if (verification.status === 'approved') {
+        totalApproved++;
+      } else if (verification.status === 'denied') {
+        totalDenied++;
+      }
+    }
+
+    // Add accepted users to approved count
+    totalApproved += this.acceptedUsers.size;
+    totalSubmitted += this.acceptedUsers.size;
+
+    return {
+      totalSubmitted,
+      totalApproved,
+      totalDenied,
+      activePending
+    };
   }
 
   /**

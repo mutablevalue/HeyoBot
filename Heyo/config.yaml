@@ -3,11 +3,14 @@ prefix: ""
 logging:
   level: info
 bot:
+  name: ""
+  avatar: https://example.com/avatar.png
   status:
-    type: PLAYING  # Options: PLAYING, WATCHING, LISTENING, STREAMING, COMPETING
-    text: "/N9NE"
-    color: RED  # Options: GREEN (online), YELLOW (idle), RED (dnd), GRAY (invisible)
-    url: null  # Only used when type is STREAMING
+    type: PLAYING
+    text: /N9NE
+    url: null
+    color: RED
+  bio: I'm a multi-purpose Discord bot!
 developmentGuildId: "1379953422241103943"
 queue:
   maxSize: 100
@@ -132,72 +135,6 @@ moderation:
       requiresAntiNukeWhitelist: true
       maxUsers: 20
       cooldownMultiplier: 1.5
-genderVerify:
-  enabled: true
-  dataFile: gender_verifications.json
-  cooldown: 86400000  # 24 hours in milliseconds
-  maxAttemptsPerUser: 3
-  roleNames:
-    female: Verified Female
-    male: Verified Male
-  channelNames:
-    verify: verify
-    femaleOnly: female-chat
-    maleOnly: male-chat
-    reviewCategory: Verification Reviews
-  reviewChannelFormat: verify-{number}
-  verifyEmbed:
-    title: ✅ Gender Verification
-    description: |
-      To access gender-specific channels, you need to verify your identity.
-      
-      **Requirements:**
-      • A photo of your ID (only showing your photo and birthdate)
-      • A selfie holding your ID or a second form of ID
-      
-      **Privacy Notice:**
-      Your information will only be used for verification and will be deleted after the process.
-    color: 39423  # 0x0099ff in decimal
-    footer: Click the button below to start
-    buttonLabel: Start Verification
-    buttonEmoji: ✅
-  formModal:
-    title: Gender Verification Form
-    genderField:
-      label: Gender
-      placeholder: "Enter: male or female"
-      required: true
-    idPhotoField:
-      label: ID Photo URL
-      placeholder: Upload to imgur/discord and paste URL here
-      required: true
-    selfieField:
-      label: Selfie/Second ID URL
-      placeholder: Upload to imgur/discord and paste URL here
-      required: true
-    notesField:
-      label: Additional Notes (Optional)
-      placeholder: Any additional information for reviewers
-      required: false
-  messages:
-    alreadyVerified: ✅ You are already verified!
-    pendingVerification: ⏳ You already have a pending verification request.
-    cooldownActive: ⏰ Please wait {time} before submitting another verification.
-    maxAttemptsReached: ❌ You have reached the maximum number of verification attempts.
-    invalidGender: ❌ Please enter either "male" or "female".
-    invalidUrls: ❌ Please provide valid image URLs.
-    submitted: ✅ Your verification has been submitted! You will be notified once reviewed.
-    approved: ✅ Your verification has been approved! You now have access to gender-specific channels.
-    denied: "❌ Your verification has been denied. Reason: {reason}"
-    errorSubmitting: ❌ Failed to submit verification. Please try again later.
-  notifications:
-    notifyOnSubmit: true
-    notifyOnReview: true
-    dmResults: true
-  logChannel: "1380422918017650719"  # Uses moderation log channel
-  deleteDataAfterDays: 30
-  requireAge18: true
-  guilds: {}
 afk:
   enabled: true
   dataFile: afk_data.json
@@ -505,6 +442,93 @@ filter:
   logChannel: null
   enableLogging: true
   trackStats: true
+genderVerify:
+  enabled: true
+  dataFile: gender_verifications.json
+  cooldown: 86400000
+  maxAttemptsPerUser: 3
+  roleNames:
+    female: Verified Female
+    male: Verified Male
+  roleColors:
+    female: 10070709
+    male: 10070709
+  channelNames:
+    verify: verify
+    femaleOnly: female-chat
+    maleOnly: male-chat
+    verified: verified-chat
+    verifiedVC: verified-vc
+    reviewCategory: Verification Reviews
+    mainCategory: Gender Verification
+  reviewChannelFormat: verify-{number}
+  verifyEmbed:
+    title: ✅ Gender Verification
+    description: |
+      To access gender-specific channels, you need to verify your identity.
+
+      **Requirements:**
+      • A photo of your ID (only showing your photo and birthdate)
+      • A selfie holding your ID or a second form of ID
+
+      **Privacy Notice:**
+      Your information will only be used for verification and will be deleted after the process.
+    color: 39423
+    footer: Click the button below to start
+    buttonLabel: Start Verification
+    buttonEmoji: ✅
+  formModal:
+    title: Gender Verification Form
+    genderField:
+      label: Gender
+      placeholder: "Enter: male or female"
+      required: true
+    idPhotoField:
+      label: ID Photo URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    selfieField:
+      label: Selfie/Second ID URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    notesField:
+      label: Additional Notes (Optional)
+      placeholder: Any additional information for reviewers
+      required: false
+  messages:
+    alreadyVerified: ✅ You are already verified!
+    pendingVerification: ⏳ You already have a pending verification request.
+    cooldownActive: ⏰ Please wait {time} before submitting another verification.
+    maxAttemptsReached: ❌ You have reached the maximum number of verification attempts.
+    invalidGender: ❌ Please enter either "male" or "female".
+    invalidUrls: ❌ Please provide valid image URLs.
+    submitted: ✅ Your verification has been submitted! You will be notified once reviewed.
+    approved: ✅ Your verification has been approved! You now have access to gender-specific channels.
+    denied: "❌ Your verification has been denied. Reason: {reason}"
+    errorSubmitting: ❌ Failed to submit verification. Please try again later.
+  notifications:
+    notifyOnSubmit: true
+    notifyOnReview: true
+    dmResults: true
+  logChannel: "1380422918017650719"
+  deleteDataAfterDays: 30
+  requireAge18: true
+  guilds:
+    "1379953422241103943":
+      guildId: "1379953422241103943"
+      roles:
+        female: "1382455703364440066"
+        male: "1382455711983730862"
+      channels:
+        verify: "1382455720624128030"
+        female: "1382455721714647122"
+        male: "1382455722918543402"
+        verified: "1382455723652546694"
+        verifiedVC: "1382455724570837057"
+        mainCategory: "1382455713187631164"
+        reviewCategory: "1382455714047463496"
+      panelMessageId: "1382455725544046696"
+      createdAt: 2025-06-11T20:26:21.348Z
 banAppeal:
   enabled: true
   dataFile: ban_appeals.json
