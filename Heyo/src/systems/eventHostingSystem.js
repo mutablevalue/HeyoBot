@@ -1,5 +1,5 @@
 // src/systems/eventHostingSystem.js
-import { EmbedBuilder, ChannelType, PermissionFlagsBits } from 'discord.js';
+import { ChannelType, PermissionFlagsBits } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,6 +18,7 @@ export class EventHostingSystem {
     this.client = client;
     this.configLoader = configLoader;
     this.leaderboardSystem = leaderboardSystem;
+    this.embedLoader = null;
     
     // Load event config
     const eventConfig = this.configLoader.get('events') || {};
@@ -28,8 +29,13 @@ export class EventHostingSystem {
       logChannel: eventConfig.logChannel || null,
       pingRole: eventConfig.pingRole || null,
       dmWinners: eventConfig.dmWinners ?? true,
-      activeEvents: eventConfig.activeEvents || [],
-      enableLogging: eventConfig.enableLogging ?? true // Optional logging
+      enableLogging: eventConfig.enableLogging ?? true,
+      lastToLeave: {
+        defaultCountdownMinutes: eventConfig.lastToLeave?.defaultCountdownMinutes || 5,
+        defaultDurationMinutes: eventConfig.lastToLeave?.defaultDurationMinutes || 60,
+        maxCountdownMinutes: eventConfig.lastToLeave?.maxCountdownMinutes || 60,
+        maxDurationMinutes: eventConfig.lastToLeave?.maxDurationMinutes || 1440
+      }
     };
 
     // Active events tracking
@@ -74,6 +80,13 @@ export class EventHostingSystem {
   }
 
   /**
+   * Set embed loader reference
+   */
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
+  }
+
+  /**
    * Create a new event
    * @param {Object} eventData
    * @returns {string} eventId
@@ -108,8 +121,8 @@ export class EventHostingSystem {
         throw new Error(vcResult.error);
       }
       event.channelId = vcResult.channel.id;
-      event.data.duration = eventData.data?.duration || 3600; // Default 1 hour
-      event.data.countdownDuration = eventData.data?.countdownDuration || 300; // Default 5 minutes
+      event.data.duration = eventData.data?.duration || this.config.lastToLeave.defaultDurationMinutes * 60;
+      event.data.countdownDuration = eventData.data?.countdownDuration || this.config.lastToLeave.defaultCountdownMinutes * 60;
     }
 
     this.activeEvents.set(eventId, event);
@@ -144,7 +157,7 @@ export class EventHostingSystem {
       }
 
       const channelOptions = {
-        name: `🏆 ${event.name}`,
+        name: event.name,
         type: ChannelType.GuildVoice,
         permissionOverwrites: [
           {
@@ -222,14 +235,13 @@ export class EventHostingSystem {
     }, event.data.countdownDuration * 1000);
 
     // Announce channel is open
-    if (this.config.announcementChannel) {
+    if (this.config.announcementChannel && this.embedLoader) {
       const announcementChannel = guild.channels.cache.get(this.config.announcementChannel);
       if (announcementChannel) {
-        const embed = new EmbedBuilder()
-          .setTitle('🎉 Last to Leave VC is NOW OPEN!')
-          .setDescription(`Join ${channel} now!\nChannel closes in ${event.data.countdownDuration / 60} minutes!`)
-          .setColor(0x00ff00)
-          .setTimestamp();
+        const embed = this.embedLoader.info(
+          `Join ${channel} now!\nChannel closes in ${event.data.countdownDuration / 60} minutes!`
+        );
+        embed.setTitle(this.embedLoader.format('Last to Leave VC is NOW OPEN!', 'header'));
 
         await announcementChannel.send({ embeds: [embed] });
       }
@@ -256,14 +268,13 @@ export class EventHostingSystem {
     }
 
     // Announce channel is closed
-    if (this.config.announcementChannel) {
+    if (this.config.announcementChannel && this.embedLoader) {
       const announcementChannel = guild.channels.cache.get(this.config.announcementChannel);
       if (announcementChannel) {
-        const embed = new EmbedBuilder()
-          .setTitle('🔒 Last to Leave VC is CLOSED!')
-          .setDescription(`No new members can join ${channel}.\nStay in the channel to win!`)
-          .setColor(0xff0000)
-          .setTimestamp();
+        const embed = this.embedLoader.info(
+          `No new members can join ${channel}.\nStay in the channel to win!`
+        );
+        embed.setTitle(this.embedLoader.format('Last to Leave VC is CLOSED!', 'header'));
 
         await announcementChannel.send({ embeds: [embed] });
       }
@@ -376,18 +387,16 @@ export class EventHostingSystem {
    * @param {Object} event
    */
   async dmWinner(userId, event) {
+    if (!this.embedLoader) return;
+    
     try {
       const user = await this.client.users.fetch(userId);
       if (!user) return;
 
-      const embed = new EmbedBuilder()
-        .setTitle('🎉 Congratulations! You Won!')
-        .setDescription(`You won the **${event.name}** event!`)
-        .setColor(0xffd700)
-        .setTimestamp();
-
+      const fields = [];
+      
       if (event.rewards.length > 0) {
-        embed.addFields({
+        fields.push({
           name: 'Your Rewards',
           value: event.rewards.map((r, i) => `${i + 1}. ${r}`).join('\n')
         });
@@ -395,12 +404,18 @@ export class EventHostingSystem {
         // Add special message for Nitro rewards
         const hasNitro = event.rewards.some(r => r.toLowerCase().includes('nitro'));
         if (hasNitro) {
-          embed.addFields({
-            name: '🎁 Gift Instructions',
+          fields.push({
+            name: 'Gift Instructions',
             value: 'A moderator will contact you shortly with your Nitro gift link!'
           });
         }
       }
+
+      const embed = this.embedLoader.createEmbed({
+        title: 'Event System',
+        description: `Congratulations! You won the **${event.name}** event!`,
+        fields
+      });
 
       await user.send({ embeds: [embed] });
     } catch (error) {
@@ -414,26 +429,23 @@ export class EventHostingSystem {
    * @param {string} action
    */
   async logEvent(event, action) {
-    if (!this.config.enableLogging || !this.config.logChannel) return;
+    if (!this.config.enableLogging || !this.config.logChannel || !this.embedLoader) return;
 
     const channel = this.client.channels.cache.get(this.config.logChannel);
     if (!channel) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Event Log: ${action}`)
-      .setDescription(`**${event.name}** (${event.id})`)
-      .addFields(
+    const embed = this.embedLoader.createEmbed({
+      title: 'Event System',
+      description: `${action}: **${event.name}** (${event.id})`,
+      fields: [
         { name: 'Type', value: event.type, inline: true },
         { name: 'Status', value: event.status, inline: true },
         { name: 'Created By', value: `<@${event.createdBy}>`, inline: true }
-      )
-      .setColor(0x0099ff)
-      .setTimestamp();
+      ]
+    });
 
     await channel.send({ embeds: [embed] });
   }
-
-  // ... [Include all other existing methods from the original file that weren't modified] ...
 
   /**
    * Load event data from file
@@ -694,15 +706,14 @@ export class EventHostingSystem {
     this.saveEventData();
 
     // Announce cancellation
-    if (this.config.announcementChannel) {
+    if (this.config.announcementChannel && this.embedLoader) {
       const channel = this.client.channels.cache.get(this.config.announcementChannel);
       if (channel) {
-        const embed = new EmbedBuilder()
-          .setTitle('❌ Event Cancelled')
-          .setDescription(`**${event.name}** has been cancelled.`)
-          .addFields({ name: 'Reason', value: reason })
-          .setColor(0xff0000)
-          .setTimestamp();
+        const embed = this.embedLoader.createEmbed({
+          title: 'Event System',
+          description: `**${event.name}** has been cancelled.`,
+          fields: [{ name: 'Reason', value: reason }]
+        });
         
         await channel.send({ embeds: [embed] });
       }
@@ -755,31 +766,29 @@ export class EventHostingSystem {
    * @param {Object} event
    */
   async announceEvent(event) {
+    if (!this.embedLoader) return;
+    
     const channel = this.client.channels.cache.get(this.config.announcementChannel);
     if (!channel) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`🎉 New Event: ${event.name}`)
-      .setDescription(event.description)
-      .setColor(0x00ff00)
-      .setTimestamp();
+    const fields = [];
 
     // Add requirements if any
     if (Object.keys(event.requirements).length > 0) {
       const reqText = [];
-      if (event.requirements.minMessages) reqText.push(`• ${event.requirements.minMessages}+ messages`);
-      if (event.requirements.minVoiceTime) reqText.push(`• ${this.leaderboardSystem.constructor.formatTime(event.requirements.minVoiceTime)} in voice`);
-      if (event.requirements.mustBeBooster) reqText.push('• Must be a server booster');
-      if (event.requirements.minDaysInServer) reqText.push(`• ${event.requirements.minDaysInServer}+ days in server`);
+      if (event.requirements.minMessages) reqText.push(`${event.requirements.minMessages}+ messages`);
+      if (event.requirements.minVoiceTime) reqText.push(`${this.leaderboardSystem.constructor.formatTime(event.requirements.minVoiceTime)} in voice`);
+      if (event.requirements.mustBeBooster) reqText.push('Must be a server booster');
+      if (event.requirements.minDaysInServer) reqText.push(`${event.requirements.minDaysInServer}+ days in server`);
       
       if (reqText.length > 0) {
-        embed.addFields({ name: 'Requirements', value: reqText.join('\n') });
+        fields.push({ name: 'Requirements', value: reqText.join('\n') });
       }
     }
 
     // Add rewards
     if (event.rewards.length > 0) {
-      embed.addFields({
+      fields.push({
         name: 'Rewards',
         value: event.rewards.map((r, i) => `${i + 1}. ${r}`).join('\n')
       });
@@ -787,7 +796,7 @@ export class EventHostingSystem {
 
     // Add timing info
     if (event.startTime && new Date(event.startTime) > new Date()) {
-      embed.addFields({
+      fields.push({
         name: 'Starts',
         value: `<t:${Math.floor(new Date(event.startTime).getTime() / 1000)}:R>`,
         inline: true
@@ -795,12 +804,18 @@ export class EventHostingSystem {
     }
 
     if (event.endTime) {
-      embed.addFields({
+      fields.push({
         name: 'Ends',
         value: `<t:${Math.floor(new Date(event.endTime).getTime() / 1000)}:R>`,
         inline: true
       });
     }
+
+    const embed = this.embedLoader.createEmbed({
+      title: 'Event System',
+      description: `New Event: **${event.name}**\n${event.description}`,
+      fields
+    });
 
     const message = { embeds: [embed] };
     
@@ -818,27 +833,31 @@ export class EventHostingSystem {
    * @param {Array<string>} winnerIds
    */
   async announceWinners(event, winnerIds) {
+    if (!this.embedLoader) return;
+    
     const channel = this.client.channels.cache.get(this.config.announcementChannel);
     if (!channel) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`🏆 Event Completed: ${event.name}`)
-      .setDescription(`Congratulations to the winner${winnerIds.length > 1 ? 's' : ''}!`)
-      .setColor(0xffd700)
-      .setTimestamp();
+    const fields = [];
 
     // Add winners
     const winnerText = winnerIds.map((id, i) => `${i + 1}. <@${id}>`).join('\n');
-    embed.addFields({ name: 'Winner' + (winnerIds.length > 1 ? 's' : ''), value: winnerText });
+    fields.push({ name: 'Winner' + (winnerIds.length > 1 ? 's' : ''), value: winnerText });
 
     // Add duration
     if (event.startedAt) {
       const duration = new Date(event.endedAt) - new Date(event.startedAt);
-      embed.addFields({
+      fields.push({
         name: 'Duration',
         value: this.leaderboardSystem.constructor.formatTime(Math.floor(duration / 1000))
       });
     }
+
+    const embed = this.embedLoader.createEmbed({
+      title: 'Event System',
+      description: `Event Completed: **${event.name}**\nCongratulations to the winner${winnerIds.length > 1 ? 's' : ''}!`,
+      fields
+    });
 
     await channel.send({ embeds: [embed] });
   }
@@ -870,7 +889,8 @@ export class EventHostingSystem {
       logChannel: this.config.logChannel,
       pingRole: this.config.pingRole,
       dmWinners: this.config.dmWinners,
-      enableLogging: this.config.enableLogging
+      enableLogging: this.config.enableLogging,
+      lastToLeave: this.config.lastToLeave
     });
     return this.configLoader.save();
   }

@@ -1,14 +1,18 @@
 // src/commands/filter.js
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
+  PermissionFlagsBits
 } from 'discord.js';
 
 let filterSystem = null;
+let embedLoader = null;
 
 export function setFilterSystem(system) {
   filterSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const filterData = new SlashCommandBuilder()
@@ -79,19 +83,6 @@ export const filterData = new SlashCommandBuilder()
           .setName('disable')
           .setDescription('Disable image filter')
       )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('threshold')
-          .setDescription('Set NSFW detection threshold')
-          .addNumberOption(option =>
-            option
-              .setName('value')
-              .setDescription('Threshold value (0.0-1.0, higher = stricter)')
-              .setRequired(true)
-              .setMinValue(0)
-              .setMaxValue(1)
-          )
-      )
   )
   // General commands
   .addSubcommand(subcommand =>
@@ -106,8 +97,8 @@ export const filterData = new SlashCommandBuilder()
   );
 
 export async function execute(interaction) {
-  if (!filterSystem) {
-    return interaction.reply({ content: '❌ Filter system not loaded.', ephemeral: true });
+  if (!filterSystem || !embedLoader) {
+    return interaction.reply({ content: 'Filter system not loaded.', ephemeral: true });
   }
 
   const group = interaction.options.getSubcommandGroup();
@@ -136,8 +127,6 @@ export async function execute(interaction) {
         return executeImageEnable(interaction);
       case 'disable':
         return executeImageDisable(interaction);
-      case 'threshold':
-        return executeImageThreshold(interaction);
     }
   }
 
@@ -156,16 +145,11 @@ async function executeWordAdd(interaction) {
   const success = filterSystem.addFilteredWord(word);
 
   if (success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Word Added')
-      .setDescription(`Added "${word}" to the filter list.`)
-      .setColor(0x00ff00)
-      .setTimestamp();
-
+    const embed = embedLoader.success(`Added "${word}" to the filter list.`);
     await interaction.reply({ embeds: [embed], ephemeral: true });
   } else {
     await interaction.reply({ 
-      content: '❌ This word is already in the filter list.', 
+      content: 'This word is already in the filter list.', 
       ephemeral: true 
     });
   }
@@ -177,16 +161,11 @@ async function executeWordRemove(interaction) {
   const success = filterSystem.removeFilteredWord(word);
 
   if (success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Word Removed')
-      .setDescription(`Removed "${word}" from the filter list.`)
-      .setColor(0x00ff00)
-      .setTimestamp();
-
+    const embed = embedLoader.success(`Removed "${word}" from the filter list.`);
     await interaction.reply({ embeds: [embed], ephemeral: true });
   } else {
     await interaction.reply({ 
-      content: '❌ This word is not in the custom filter list or is a default word that cannot be removed.', 
+      content: 'This word is not in the custom filter list or is a default word that cannot be removed.', 
       ephemeral: true 
     });
   }
@@ -198,21 +177,18 @@ async function executeWordList(interaction) {
   const customWords = filterSystem.config.wordFilter.customWords;
   const defaultWords = filterSystem.config.wordFilter.defaultWords;
 
-  const embed = new EmbedBuilder()
-    .setTitle('📝 Filtered Words')
-    .setColor(0x0099ff)
-    .setTimestamp();
+  const fields = [];
 
   // Add custom words
   if (customWords.length > 0) {
     const customList = customWords.map(w => `\`${w}\``).join(', ');
-    embed.addFields({
+    fields.push({
       name: `Custom Words (${customWords.length})`,
       value: customList.slice(0, 1024),
       inline: false
     });
   } else {
-    embed.addFields({
+    fields.push({
       name: 'Custom Words',
       value: 'No custom words added.',
       inline: false
@@ -222,14 +198,19 @@ async function executeWordList(interaction) {
   // Add default words if requested
   if (showDefault) {
     const defaultList = defaultWords.map(w => `||${w}||`).join(', ');
-    embed.addFields({
+    fields.push({
       name: `Default Words (${defaultWords.length})`,
       value: defaultList.slice(0, 1024),
       inline: false
     });
-  } else {
-    embed.setFooter({ text: 'Use /filter word list show_default:true to see default words' });
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Filter System',
+    description: 'Filtered words list',
+    fields,
+    footer: showDefault ? null : 'Use /filter word list show_default:true to see default words'
+  });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -238,12 +219,7 @@ async function executeWordEnable(interaction) {
   filterSystem.config.wordFilter.enabled = true;
   await filterSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Word Filter Enabled')
-    .setDescription('The word filter is now active.')
-    .setColor(0x00ff00)
-    .setTimestamp();
-
+  const embed = embedLoader.success('The word filter is now active.');
   await interaction.reply({ embeds: [embed] });
 }
 
@@ -251,12 +227,7 @@ async function executeWordDisable(interaction) {
   filterSystem.config.wordFilter.enabled = false;
   await filterSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Word Filter Disabled')
-    .setDescription('The word filter has been disabled.')
-    .setColor(0xff0000)
-    .setTimestamp();
-
+  const embed = embedLoader.info('The word filter has been disabled.');
   await interaction.reply({ embeds: [embed] });
 }
 
@@ -264,20 +235,7 @@ async function executeImageEnable(interaction) {
   filterSystem.config.imageFilter.enabled = true;
   await filterSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Image Filter Enabled')
-    .setDescription('The image filter is now active.')
-    .setColor(0x00ff00)
-    .setTimestamp();
-
-  if (!filterSystem.config.imageFilter.apiUrl) {
-    embed.addFields({
-      name: '⚠️ Warning',
-      value: 'No external NSFW detection API is configured. Image filtering may be limited.',
-      inline: false
-    });
-  }
-
+  const embed = embedLoader.success('The image filter is now active.');
   await interaction.reply({ embeds: [embed] });
 }
 
@@ -285,86 +243,41 @@ async function executeImageDisable(interaction) {
   filterSystem.config.imageFilter.enabled = false;
   await filterSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Image Filter Disabled')
-    .setDescription('The image filter has been disabled.')
-    .setColor(0xff0000)
-    .setTimestamp();
-
-  await interaction.reply({ embeds: [embed] });
-}
-
-async function executeImageThreshold(interaction) {
-  const value = interaction.options.getNumber('value');
-
-  filterSystem.config.imageFilter.nsfwThreshold = value;
-  await filterSystem.saveConfig();
-
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Threshold Updated')
-    .setDescription(`NSFW detection threshold set to ${value}`)
-    .addFields({
-      name: 'Threshold Guide',
-      value: '• 0.0-0.3: Very lenient\n• 0.4-0.6: Moderate\n• 0.7-0.9: Strict\n• 1.0: Maximum strictness',
-      inline: false
-    })
-    .setColor(0x00ff00)
-    .setTimestamp();
-
+  const embed = embedLoader.info('The image filter has been disabled.');
   await interaction.reply({ embeds: [embed] });
 }
 
 async function executeStats(interaction) {
   const stats = filterSystem.getStats();
 
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Filter Statistics')
-    .setColor(0x0099ff)
-    .addFields(
-      { 
-        name: 'Messages Filtered', 
-        value: `${stats.stats.messagesFiltered}`, 
-        inline: true 
-      },
-      { 
-        name: 'Images Filtered', 
-        value: `${stats.stats.imagesFiltered}`, 
-        inline: true 
-      },
-      { 
-        name: 'Total Words', 
-        value: `${stats.wordFilter.totalWords}`, 
-        inline: true 
-      }
-    )
-    .setTimestamp();
+  const fields = [
+    { 
+      name: 'Word Filter', 
+      value: stats.wordFilter.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    },
+    { 
+      name: 'Total Words', 
+      value: `${stats.wordFilter.totalWords}`, 
+      inline: true 
+    },
+    { 
+      name: 'Custom Words', 
+      value: `${stats.wordFilter.customWords}`, 
+      inline: true 
+    },
+    { 
+      name: 'Image Filter', 
+      value: stats.imageFilter.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    }
+  ];
 
-  // Add top detected words
-  if (stats.stats.topWords.length > 0) {
-    const topWords = stats.stats.topWords
-      .map(([word, count]) => `\`${word}\`: ${count}`)
-      .join('\n');
-    
-    embed.addFields({
-      name: 'Top Detected Words',
-      value: topWords.slice(0, 1024),
-      inline: false
-    });
-  }
-
-  // Add top violators
-  if (stats.stats.topViolators.length > 0) {
-    const topViolators = stats.stats.topViolators
-      .slice(0, 5)
-      .map(([userId, count]) => `<@${userId}>: ${count} violations`)
-      .join('\n');
-    
-    embed.addFields({
-      name: 'Top Violators',
-      value: topViolators,
-      inline: false
-    });
-  }
+  const embed = embedLoader.createEmbed({
+    title: 'Filter System',
+    description: 'Statistics',
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -372,49 +285,43 @@ async function executeStats(interaction) {
 async function executeStatus(interaction) {
   const config = filterSystem.config;
 
-  const embed = new EmbedBuilder()
-    .setTitle('⚙️ Filter System Status')
-    .setColor(config.enabled ? 0x00ff00 : 0xff0000)
-    .addFields(
-      { 
-        name: 'System Status', 
-        value: config.enabled ? '✅ Enabled' : '❌ Disabled', 
-        inline: true 
-      },
-      { 
-        name: 'Word Filter', 
-        value: config.wordFilter.enabled ? '✅ Enabled' : '❌ Disabled', 
-        inline: true 
-      },
-      { 
-        name: 'Image Filter', 
-        value: config.imageFilter.enabled ? '✅ Enabled' : '❌ Disabled', 
-        inline: true 
-      }
-    )
-    .setTimestamp();
+  const fields = [
+    { 
+      name: 'System Status', 
+      value: config.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    },
+    { 
+      name: 'Word Filter', 
+      value: config.wordFilter.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    },
+    { 
+      name: 'Image Filter', 
+      value: config.imageFilter.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    }
+  ];
 
   // Word filter details
-  embed.addFields({
+  fields.push({
     name: 'Word Filter Settings',
     value: [
-      `• Action: ${config.wordFilter.action}`,
-      `• Case Sensitive: ${config.wordFilter.caseSensitive ? 'Yes' : 'No'}`,
-      `• Check Variations: ${config.wordFilter.checkVariations ? 'Yes' : 'No'}`,
-      `• Custom Words: ${config.wordFilter.customWords.length}`,
-      `• Timeout Duration: ${config.wordFilter.timeoutDuration}s`
+      `Action: ${config.wordFilter.action}`,
+      `Case Sensitive: ${config.wordFilter.caseSensitive ? 'Yes' : 'No'}`,
+      `Check Variations: ${config.wordFilter.checkVariations ? 'Yes' : 'No'}`,
+      `Custom Words: ${config.wordFilter.customWords.length}`,
+      `Timeout Duration: ${config.wordFilter.timeoutDuration}s`
     ].join('\n'),
     inline: false
   });
 
   // Image filter details
-  embed.addFields({
+  fields.push({
     name: 'Image Filter Settings',
     value: [
-      `• Action: ${config.imageFilter.action}`,
-      `• NSFW Threshold: ${config.imageFilter.nsfwThreshold}`,
-      `• Max File Size: ${(config.imageFilter.maxFileSize / 1024 / 1024).toFixed(2)}MB`,
-      `• API Configured: ${config.imageFilter.apiUrl ? 'Yes' : 'No'}`
+      `Action: ${config.imageFilter.action}`,
+      `NSFW Channels: ${config.imageFilter.nsfwChannels.length}`
     ].join('\n'),
     inline: false
   });
@@ -438,12 +345,18 @@ async function executeStatus(interaction) {
   }
 
   if (exemptInfo.length > 0) {
-    embed.addFields({
+    fields.push({
       name: 'Exemptions',
       value: exemptInfo.join('\n').slice(0, 1024),
       inline: false
     });
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Filter System',
+    description: 'Configuration status',
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }

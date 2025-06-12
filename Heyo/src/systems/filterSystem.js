@@ -15,6 +15,7 @@ export class FilterSystem {
     
     // Reference to moderation system (will be set by index.js)
     this.moderationSystem = null;
+    this.embedLoader = null;
     
     const filterConfig = this.configLoader.get('filter') || {};
     this.config = {
@@ -23,15 +24,13 @@ export class FilterSystem {
       
       wordFilter: {
         enabled: filterConfig.wordFilter?.enabled ?? true,
-        defaultWords: filterConfig.wordFilter?.defaultWords || [
-          'nigger', 'nigga', 'faggot', 'fag', 'retard', 'kys'
-        ],
+        defaultWords: filterConfig.wordFilter?.defaultWords || [],
         customWords: filterConfig.wordFilter?.customWords || [],
         exemptRoles: filterConfig.wordFilter?.exemptRoles || [],
         exemptChannels: filterConfig.wordFilter?.exemptChannels || [],
         action: filterConfig.wordFilter?.action || 'delete',
         timeoutDuration: filterConfig.wordFilter?.timeoutDuration || 300,
-        warningMessage: filterConfig.wordFilter?.warningMessage || '⚠️ Your message contains prohibited words.',
+        warningMessage: filterConfig.wordFilter?.warningMessage || 'Your message contains prohibited words.',
         caseSensitive: filterConfig.wordFilter?.caseSensitive ?? false,
         checkVariations: filterConfig.wordFilter?.checkVariations ?? true
       },
@@ -42,7 +41,7 @@ export class FilterSystem {
         exemptChannels: filterConfig.imageFilter?.exemptChannels || [],
         nsfwChannels: filterConfig.imageFilter?.nsfwChannels || [],
         action: filterConfig.imageFilter?.action || 'delete',
-        warningMessage: filterConfig.imageFilter?.warningMessage || '⚠️ Your image appears to contain NSFW content.'
+        warningMessage: filterConfig.imageFilter?.warningMessage || 'Your image appears to contain NSFW content.'
       },
       
       logChannel: filterConfig.logChannel || null,
@@ -70,6 +69,13 @@ export class FilterSystem {
    */
   setModerationSystem(moderationSystem) {
     this.moderationSystem = moderationSystem;
+  }
+
+  /**
+   * Set embed loader reference
+   */
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
   }
 
   /**
@@ -322,20 +328,21 @@ export class FilterSystem {
    * Log filter violation
    */
   async logViolation(message, filterType, details) {
-    if (!this.config.logChannel) return;
+    if (!this.config.logChannel || !this.embedLoader) return;
     
     const channel = message.guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
     
-    const embed = new EmbedBuilder()
-      .setTitle(`🚫 ${filterType} Violation`)
-      .setColor(0xff0000)
-      .addFields(
+    const embed = this.embedLoader.createEmbed({
+      title: 'Filter System',
+      description: 'Violation detected',
+      fields: [
+        { name: 'Type', value: filterType, inline: true },
         { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
         { name: 'Channel', value: `${message.channel}`, inline: true },
         { name: 'Details', value: details, inline: false }
-      )
-      .setTimestamp();
+      ]
+    });
     
     if (filterType === 'Word Filter' && message.content) {
       // Censor the message content

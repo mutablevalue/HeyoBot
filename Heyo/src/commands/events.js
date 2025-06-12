@@ -2,7 +2,6 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType,
   ActionRowBuilder,
   StringSelectMenuBuilder
@@ -10,6 +9,7 @@ import {
 
 let eventHostingSystem = null;
 let leaderboardSystem = null;
+let embedLoader = null;
 
 export function setEventHostingSystem(system) {
   eventHostingSystem = system;
@@ -17,6 +17,10 @@ export function setEventHostingSystem(system) {
 
 export function setLeaderboardSystem(system) {
   leaderboardSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -136,7 +140,7 @@ export const lastToLeaveData = new SlashCommandBuilder()
   .addIntegerOption(option =>
     option
       .setName('countdown_minutes')
-      .setDescription('Minutes before channel closes (default: 5)')
+      .setDescription('Minutes before channel closes')
       .setRequired(false)
       .setMinValue(1)
       .setMaxValue(60)
@@ -144,7 +148,7 @@ export const lastToLeaveData = new SlashCommandBuilder()
   .addIntegerOption(option =>
     option
       .setName('duration_minutes')
-      .setDescription('Minutes the event runs after closing (default: 60)')
+      .setDescription('Minutes the event runs after closing')
       .setRequired(false)
       .setMinValue(5)
       .setMaxValue(1440)
@@ -152,7 +156,7 @@ export const lastToLeaveData = new SlashCommandBuilder()
   .addIntegerOption(option =>
     option
       .setName('start_delay_minutes')
-      .setDescription('Minutes until event starts (default: 0 - immediate)')
+      .setDescription('Minutes until event starts')
       .setRequired(false)
       .setMinValue(0)
       .setMaxValue(1440)
@@ -172,8 +176,8 @@ export const lastToLeaveData = new SlashCommandBuilder()
   );
 
 export async function execute(interaction) {
-  if (!eventHostingSystem) {
-    return interaction.reply({ content: '❌ Event system not loaded.', ephemeral: true });
+  if (!eventHostingSystem || !embedLoader) {
+    return interaction.reply({ content: 'Event system not loaded.', ephemeral: true });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -200,11 +204,10 @@ async function executeCreate(interaction) {
   const rewards = interaction.options.getString('rewards').split(',').map(r => r.trim());
 
   // Show configuration menu based on event type
-  const embed = new EmbedBuilder()
-    .setTitle(`⚙️ Configure Event: ${name}`)
-    .setDescription(`Type: **${eventHostingSystem.eventTypes[type]?.name || type}**\n\nSelect additional options:`)
-    .setColor(0x0099ff)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: `Configure Event: ${name}\nType: **${eventHostingSystem.eventTypes[type]?.name || type}**\n\nSelect additional options:`
+  });
 
   const components = [];
 
@@ -297,17 +300,12 @@ async function executeCreate(interaction) {
         case 'last_to_leave_vc':
           // For last to leave, we create the channel automatically
           eventData.data = {
-            duration: 3600, // Default 1 hour
-            countdownDuration: 300 // Default 5 minutes
+            duration: eventHostingSystem.config.lastToLeave.defaultDurationMinutes * 60,
+            countdownDuration: eventHostingSystem.config.lastToLeave.defaultCountdownMinutes * 60
           };
           
           await i.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle('🎉 Creating Last to Leave Event')
-                .setDescription('Your event is being created with a dedicated voice channel...')
-                .setColor(0x00ff00)
-            ],
+            embeds: [embedLoader.info('Creating Last to Leave Event...\nYour event is being created with a dedicated voice channel.')],
             components: []
           });
           
@@ -346,29 +344,35 @@ async function createEvent(interaction, eventData) {
   try {
     const eventId = await eventHostingSystem.createEvent(eventData);
     
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Event Created')
-      .setDescription(`**${eventData.name}** has been created!`)
-      .addFields(
-        { name: 'Event ID', value: eventId, inline: true },
-        { name: 'Type', value: eventHostingSystem.eventTypes[eventData.type]?.name || eventData.type, inline: true },
-        { name: 'Status', value: 'Active', inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+    const fields = [
+      { name: 'Event ID', value: eventId, inline: true },
+      { name: 'Type', value: eventHostingSystem.eventTypes[eventData.type]?.name || eventData.type, inline: true },
+      { name: 'Status', value: 'Active', inline: true }
+    ];
 
     if (eventData.rewards.length > 0) {
-      embed.addFields({
+      fields.push({
         name: 'Rewards',
         value: eventData.rewards.map((r, i) => `${i + 1}. ${r}`).join('\n')
       });
     }
 
+    const event = eventHostingSystem.getEvent(eventId);
+    if (event.channelId) {
+      fields.push({ name: 'Channel', value: `<#${event.channelId}>`, inline: true });
+    }
+
+    const embed = embedLoader.createEmbed({
+      title: 'Event System',
+      description: `Event Created: **${eventData.name}**`,
+      fields
+    });
+
     await interaction.editReply({ embeds: [embed], components: [] });
   } catch (error) {
     console.error('[Events Command] Error creating event:', error);
     await interaction.editReply({ 
-      content: `❌ Failed to create event: ${error.message}`, 
+      content: `Failed to create event: ${error.message}`, 
       embeds: [], 
       components: [] 
     });
@@ -381,16 +385,12 @@ async function executeList(interaction) {
 
   if (activeEvents.length === 0) {
     return interaction.reply({ 
-      content: '📋 No active events at the moment.', 
+      content: 'No active events at the moment.', 
       ephemeral: true 
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('🎉 Active Events')
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({ text: `${activeEvents.length} active event${activeEvents.length > 1 ? 's' : ''}` });
+  const fields = [];
 
   for (const event of activeEvents.slice(0, 10)) {
     const fieldValue = [
@@ -404,16 +404,19 @@ async function executeList(interaction) {
       fieldValue.push(`Channel: <#${event.channelId}>`);
     }
 
-    embed.addFields({
+    fields.push({
       name: `${event.name} (${event.id})`,
       value: fieldValue.join('\n'),
       inline: false
     });
   }
 
-  if (activeEvents.length > 10) {
-    embed.setFooter({ text: `Showing 10 of ${activeEvents.length} active events` });
-  }
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: 'Active Events',
+    fields,
+    footer: activeEvents.length > 10 ? `Showing 10 of ${activeEvents.length} active events` : `${activeEvents.length} active event${activeEvents.length > 1 ? 's' : ''}`
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -424,38 +427,33 @@ async function executeView(interaction) {
 
   if (!event || event.guildId !== interaction.guild.id) {
     return interaction.reply({ 
-      content: '❌ Event not found.', 
+      content: 'Event not found.', 
       ephemeral: true 
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(`🎉 Event: ${event.name}`)
-    .setDescription(event.description || 'No description')
-    .setColor(event.status === 'active' ? 0x00ff00 : event.status === 'completed' ? 0xffd700 : 0xff0000)
-    .addFields(
-      { name: 'ID', value: event.id, inline: true },
-      { name: 'Type', value: eventHostingSystem.eventTypes[event.type]?.name || event.type, inline: true },
-      { name: 'Status', value: event.status, inline: true },
-      { name: 'Created By', value: `<@${event.createdBy}>`, inline: true },
-      { name: 'Created At', value: `<t:${Math.floor(new Date(event.createdAt).getTime() / 1000)}:F>`, inline: true }
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'ID', value: event.id, inline: true },
+    { name: 'Type', value: eventHostingSystem.eventTypes[event.type]?.name || event.type, inline: true },
+    { name: 'Status', value: event.status, inline: true },
+    { name: 'Created By', value: `<@${event.createdBy}>`, inline: true },
+    { name: 'Created At', value: `<t:${Math.floor(new Date(event.createdAt).getTime() / 1000)}:F>`, inline: true }
+  ];
 
   // Add requirements
   if (Object.keys(event.requirements).length > 0) {
     const reqText = [];
-    if (event.requirements.minMessages) reqText.push(`• ${event.requirements.minMessages}+ messages`);
-    if (event.requirements.minVoiceTime) reqText.push(`• ${leaderboardSystem.constructor.formatTime(event.requirements.minVoiceTime)} in voice`);
-    if (event.requirements.mustBeBooster) reqText.push('• Must be a server booster');
-    if (event.requirements.minDaysInServer) reqText.push(`• ${event.requirements.minDaysInServer}+ days in server`);
+    if (event.requirements.minMessages) reqText.push(`${event.requirements.minMessages}+ messages`);
+    if (event.requirements.minVoiceTime) reqText.push(`${leaderboardSystem.constructor.formatTime(event.requirements.minVoiceTime)} in voice`);
+    if (event.requirements.mustBeBooster) reqText.push('Must be a server booster');
+    if (event.requirements.minDaysInServer) reqText.push(`${event.requirements.minDaysInServer}+ days in server`);
     
-    embed.addFields({ name: 'Requirements', value: reqText.join('\n') || 'None' });
+    fields.push({ name: 'Requirements', value: reqText.join('\n') || 'None' });
   }
 
   // Add rewards
   if (event.rewards.length > 0) {
-    embed.addFields({ 
+    fields.push({ 
       name: 'Rewards', 
       value: event.rewards.map((r, i) => `${i + 1}. ${r}`).join('\n') 
     });
@@ -463,7 +461,7 @@ async function executeView(interaction) {
 
   // Add participants/winners
   if (event.status === 'active' && event.participants) {
-    embed.addFields({ 
+    fields.push({ 
       name: 'Participants', 
       value: `${event.participants.length} participants`,
       inline: true
@@ -471,12 +469,18 @@ async function executeView(interaction) {
   }
 
   if (event.winners && event.winners.length > 0) {
-    embed.addFields({ 
+    fields.push({ 
       name: 'Winners', 
       value: event.winners.map(id => `<@${id}>`).join(', '),
       inline: false
     });
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: `Event: **${event.name}**\n${event.description || 'No description'}`,
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -488,29 +492,28 @@ async function executeCancel(interaction) {
   const event = eventHostingSystem.getEvent(eventId);
   if (!event || event.guildId !== interaction.guild.id) {
     return interaction.reply({ 
-      content: '❌ Event not found.', 
+      content: 'Event not found.', 
       ephemeral: true 
     });
   }
 
   if (event.status !== 'active' && event.status !== 'pending') {
     return interaction.reply({ 
-      content: '❌ Only active or pending events can be cancelled.', 
+      content: 'Only active or pending events can be cancelled.', 
       ephemeral: true 
     });
   }
 
   await eventHostingSystem.cancelEvent(eventId, reason);
 
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Event Cancelled')
-    .setDescription(`**${event.name}** has been cancelled.`)
-    .addFields(
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: `Event Cancelled: **${event.name}**`,
+    fields: [
       { name: 'Event ID', value: eventId, inline: true },
       { name: 'Reason', value: reason, inline: false }
-    )
-    .setColor(0xff0000)
-    .setTimestamp();
+    ]
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -522,14 +525,14 @@ async function executeEnd(interaction) {
   const event = eventHostingSystem.getEvent(eventId);
   if (!event || event.guildId !== interaction.guild.id) {
     return interaction.reply({ 
-      content: '❌ Event not found.', 
+      content: 'Event not found.', 
       ephemeral: true 
     });
   }
 
   if (event.status !== 'active') {
     return interaction.reply({ 
-      content: '❌ Only active events can be ended.', 
+      content: 'Only active events can be ended.', 
       ephemeral: true 
     });
   }
@@ -537,18 +540,19 @@ async function executeEnd(interaction) {
   const winners = winner ? [winner.id] : [];
   await eventHostingSystem.endEvent(eventId, winners);
 
-  const embed = new EmbedBuilder()
-    .setTitle('🏁 Event Ended')
-    .setDescription(`**${event.name}** has ended.`)
-    .addFields(
-      { name: 'Event ID', value: eventId, inline: true }
-    )
-    .setColor(0xffd700)
-    .setTimestamp();
+  const fields = [
+    { name: 'Event ID', value: eventId, inline: true }
+  ];
 
   if (winners.length > 0) {
-    embed.addFields({ name: 'Winner', value: `<@${winners[0]}>`, inline: true });
+    fields.push({ name: 'Winner', value: `<@${winners[0]}>`, inline: true });
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: `Event Ended: **${event.name}**`,
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -562,16 +566,12 @@ async function executeHistory(interaction) {
 
   if (history.length === 0) {
     return interaction.reply({ 
-      content: '📜 No event history found.', 
+      content: 'No event history found.', 
       ephemeral: true 
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('📜 Event History')
-    .setColor(0x0099ff)
-    .setTimestamp()
-    .setFooter({ text: `Showing ${history.length} most recent events` });
+  const fields = [];
 
   for (const event of history) {
     const fieldValue = [
@@ -584,20 +584,27 @@ async function executeHistory(interaction) {
       fieldValue.push(`Winners: ${event.winners.map(id => `<@${id}>`).join(', ')}`);
     }
 
-    embed.addFields({
+    fields.push({
       name: event.name,
       value: fieldValue.join('\n'),
       inline: false
     });
   }
 
+  const embed = embedLoader.createEmbed({
+    title: 'Event System',
+    description: 'Event History',
+    fields,
+    footer: `Showing ${history.length} most recent events`
+  });
+
   await interaction.reply({ embeds: [embed] });
 }
 
 async function executeLastToLeave(interaction) {
   const rewards = interaction.options.getString('rewards').split(',').map(r => r.trim());
-  const countdownMinutes = interaction.options.getInteger('countdown_minutes') || 5;
-  const durationMinutes = interaction.options.getInteger('duration_minutes') || 60;
+  const countdownMinutes = interaction.options.getInteger('countdown_minutes') || eventHostingSystem.config.lastToLeave.defaultCountdownMinutes;
+  const durationMinutes = interaction.options.getInteger('duration_minutes') || eventHostingSystem.config.lastToLeave.defaultDurationMinutes;
   const startDelayMinutes = interaction.options.getInteger('start_delay_minutes') || 0;
   const minMessages = interaction.options.getInteger('min_messages');
   const boosterOnly = interaction.options.getBoolean('booster_only');
@@ -629,56 +636,57 @@ async function executeLastToLeave(interaction) {
     const eventId = await eventHostingSystem.createEvent(eventData);
     const event = eventHostingSystem.getEvent(eventId);
 
-    const embed = new EmbedBuilder()
-      .setTitle('🎉 Last to Leave Event Created!')
-      .setDescription('A voice channel has been created for the event.')
-      .addFields(
-        { name: 'Event ID', value: eventId, inline: true },
-        { name: 'Channel', value: `<#${event.channelId}>`, inline: true },
-        { name: 'Status', value: startDelayMinutes > 0 ? 'Pending' : 'Active', inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+    const fields = [
+      { name: 'Event ID', value: eventId, inline: true },
+      { name: 'Channel', value: `<#${event.channelId}>`, inline: true },
+      { name: 'Status', value: startDelayMinutes > 0 ? 'Pending' : 'Active', inline: true }
+    ];
 
     // Add timing info
     if (startDelayMinutes > 0) {
-      embed.addFields({
+      fields.push({
         name: 'Event Timeline',
         value: [
-          `🔓 Opens: <t:${Math.floor(new Date(eventData.startTime).getTime() / 1000)}:R>`,
-          `🔒 Closes: ${countdownMinutes} minutes after opening`,
-          `⏱️ Duration: ${durationMinutes} minutes after closing`
+          `Opens: <t:${Math.floor(new Date(eventData.startTime).getTime() / 1000)}:R>`,
+          `Closes: ${countdownMinutes} minutes after opening`,
+          `Duration: ${durationMinutes} minutes after closing`
         ].join('\n')
       });
     } else {
-      embed.addFields({
+      fields.push({
         name: 'Event Timeline',
         value: [
-          `🔓 Opens: Now!`,
-          `🔒 Closes: In ${countdownMinutes} minutes`,
-          `⏱️ Duration: ${durationMinutes} minutes after closing`
+          `Opens: Now!`,
+          `Closes: In ${countdownMinutes} minutes`,
+          `Duration: ${durationMinutes} minutes after closing`
         ].join('\n')
       });
     }
 
     if (Object.keys(requirements).length > 0) {
       const reqText = [];
-      if (requirements.minMessages) reqText.push(`• ${requirements.minMessages}+ messages`);
-      if (requirements.mustBeBooster) reqText.push('• Must be a server booster');
+      if (requirements.minMessages) reqText.push(`${requirements.minMessages}+ messages`);
+      if (requirements.mustBeBooster) reqText.push('Must be a server booster');
       
-      embed.addFields({ name: 'Requirements', value: reqText.join('\n') });
+      fields.push({ name: 'Requirements', value: reqText.join('\n') });
     }
 
-    embed.addFields({ 
+    fields.push({ 
       name: 'Rewards', 
       value: rewards.map((r, i) => `${i + 1}. ${r}`).join('\n') 
+    });
+
+    const embed = embedLoader.createEmbed({
+      title: 'Event System',
+      description: 'Last to Leave Event Created!\nA voice channel has been created for the event.',
+      fields
     });
 
     await interaction.reply({ embeds: [embed] });
   } catch (error) {
     console.error('[LastToLeave Command] Error creating event:', error);
     await interaction.reply({ 
-      content: `❌ Failed to create event: ${error.message}`, 
+      content: `Failed to create event: ${error.message}`, 
       ephemeral: true 
     });
   }

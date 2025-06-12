@@ -115,6 +115,7 @@ async function main() {
   
   const filterSystem = new FilterSystem(client, config);
   filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
+filterSystem.setEmbedLoader(embedLoader); // Add this line
   
   const banAppealSystem = new BanAppealSystem(client, config);
   const ticketSystem = new TicketSystem(client, config);
@@ -149,10 +150,12 @@ vcCommand.setEmbedLoader(embedLoader);
   
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
 leaderboardCommands.setEmbedLoader(embedLoader);
-  eventCommands.setEventHostingSystem(eventHostingSystem);
-  eventCommands.setLeaderboardSystem(leaderboardSystem);
+ eventCommands.setEventHostingSystem(eventHostingSystem);
+eventCommands.setLeaderboardSystem(leaderboardSystem);
+eventCommands.setEmbedLoader(embedLoader); // Add this line
   boosterCommands.setBoosterSystem(boosterSystem);
   filterCommands.setFilterSystem(filterSystem);
+filterCommands.setEmbedLoader(embedLoader); // Add this line
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
@@ -161,6 +164,7 @@ leaderboardCommands.setEmbedLoader(embedLoader);
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   skullboardCommands.setModerationSystem(moderationSystem);
   skullboardCommands.setEmbedLoader(embedLoader);
+  
   
   // Snipe commands need both SnipeSystem and EmbedLoader
   snipeCommands.setSnipeSystem(snipeSystem);
