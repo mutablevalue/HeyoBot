@@ -2,14 +2,19 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType
 } from 'discord.js';
+import { EmbedLoader } from '../utils/embedLoader.js';
 
 let confessSystem = null;
+let embedLoader = null;
 
 export function setConfessSystem(system) {
   confessSystem = system;
+  // Initialize embedLoader using the confessSystem's configLoader
+  if (system && system.configLoader) {
+    embedLoader = new EmbedLoader(system.configLoader);
+  }
 }
 
 // Setup confess command
@@ -50,9 +55,9 @@ export const deleteConfessionData = new SlashCommandBuilder()
 
 // Execute functions
 export async function executeSetupConfess(interaction) {
-  if (!confessSystem) {
+  if (!confessSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Confession system not loaded.', 
+      content: 'Confession system not loaded.', 
       ephemeral: true 
     });
   }
@@ -64,28 +69,23 @@ export async function executeSetupConfess(interaction) {
   const success = await confessSystem.setupConfessChannel(interaction.guild, channel.id);
   
   if (success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Confession Channel Set')
-      .setDescription(`Confessions will now be sent to ${channel}`)
-      .addFields(
-        { name: 'Channel', value: `${channel}`, inline: true },
-        { name: 'Set By', value: `${interaction.user.tag}`, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+    const embed = embedLoader.success(`Confessions will now be sent to ${channel}`);
+    embed.addFields(
+      { name: 'Channel', value: `${channel}`, inline: true },
+      { name: 'Set By', value: `${interaction.user.tag}`, inline: true }
+    );
     
     await interaction.editReply({ embeds: [embed] });
   } else {
-    await interaction.editReply({ 
-      content: '❌ Failed to set up confession channel.' 
-    });
+    const embed = embedLoader.error('Failed to set up confession channel.');
+    await interaction.editReply({ embeds: [embed] });
   }
 }
 
 export async function executeConfess(interaction) {
-  if (!confessSystem) {
+  if (!confessSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Confession system not loaded.', 
+      content: 'Confession system not loaded.', 
       ephemeral: true 
     });
   }
@@ -95,33 +95,31 @@ export async function executeConfess(interaction) {
 }
 
 export async function executeConfessStats(interaction) {
-  if (!confessSystem) {
+  if (!confessSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Confession system not loaded.', 
+      content: 'Confession system not loaded.', 
       ephemeral: true 
     });
   }
   
   const stats = confessSystem.getStats(interaction.guild.id);
   
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Confession Statistics')
-    .addFields(
+  const embed = embedLoader.system('Confession Statistics', '', {
+    fields: [
       { name: 'Total Confessions', value: stats.total.toString(), inline: true },
       { name: 'Guild Confessions', value: stats.guildTotal.toString(), inline: true },
       { name: 'Today\'s Confessions', value: stats.todayCount.toString(), inline: true },
       { name: 'Confession Channel', value: stats.channelId ? `<#${stats.channelId}>` : 'Not set', inline: false }
-    )
-    .setColor(0x0099ff)
-    .setTimestamp();
+    ]
+  });
   
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 export async function executeDeleteConfession(interaction) {
-  if (!confessSystem) {
+  if (!confessSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Confession system not loaded.', 
+      content: 'Confession system not loaded.', 
       ephemeral: true 
     });
   }
@@ -132,33 +130,25 @@ export async function executeDeleteConfession(interaction) {
   const confession = confessSystem.getConfession(confessionId);
   
   if (!confession) {
-    return interaction.reply({ 
-      content: '❌ Confession not found.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.error('Confession not found.');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
   // Check if confession is from this guild
   if (confession.guildId !== interaction.guild.id) {
-    return interaction.reply({ 
-      content: '❌ This confession is not from this guild.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.error('This confession is not from this guild.');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
   // Delete confession
   const deleted = await confessSystem.deleteConfession(confessionId, interaction.user.id);
   
   if (deleted) {
-    const embed = new EmbedBuilder()
-      .setTitle('🗑️ Confession Deleted')
-      .setDescription(`Confession ${confessionId} has been marked as deleted.`)
-      .addFields(
-        { name: 'Deleted By', value: interaction.user.tag, inline: true },
-        { name: 'Original Author', value: `||<@${confession.userId}>||`, inline: true }
-      )
-      .setColor(0xff0000)
-      .setTimestamp();
+    const embed = embedLoader.success(`Confession ${confessionId} has been marked as deleted.`);
+    embed.addFields(
+      { name: 'Deleted By', value: interaction.user.tag, inline: true },
+      { name: 'Original Author', value: `||<@${confession.userId}>||`, inline: true }
+    );
     
     await interaction.reply({ embeds: [embed], ephemeral: true });
     
@@ -166,23 +156,19 @@ export async function executeDeleteConfession(interaction) {
     if (confessSystem.config.logChannel) {
       const logChannel = interaction.guild.channels.cache.get(confessSystem.config.logChannel);
       if (logChannel?.isTextBased()) {
-        const logEmbed = new EmbedBuilder()
-          .setTitle('Confession Deleted')
-          .setDescription(`${confessionId} was deleted by ${interaction.user.tag}`)
-          .addFields(
+        const logEmbed = embedLoader.createEmbed({
+          description: `${confessionId} was deleted by ${interaction.user.tag}`,
+          fields: [
             { name: 'Content', value: confession.content.slice(0, 1024), inline: false }
-          )
-          .setColor(0xff0000)
-          .setTimestamp();
+          ]
+        });
         
         await logChannel.send({ embeds: [logEmbed] });
       }
     }
   } else {
-    await interaction.reply({ 
-      content: '❌ Failed to delete confession.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.error('Failed to delete confession.');
+    await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 }
 

@@ -1,6 +1,5 @@
 // src/systems/confessSystem.js
 import { 
-  EmbedBuilder, 
   ActionRowBuilder, 
   ButtonBuilder, 
   ButtonStyle,
@@ -14,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { EmbedLoader } from '../utils/embedLoader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,7 +22,16 @@ export class ConfessSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
-    this.config = this.configLoader.get('confess');
+    this.embedLoader = new EmbedLoader(configLoader);
+    
+    // Load config - no defaults
+    const confessConfig = this.configLoader.get('confess');
+    if (!confessConfig) {
+      console.error('[ConfessSystem] No confess configuration found');
+      return;
+    }
+    
+    this.config = confessConfig;
     
     if (!this.config.enabled) {
       console.log('[ConfessSystem] System is disabled in config');
@@ -99,18 +108,17 @@ export class ConfessSystem {
       }
       
       // Update config
+      if (!this.config.channels) this.config.channels = {};
       this.config.channels[guild.id] = channelId;
       this.configLoader.set('confess.channels.' + guild.id, channelId);
       await this.configLoader.save();
       
       // Send initial message if configured
-      if (this.config.setupMessage.enabled) {
-        const embed = new EmbedBuilder()
-          .setTitle(this.config.setupMessage.title)
-          .setDescription(this.config.setupMessage.description)
-          .setColor(this.config.setupMessage.color)
-          .setFooter({ text: this.config.setupMessage.footer })
-          .setTimestamp();
+      if (this.config.setupMessage?.enabled) {
+        const embed = this.embedLoader.system(
+          'Anonymous Confessions',
+          this.config.setupMessage.description
+        );
         
         await channel.send({ embeds: [embed] });
       }
@@ -124,10 +132,11 @@ export class ConfessSystem {
   
   async createConfessModal(interaction) {
     // Check if confession channel is set up
-    const confessChannelId = this.config.channels[interaction.guild.id];
+    const confessChannelId = this.config.channels?.[interaction.guild.id];
     if (!confessChannelId) {
+      const embed = this.embedLoader.error('Confession channel not set up. Ask an admin to use `/setupconfess`');
       return interaction.reply({
-        content: '❌ Confession channel not set up! Ask an admin to use `/setupconfess`',
+        embeds: [embed],
         ephemeral: true
       });
     }
@@ -136,8 +145,9 @@ export class ConfessSystem {
     const cooldownKey = `${interaction.guild.id}-${interaction.user.id}`;
     if (this.cooldowns.has(cooldownKey)) {
       const timeLeft = Math.ceil((this.cooldowns.get(cooldownKey) - Date.now()) / 1000);
+      const embed = this.embedLoader.warning(`Please wait ${timeLeft} seconds before making another confession.`);
       return interaction.reply({
-        content: `⏰ Please wait ${timeLeft} seconds before making another confession.`,
+        embeds: [embed],
         ephemeral: true
       });
     }
@@ -167,23 +177,25 @@ export class ConfessSystem {
     const guildId = interaction.customId.split('_')[2];
     
     // Get confession channel
-    const confessChannelId = this.config.channels[guildId];
+    const confessChannelId = this.config.channels?.[guildId];
     const channel = this.client.channels.cache.get(confessChannelId);
     
     if (!channel) {
+      const embed = this.embedLoader.error('Confession channel not found.');
       return interaction.reply({
-        content: '❌ Confession channel not found!',
+        embeds: [embed],
         ephemeral: true
       });
     }
     
     // Check for banned words if enabled
-    if (this.config.filterBannedWords && this.config.bannedWords.length > 0) {
+    if (this.config.filterBannedWords && this.config.bannedWords?.length > 0) {
       const lowerConfession = confession.toLowerCase();
       for (const word of this.config.bannedWords) {
         if (lowerConfession.includes(word.toLowerCase())) {
+          const embed = this.embedLoader.error('Your confession contains prohibited content.');
           return interaction.reply({
-            content: '❌ Your confession contains prohibited content.',
+            embeds: [embed],
             ephemeral: true
           });
         }
@@ -208,14 +220,12 @@ export class ConfessSystem {
     this.confessions.set(confessionId, confessionData);
     
     // Create embed
-    const embed = new EmbedBuilder()
-      .setTitle(`${this.config.embedTitle} #${this.confessionCounter}`)
-      .setDescription(confession)
-      .setColor(this.config.embedColor)
-      .setFooter({ text: `ID: ${confessionId}` })
-      .setTimestamp();
+    const embed = this.embedLoader.createEmbed({
+      description: confession,
+      footer: `ID: ${confessionId}`,
+      formatDescription: false
+    });
     
-    // Add optional fields
     if (this.config.showConfessionNumber) {
       embed.setAuthor({ name: `Confession #${this.confessionCounter}` });
     }
@@ -229,8 +239,10 @@ export class ConfessSystem {
       setTimeout(() => this.cooldowns.delete(cooldownKey), this.config.cooldown * 1000);
       
       // Reply to user
+      const successMessage = this.config.successMessage.replace('{id}', confessionId);
+      const successEmbed = this.embedLoader.success(successMessage);
       await interaction.reply({
-        content: this.config.successMessage.replace('{id}', confessionId),
+        embeds: [successEmbed],
         ephemeral: true
       });
       
@@ -244,8 +256,9 @@ export class ConfessSystem {
       
     } catch (error) {
       console.error('[ConfessSystem] Error sending confession:', error);
+      const errorEmbed = this.embedLoader.error('Failed to send confession. Please try again later.');
       await interaction.reply({
-        content: '❌ Failed to send confession. Please try again later.',
+        embeds: [errorEmbed],
         ephemeral: true
       });
     }
@@ -260,16 +273,14 @@ export class ConfessSystem {
     
     const user = await this.client.users.fetch(confessionData.userId).catch(() => null);
     
-    const embed = new EmbedBuilder()
-      .setTitle('🤫 New Confession')
-      .setDescription(confessionData.content)
-      .addFields(
+    const embed = this.embedLoader.createEmbed({
+      description: confessionData.content,
+      fields: [
         { name: 'User', value: user ? `${user.tag} (${user.id})` : confessionData.userId, inline: true },
         { name: 'ID', value: confessionData.id, inline: true },
         { name: 'Time', value: `<t:${Math.floor(confessionData.timestamp / 1000)}:F>`, inline: true }
-      )
-      .setColor(0x808080)
-      .setTimestamp();
+      ]
+    });
     
     await logChannel.send({ embeds: [embed] }).catch(console.error);
   }
@@ -301,7 +312,7 @@ export class ConfessSystem {
       todayCount: guildConfessions.filter(c => 
         c.timestamp > Date.now() - 24 * 60 * 60 * 1000
       ).length,
-      channelId: this.config.channels[guildId] || null
+      channelId: this.config.channels?.[guildId] || null
     };
   }
 }

@@ -170,6 +170,7 @@ vanity:
   roles:
     - "789012345678901234"
     - "890123456789012345"
+    - "1380398417079046205"
   logChannel: "1380422905191731210"
   enableLogging: false
   caseSensitive: false
@@ -255,7 +256,7 @@ antiNuke:
     - "1235002473698299956"
     - "456789012345678901"
 j2c:
-  defaultChannelName: ➕ Create Voice Channel
+  defaultChannelName: Create Voice Channel
   logChannel: null
   categoryId: null
   j2cChannelId: "1380618466557558786"
@@ -264,7 +265,10 @@ welcome:
   channel: null
   message:
     title: Welcome!
-    description: "Welcome {user} to **{server}**!\\n\\nYou are member #{memberCount}"
+    description: |-
+      Welcome {user} to {server}!
+
+      You are member #{memberCount}
     color: 65280
     thumbnail: true
     footer: Enjoy your stay!
@@ -320,7 +324,7 @@ boosterSystem:
   vcBitrate: 64000
   vcCategory: null
   roleNameFormat: "{username}'s Role"
-  roleColor: Random
+  roleColor: null
   rolePosition: null
   roleHoist: false
   roleMentionable: false
@@ -339,15 +343,15 @@ ticketSystem:
 
     Please describe your issue in detail and our support team will assist you shortly.
 
-    • Be patient - we'll respond as soon as possible
-    • Provide all relevant information
-    • Be respectful to our support team
+    Be patient - we'll respond as soon as possible
+    Provide all relevant information
+    Be respectful to our support team
   categories: []
   panelEmbed:
     title: 🎫 Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
     color: 39423
-    footer: Our support team will respond as soon as possible
+    footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
     buttonEmoji: 🎫
   autoDelete:
@@ -371,19 +375,15 @@ ticketSystem:
   buttons:
     close:
       label: Close Ticket
-      emoji: 🔒
       style: Danger
     claim:
       label: Claim Ticket
-      emoji: 🎫
       style: Primary
     delete:
       label: Delete Ticket
-      emoji: 🗑️
       style: Danger
     transcript:
       label: Save Transcript
-      emoji: 📄
       style: Secondary
   notifications:
     pingSupport: true
@@ -393,7 +393,7 @@ ticketSystem:
   messages:
     ticketCreated: "Your ticket has been created: {channel}"
     ticketClosed: This ticket has been closed by {user}
-    ticketClaimed: {user} has claimed this ticket
+    ticketClaimed: "{user} has claimed this ticket"
     ticketDeleting: Deleting ticket in {seconds} seconds...
     maxTicketsReached: You already have {max} open ticket(s). Please close one before creating another.
     cooldownActive: Please wait {time} seconds before creating another ticket.
@@ -426,7 +426,7 @@ filter:
     exemptChannels: []
     action: delete
     timeoutDuration: 300
-    warningMessage: ⚠️ Your message contains prohibited words.
+    warningMessage: Your message contains prohibited words.
     caseSensitive: false
     checkVariations: true
   imageFilter:
@@ -436,12 +436,31 @@ filter:
     exemptChannels: []
     nsfwChannels: []
     action: delete
-    warningMessage: ⚠️ Your image appears to contain NSFW content.
+    warningMessage: Your image appears to contain NSFW content.
     apiUrl: null
     maxFileSize: 8388608
   logChannel: null
   enableLogging: true
   trackStats: true
+embed:
+  color: 8388608
+  formatters:
+    header:
+      prefix: "["
+      suffix: "]"
+    footer:
+      prefix: ""
+      suffix: ""
+    field:
+      prefix: ""
+      suffix: ""
+    message:
+      prefix: "["
+      suffix: "]"
+  defaults:
+    showFooter: false
+    footerText: ""
+    inline: true
 genderVerify:
   enabled: true
   dataFile: gender_verifications.json
@@ -450,9 +469,6 @@ genderVerify:
   roleNames:
     female: Verified Female
     male: Verified Male
-  roleColors:
-    female: 10070709
-    male: 10070709
   channelNames:
     verify: verify
     femaleOnly: female-chat
@@ -463,22 +479,17 @@ genderVerify:
     mainCategory: Gender Verification
   reviewChannelFormat: verify-{number}
   verifyEmbed:
-    title: Gender Verification
     description: |
       To access gender-specific channels, you need to verify your identity.
 
-      **Requirements:**
-      • A photo of your ID (only showing your photo and birthdate)
-      • A selfie holding your ID or a second form of ID
+      Requirements:
+      A photo of your ID (only showing your photo and birthdate)
+      A selfie holding your ID or a second form of ID
 
-      **Privacy Notice:**
+      Privacy Notice:
       Your information will only be used for verification and will be deleted after the process.
-    color: 39423
-    footer: Click the button below to start
     buttonLabel: Start Verification
-    buttonEmoji: ✅
   formModal:
-    title: Gender Verification Form
     genderField:
       label: Gender
       placeholder: "Enter: male or female"
@@ -536,12 +547,9 @@ banAppeal:
   dmMessage:
     enabled: true
     delay: 5000
-    content: You have been banned from **{server}**. If you believe this was a mistake, you can submit an appeal.
-    embedTitle: Ban Appeal
+    content: You have been banned from {server}. If you believe this was a mistake, you can submit an appeal.
     embedDescription: Click the button below to submit a ban appeal. Please be honest and provide as much detail as possible.
-    embedColor: 16711680
     buttonLabel: Submit Appeal
-    buttonEmoji: 📝
   appealForm:
     reasonField:
       label: Why were you banned?
@@ -585,8 +593,7 @@ entrance:
   enabled: true
   dataFile: entrance.json
   defaultRoleName: Verified
-  defaultEmoji: ✅
-  defaultWelcomeMessage: |
+  welcomeMessage: |
     Welcome to the server! 
 
     You now have access to all channels. Please make sure to read the rules and enjoy your stay!
@@ -604,8 +611,6 @@ confess:
   cooldown: 300
   minLength: 10
   maxLength: 2000
-  embedTitle: Anonymous Confession
-  embedColor: 3092790
   showConfessionNumber: true
   filterBannedWords: true
   bannedWords:
@@ -619,13 +624,10 @@ confess:
   logChannel: null
   setupMessage:
     enabled: true
-    title: Anonymous Confessions
     description: |
       Use `/confess` command to send an anonymous confession to this channel.
 
       All confessions are anonymous, but moderators can see who sent them in the logs.
-    color: 3092790
-    footer: Think before you confess!
 skullboard:
   enabled: true
   dataFile: skullboard_data.json
@@ -653,7 +655,6 @@ snipe:
   requirePermission: false
   allowedRoles: []
   moderatorRoles: []
-  embedColor: 3092790
   logDeleted: false
   logChannel: null
 socialLookup:

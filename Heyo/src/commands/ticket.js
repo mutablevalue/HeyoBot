@@ -84,12 +84,6 @@ export const ticketData = new SlashCommandBuilder()
               .setDescription('Role that can manage tickets in this category')
               .setRequired(true)
           )
-          .addStringOption(option =>
-            option
-              .setName('emoji')
-              .setDescription('Emoji for this category')
-              .setRequired(false)
-          )
           .addChannelOption(option =>
             option
               .setName('category_channel')
@@ -324,7 +318,10 @@ export const ticketData = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!ticketSystem) {
-    return interaction.reply({ content: '❌ Ticket system not loaded.', ephemeral: true });
+    return interaction.reply({ 
+      content: interaction.client.embedLoader.format('Ticket system not loaded.', 'message'), 
+      ephemeral: true 
+    });
   }
 
   const subcommandGroup = interaction.options.getSubcommandGroup();
@@ -364,7 +361,7 @@ async function executeSetup(interaction) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: '❌ Only administrators can setup the ticket system.',
+      content: interaction.client.embedLoader.format('Only administrators can setup the ticket system.', 'message'),
       ephemeral: true
     });
   }
@@ -394,39 +391,26 @@ async function executeSetup(interaction) {
       ticketSystem.config.enabled = true;
     }
 
-    // Set default settings if not present
-    ticketSystem.config.maxTicketsPerUser = ticketSystem.config.maxTicketsPerUser || 3;
-    ticketSystem.config.cooldown = ticketSystem.config.cooldown || 60000;
-    ticketSystem.config.channelNameFormat = ticketSystem.config.channelNameFormat || 'ticket-{number}';
-    
-    if (!ticketSystem.config.autoDelete) {
-      ticketSystem.config.autoDelete = {
-        enabled: true,
-        timeout: 300000 // 5 minutes
-      };
-    }
-
     // Save config
     await ticketSystem.saveConfig();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket System Setup Complete')
-      .setDescription(`Basic ticket system setup completed!${enable ? ' System is now enabled.' : ''}`)
-      .setColor(0x00ff00)
-      .addFields(
+    const embed = interaction.client.embedLoader.createEmbed({
+      title: 'Ticket System',
+      description: `Basic ticket system setup completed!${enable ? ' System is now enabled.' : ''}`,
+      fields: [
         { name: 'Ticket Category', value: `${category}`, inline: true },
         { name: 'Log Channel', value: `${logChannel}`, inline: true },
         { name: 'Transcript Channel', value: transcriptChannel ? `${transcriptChannel}` : 'Not set', inline: true },
-        { name: 'Status', value: enable ? '✅ Enabled' : '❌ Disabled', inline: true }
-      )
-      .setFooter({ text: 'Use /ticket category add to add ticket categories' })
-      .setTimestamp();
+        { name: 'Status', value: enable ? 'Enabled' : 'Disabled', inline: true }
+      ],
+      footer: 'Use /ticket category add to add ticket categories'
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[Ticket Setup] Error:', error);
     await interaction.editReply({
-      content: '❌ Failed to setup ticket system.'
+      content: interaction.client.embedLoader.format('Failed to setup ticket system.', 'message')
     });
   }
 }
@@ -435,7 +419,7 @@ async function executeCategoryCommands(interaction, subcommand) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: '❌ Only administrators can manage ticket categories.',
+      content: interaction.client.embedLoader.format('Only administrators can manage ticket categories.', 'message'),
       ephemeral: true
     });
   }
@@ -455,7 +439,6 @@ async function executeCategoryAdd(interaction) {
   const name = interaction.options.getString('name');
   const description = interaction.options.getString('description');
   const supportRole = interaction.options.getRole('support_role');
-  const emoji = interaction.options.getString('emoji') || '🎫';
   const categoryChannel = interaction.options.getChannel('category_channel');
 
   await interaction.deferReply();
@@ -465,7 +448,7 @@ async function executeCategoryAdd(interaction) {
     const existing = ticketSystem.config.categories.find(c => c.id === id);
     if (existing) {
       return interaction.editReply({
-        content: `❌ A category with ID \`${id}\` already exists.`
+        content: interaction.client.embedLoader.format(`A category with ID \`${id}\` already exists.`, 'message')
       });
     }
 
@@ -475,34 +458,30 @@ async function executeCategoryAdd(interaction) {
       name,
       description,
       supportRole: supportRole.id,
-      emoji,
       categoryId: categoryChannel?.id || ticketSystem.config.defaultCategoryId,
-      welcomeMessage: `Welcome to your ${name} ticket! A member of <@&${supportRole.id}> will assist you shortly.`,
-      color: 0x0099ff
+      welcomeMessage: `Welcome to your ${name} ticket! A member of <@&${supportRole.id}> will assist you shortly.`
     };
 
     ticketSystem.config.categories.push(newCategory);
     await ticketSystem.saveConfig();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket Category Added')
-      .setDescription(`Successfully added new ticket category!`)
-      .setColor(0x00ff00)
-      .addFields(
+    const embed = interaction.client.embedLoader.createEmbed({
+      title: 'Ticket System',
+      description: 'Successfully added new ticket category!',
+      fields: [
         { name: 'ID', value: `\`${id}\``, inline: true },
         { name: 'Name', value: name, inline: true },
-        { name: 'Emoji', value: emoji, inline: true },
         { name: 'Description', value: description, inline: false },
         { name: 'Support Role', value: `${supportRole}`, inline: true },
         { name: 'Category Channel', value: categoryChannel ? `${categoryChannel}` : 'Default', inline: true }
-      )
-      .setTimestamp();
+      ]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[Ticket Category] Error adding category:', error);
     await interaction.editReply({
-      content: '❌ Failed to add ticket category.'
+      content: interaction.client.embedLoader.format('Failed to add ticket category.', 'message')
     });
   }
 }
@@ -513,20 +492,20 @@ async function executeCategoryRemove(interaction) {
   const category = ticketSystem.config.categories.find(c => c.id === id);
   if (!category) {
     return interaction.reply({
-      content: `❌ Category with ID \`${id}\` not found.`,
+      content: interaction.client.embedLoader.format(`Category with ID \`${id}\` not found.`, 'message'),
       ephemeral: true
     });
   }
 
   // Confirm deletion
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Category Deletion')
-    .setDescription(`Are you sure you want to delete the **${category.name}** category?`)
-    .setColor(0xffff00)
-    .addFields(
+  const embed = interaction.client.embedLoader.createEmbed({
+    title: 'Ticket System',
+    description: `Are you sure you want to delete the **${category.name}** category?`,
+    fields: [
       { name: 'Category', value: category.name, inline: true },
       { name: 'ID', value: `\`${category.id}\``, inline: true }
-    );
+    ]
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -550,7 +529,10 @@ async function executeCategoryRemove(interaction) {
 
   collector.on('collect', async i => {
     if (i.user.id !== interaction.user.id) {
-      return i.reply({ content: 'Only the command user can confirm.', ephemeral: true });
+      return i.reply({ 
+        content: interaction.client.embedLoader.format('Only the command user can confirm.', 'message'), 
+        ephemeral: true 
+      });
     }
 
     if (i.customId === `ticket_confirm_delete_${id}`) {
@@ -561,16 +543,15 @@ async function executeCategoryRemove(interaction) {
 
       await i.update({
         embeds: [
-          new EmbedBuilder()
-            .setTitle('✅ Category Removed')
-            .setDescription(`Successfully removed category **${category.name}**.`)
-            .setColor(0x00ff00)
+          interaction.client.embedLoader.createEmbed({
+            description: `Successfully removed category **${category.name}**.`
+          })
         ],
         components: []
       });
     } else {
       await i.update({
-        content: 'Cancelled.',
+        content: interaction.client.embedLoader.format('Cancelled.', 'message'),
         embeds: [],
         components: []
       });
@@ -582,7 +563,7 @@ async function executeCategoryRemove(interaction) {
   collector.on('end', collected => {
     if (collected.size === 0) {
       interaction.editReply({
-        content: 'Command timed out.',
+        content: interaction.client.embedLoader.format('Command timed out.', 'message'),
         embeds: [],
         components: []
       });
@@ -595,20 +576,19 @@ async function executeCategoryList(interaction) {
 
   if (categories.length === 0) {
     return interaction.reply({
-      content: '❌ No ticket categories configured.',
+      content: interaction.client.embedLoader.format('No ticket categories configured.', 'message'),
       ephemeral: true
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('📋 Ticket Categories')
-    .setColor(0x0099ff)
-    .setDescription(`Total categories: ${categories.length}`)
-    .setTimestamp();
+  const embed = interaction.client.embedLoader.createEmbed({
+    title: 'Ticket System',
+    description: `Total categories: ${categories.length}`
+  });
 
   for (const cat of categories) {
     embed.addFields({
-      name: `${cat.emoji} ${cat.name}`,
+      name: cat.name,
       value: `ID: \`${cat.id}\`\nDescription: ${cat.description}\nSupport Role: <@&${cat.supportRole}>\nCategory: ${cat.categoryId ? `<#${cat.categoryId}>` : 'Default'}`,
       inline: false
     });
@@ -621,7 +601,7 @@ async function executeSettings(interaction) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: '❌ Only administrators can change ticket settings.',
+      content: interaction.client.embedLoader.format('Only administrators can change ticket settings.', 'message'),
       ephemeral: true
     });
   }
@@ -687,27 +667,26 @@ async function executeSettings(interaction) {
 
     if (changes.length === 0) {
       return interaction.editReply({
-        content: '❌ No settings were provided.'
+        content: interaction.client.embedLoader.format('No settings were provided.', 'message')
       });
     }
 
     await ticketSystem.saveConfig();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket Settings Updated')
-      .setDescription('Successfully updated ticket system settings:')
-      .setColor(0x00ff00)
-      .addFields({
+    const embed = interaction.client.embedLoader.createEmbed({
+      title: 'Ticket System',
+      description: 'Successfully updated ticket system settings:',
+      fields: [{
         name: 'Changes',
         value: changes.join('\n')
-      })
-      .setTimestamp();
+      }]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[Ticket Settings] Error updating:', error);
     await interaction.editReply({
-      content: '❌ Failed to update settings.'
+      content: interaction.client.embedLoader.format('Failed to update settings.', 'message')
     });
   }
 }
@@ -716,7 +695,7 @@ async function executeMessages(interaction) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: '❌ Only administrators can customize messages.',
+      content: interaction.client.embedLoader.format('Only administrators can customize messages.', 'message'),
       ephemeral: true
     });
   }
@@ -759,28 +738,28 @@ async function executeMessages(interaction) {
 
     if (changes.length === 0) {
       return interaction.editReply({
-        content: '❌ No messages were provided to update.'
+        content: interaction.client.embedLoader.format('No messages were provided to update.', 'message')
       });
     }
 
     await ticketSystem.saveConfig();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Messages Updated')
-      .setDescription('Successfully updated ticket system messages:')
-      .setColor(0x00ff00)
-      .addFields({
+    const embed = interaction.client.embedLoader.createEmbed({
+      title: 'Ticket System',
+      description: 'Successfully updated ticket system messages:',
+      fields: [{
         name: 'Changes',
         value: changes.join('\n')
-      })
-      .setTimestamp();
+      }]
+    });
 
     // Show preview
-    const previewEmbed = new EmbedBuilder()
-      .setTitle(ticketSystem.config.panelEmbed.title)
-      .setDescription(ticketSystem.config.panelEmbed.description)
-      .setColor(ticketSystem.config.panelEmbed.color)
-      .setFooter({ text: ticketSystem.config.panelEmbed.footer });
+    const previewEmbed = interaction.client.embedLoader.createEmbed({
+      title: ticketSystem.config.panelEmbed.title,
+      description: ticketSystem.config.panelEmbed.description,
+      footer: ticketSystem.config.panelEmbed.footer,
+      formatDescription: false
+    });
 
     await interaction.editReply({ 
       embeds: [embed, previewEmbed],
@@ -789,7 +768,7 @@ async function executeMessages(interaction) {
   } catch (error) {
     console.error('[Ticket Messages] Error updating:', error);
     await interaction.editReply({
-      content: '❌ Failed to update messages.'
+      content: interaction.client.embedLoader.format('Failed to update messages.', 'message')
     });
   }
 }
@@ -797,37 +776,34 @@ async function executeMessages(interaction) {
 async function executeConfig(interaction) {
   const config = ticketSystem.config;
 
-  const embed = new EmbedBuilder()
-    .setTitle('📋 Ticket System Configuration')
-    .setColor(0x0099ff)
-    .addFields(
-      { name: 'Status', value: config.enabled ? '✅ Enabled' : '❌ Disabled', inline: true },
-      { name: 'Max Tickets/User', value: `${config.maxTicketsPerUser}`, inline: true },
-      { name: 'Cooldown', value: `${config.cooldown / 1000} seconds`, inline: true },
-      { name: 'Log Channel', value: config.logChannel ? `<#${config.logChannel}>` : 'Not set', inline: true },
-      { name: 'Transcript Channel', value: config.transcriptChannel ? `<#${config.transcriptChannel}>` : 'Not set', inline: true },
-      { name: 'Default Category', value: config.defaultCategoryId ? `<#${config.defaultCategoryId}>` : 'Not set', inline: true },
-      { name: 'Auto-Delete', value: config.autoDelete?.enabled ? `Yes (${config.autoDelete.timeout / 1000}s)` : 'No', inline: true },
-      { name: 'Channel Format', value: `\`${config.channelNameFormat}\``, inline: true },
-      { name: 'Max Active Tickets', value: config.maxActiveTickets ? `${config.maxActiveTickets}` : 'Unlimited', inline: true },
-      { name: 'Auto-Close Inactive', value: config.autoCloseInactiveDays ? `${config.autoCloseInactiveDays} days` : 'Disabled', inline: true },
-      { name: 'DM Transcripts', value: config.dmTranscripts ? 'Yes' : 'No', inline: true },
-      { name: 'Users Can Close', value: config.closeOwnTicket ? 'Yes' : 'No', inline: true }
-    );
+  const fields = [
+    { name: 'Status', value: config.enabled ? 'Enabled' : 'Disabled', inline: true },
+    { name: 'Max Tickets/User', value: `${config.maxTicketsPerUser}`, inline: true },
+    { name: 'Cooldown', value: `${config.cooldown / 1000} seconds`, inline: true },
+    { name: 'Log Channel', value: config.logChannel ? `<#${config.logChannel}>` : 'Not set', inline: true },
+    { name: 'Transcript Channel', value: config.transcriptChannel ? `<#${config.transcriptChannel}>` : 'Not set', inline: true },
+    { name: 'Default Category', value: config.defaultCategoryId ? `<#${config.defaultCategoryId}>` : 'Not set', inline: true },
+    { name: 'Auto-Delete', value: config.autoDelete?.enabled ? `Yes (${config.autoDelete.timeout / 1000}s)` : 'No', inline: true },
+    { name: 'Channel Format', value: `\`${config.channelNameFormat}\``, inline: true },
+    { name: 'Max Active Tickets', value: config.maxActiveTickets ? `${config.maxActiveTickets}` : 'Unlimited', inline: true },
+    { name: 'Auto-Close Inactive', value: config.autoCloseInactiveDays ? `${config.autoCloseInactiveDays} days` : 'Disabled', inline: true },
+    { name: 'DM Transcripts', value: config.dmTranscripts ? 'Yes' : 'No', inline: true },
+    { name: 'Users Can Close', value: config.closeOwnTicket ? 'Yes' : 'No', inline: true }
+  ];
 
   // Add categories
   if (config.categories && config.categories.length > 0) {
     const categoryList = config.categories.map(cat => 
-      `${cat.emoji} **${cat.name}** (\`${cat.id}\`)\n└ Support: <@&${cat.supportRole}>`
+      `**${cat.name}** (\`${cat.id}\`)\n└ Support: <@&${cat.supportRole}>`
     ).join('\n\n');
 
-    embed.addFields({
+    fields.push({
       name: `Categories (${config.categories.length})`,
       value: categoryList.length > 1024 ? categoryList.substring(0, 1021) + '...' : categoryList,
       inline: false
     });
   } else {
-    embed.addFields({
+    fields.push({
       name: 'Categories',
       value: 'No categories configured',
       inline: false
@@ -836,10 +812,15 @@ async function executeConfig(interaction) {
 
   // Add stats
   const stats = ticketSystem.getStats();
-  embed.addFields({
+  fields.push({
     name: 'Statistics',
     value: `Total Created: **${stats.totalTickets}**\nTotal Closed: **${stats.totalClosed}**\nActive Now: **${stats.activeTickets}**`,
     inline: false
+  });
+
+  const embed = interaction.client.embedLoader.createEmbed({
+    title: 'Ticket System',
+    fields: fields
   });
 
   await interaction.reply({ embeds: [embed] });
@@ -849,7 +830,7 @@ async function executeEnable(interaction) {
   // Admin only
   if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({
-      content: '❌ Only administrators can enable/disable the ticket system.',
+      content: interaction.client.embedLoader.format('Only administrators can enable/disable the ticket system.', 'message'),
       ephemeral: true
     });
   }
@@ -867,13 +848,11 @@ async function executeEnable(interaction) {
     }
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(enabled ? '✅ Ticket System Enabled' : '❌ Ticket System Disabled')
-    .setDescription(enabled ? 
+  const embed = interaction.client.embedLoader.createEmbed({
+    description: enabled ? 
       'The ticket system is now active. Users can create tickets.' : 
-      'The ticket system has been disabled. Users cannot create new tickets.')
-    .setColor(enabled ? 0x00ff00 : 0xff0000)
-    .setTimestamp();
+      'The ticket system has been disabled. Users cannot create new tickets.'
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -890,7 +869,7 @@ async function executePanel(interaction) {
     // Check if system is configured
     if (!ticketSystem.config.categories || ticketSystem.config.categories.length === 0) {
       return interaction.editReply({
-        content: '❌ No ticket categories configured. Use `/ticket category add` to add categories first.'
+        content: interaction.client.embedLoader.format('No ticket categories configured. Use `/ticket category add` to add categories first.', 'message')
       });
     }
 
@@ -907,7 +886,7 @@ async function executePanel(interaction) {
       
       if (categories.length === 0) {
         return interaction.editReply({
-          content: '❌ No valid categories found with the specified IDs.'
+          content: interaction.client.embedLoader.format('No valid categories found with the specified IDs.', 'message')
         });
       }
       
@@ -916,22 +895,20 @@ async function executePanel(interaction) {
 
     const message = await ticketSystem.createTicketPanel(channel, options);
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Ticket Panel Created')
-      .setDescription(`Successfully created ticket panel in ${channel}`)
-      .setColor(0x00ff00)
-      .addFields({
+    const embed = interaction.client.embedLoader.createEmbed({
+      description: `Successfully created ticket panel in ${channel}`,
+      fields: [{
         name: 'Message ID',
         value: message.id,
         inline: true
-      })
-      .setTimestamp();
+      }]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[Ticket Panel] Error creating panel:', error);
     await interaction.editReply({
-      content: '❌ Failed to create ticket panel.'
+      content: interaction.client.embedLoader.format('Failed to create ticket panel.', 'message')
     });
   }
 }
@@ -944,7 +921,7 @@ async function executeClose(interaction) {
   const ticket = ticketSystem.activeTickets.get(channel.id);
   if (!ticket) {
     return interaction.reply({
-      content: '❌ This is not a valid ticket channel.',
+      content: interaction.client.embedLoader.format('This is not a valid ticket channel.', 'message'),
       ephemeral: true
     });
   }
@@ -957,7 +934,7 @@ async function executeClose(interaction) {
 
   if (!canClose) {
     return interaction.reply({
-      content: '❌ You do not have permission to close this ticket.',
+      content: interaction.client.embedLoader.format('You do not have permission to close this ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -971,13 +948,13 @@ async function executeClose(interaction) {
     deferReply: interaction.deferReply.bind(interaction),
     editReply: interaction.editReply.bind(interaction),
     member: interaction.member,
-    guild: interaction.guild
+    guild: interaction.guild,
+    client: interaction.client
   };
 
   await ticketSystem.handleClose(closeButton, ticket);
 }
 
-// Keep these functions as they were
 async function executeAdd(interaction) {
   const user = interaction.options.getUser('user');
   
@@ -985,7 +962,7 @@ async function executeAdd(interaction) {
   const ticket = ticketSystem.activeTickets.get(interaction.channel.id);
   if (!ticket) {
     return interaction.reply({
-      content: '❌ This command can only be used in a ticket channel.',
+      content: interaction.client.embedLoader.format('This command can only be used in a ticket channel.', 'message'),
       ephemeral: true
     });
   }
@@ -998,7 +975,7 @@ async function executeAdd(interaction) {
 
   if (!canManage) {
     return interaction.reply({
-      content: '❌ You do not have permission to manage this ticket.',
+      content: interaction.client.embedLoader.format('You do not have permission to manage this ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -1020,7 +997,7 @@ async function executeAdd(interaction) {
     }
 
     await interaction.reply({
-      content: `✅ Added ${user} to the ticket.`
+      content: interaction.client.embedLoader.format(`Added ${user} to the ticket.`, 'message')
     });
 
     // Log action
@@ -1035,7 +1012,7 @@ async function executeAdd(interaction) {
   } catch (error) {
     console.error('[Ticket Add] Error adding user:', error);
     await interaction.reply({
-      content: '❌ Failed to add user to ticket.',
+      content: interaction.client.embedLoader.format('Failed to add user to ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -1048,7 +1025,7 @@ async function executeRemove(interaction) {
   const ticket = ticketSystem.activeTickets.get(interaction.channel.id);
   if (!ticket) {
     return interaction.reply({
-      content: '❌ This command can only be used in a ticket channel.',
+      content: interaction.client.embedLoader.format('This command can only be used in a ticket channel.', 'message'),
       ephemeral: true
     });
   }
@@ -1056,7 +1033,7 @@ async function executeRemove(interaction) {
   // Can't remove ticket owner
   if (user.id === ticket.userId) {
     return interaction.reply({
-      content: '❌ Cannot remove the ticket owner.',
+      content: interaction.client.embedLoader.format('Cannot remove the ticket owner.', 'message'),
       ephemeral: true
     });
   }
@@ -1069,7 +1046,7 @@ async function executeRemove(interaction) {
 
   if (!canManage) {
     return interaction.reply({
-      content: '❌ You do not have permission to manage this ticket.',
+      content: interaction.client.embedLoader.format('You do not have permission to manage this ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -1086,7 +1063,7 @@ async function executeRemove(interaction) {
     }
 
     await interaction.reply({
-      content: `✅ Removed ${user} from the ticket.`
+      content: interaction.client.embedLoader.format(`Removed ${user} from the ticket.`, 'message')
     });
 
     // Log action
@@ -1101,7 +1078,7 @@ async function executeRemove(interaction) {
   } catch (error) {
     console.error('[Ticket Remove] Error removing user:', error);
     await interaction.reply({
-      content: '❌ Failed to remove user from ticket.',
+      content: interaction.client.embedLoader.format('Failed to remove user from ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -1114,7 +1091,7 @@ async function executeRename(interaction) {
   const ticket = ticketSystem.activeTickets.get(interaction.channel.id);
   if (!ticket) {
     return interaction.reply({
-      content: '❌ This command can only be used in a ticket channel.',
+      content: interaction.client.embedLoader.format('This command can only be used in a ticket channel.', 'message'),
       ephemeral: true
     });
   }
@@ -1126,7 +1103,7 @@ async function executeRename(interaction) {
 
   if (!canManage) {
     return interaction.reply({
-      content: '❌ You do not have permission to rename tickets.',
+      content: interaction.client.embedLoader.format('You do not have permission to rename tickets.', 'message'),
       ephemeral: true
     });
   }
@@ -1135,7 +1112,7 @@ async function executeRename(interaction) {
     await interaction.channel.setName(newName);
     
     await interaction.reply({
-      content: `✅ Renamed ticket to: ${newName}`
+      content: interaction.client.embedLoader.format(`Renamed ticket to: ${newName}`, 'message')
     });
 
     // Log action
@@ -1151,7 +1128,7 @@ async function executeRename(interaction) {
   } catch (error) {
     console.error('[Ticket Rename] Error renaming channel:', error);
     await interaction.reply({
-      content: '❌ Failed to rename ticket.',
+      content: interaction.client.embedLoader.format('Failed to rename ticket.', 'message'),
       ephemeral: true
     });
   }
@@ -1160,15 +1137,11 @@ async function executeRename(interaction) {
 async function executeStats(interaction) {
   const stats = ticketSystem.getStats();
 
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Ticket Statistics')
-    .setColor(0x0099ff)
-    .addFields(
-      { name: 'Total Tickets Created', value: `${stats.totalTickets}`, inline: true },
-      { name: 'Total Closed', value: `${stats.totalClosed}`, inline: true },
-      { name: 'Currently Active', value: `${stats.activeTickets}`, inline: true }
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'Total Tickets Created', value: `${stats.totalTickets}`, inline: true },
+    { name: 'Total Closed', value: `${stats.totalClosed}`, inline: true },
+    { name: 'Currently Active', value: `${stats.activeTickets}`, inline: true }
+  ];
 
   // Add category breakdown
   const breakdown = [];
@@ -1177,12 +1150,18 @@ async function executeStats(interaction) {
   }
 
   if (breakdown.length > 0) {
-    embed.addFields({
+    fields.push({
       name: 'Category Breakdown',
       value: breakdown.join('\n'),
       inline: false
     });
   }
+
+  const embed = interaction.client.embedLoader.createEmbed({
+    title: 'Ticket System',
+    description: 'Ticket Statistics',
+    fields: fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }

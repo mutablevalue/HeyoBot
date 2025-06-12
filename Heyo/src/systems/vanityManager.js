@@ -1,3 +1,6 @@
+// src/systems/vanityManager.js
+import { EmbedLoader } from '../utils/embedLoader.js';
+
 export class VanityManager {
   /**
    * @param {import("discord.js").Client} client
@@ -6,32 +9,19 @@ export class VanityManager {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = new EmbedLoader(configLoader);
     
-    // Load vanity config
-    const vanityConfig = this.configLoader.get('vanity') || {};
-    this.config = {
-      enabled: vanityConfig.enabled ?? false,
-      checkIntervalSeconds: vanityConfig.checkIntervalSeconds ?? 1800, // Default 30 minutes = 1800 seconds
-      vanityStrings: vanityConfig.vanityStrings || [],
-      roles: vanityConfig.roles || [],
-      logChannel: vanityConfig.logChannel || null,
-      caseSensitive: vanityConfig.caseSensitive ?? false,
-      checkUsername: vanityConfig.checkUsername ?? true,
-      checkNickname: vanityConfig.checkNickname ?? true,
-      checkBio: vanityConfig.checkBio ?? true,
-      checkStatus: vanityConfig.checkStatus ?? true,
-      exemptRoles: vanityConfig.exemptRoles || [], // Roles that bypass vanity checks
-      removeOnVanityLoss: vanityConfig.removeOnVanityLoss ?? true
-    };
+    // Load vanity config - no defaults
+    const vanityConfig = this.configLoader.get('vanity');
+    if (!vanityConfig) {
+      console.error('[VanityManager] No vanity configuration found');
+      return;
+    }
+    
+    this.config = vanityConfig;
 
     this.checkInterval = null;
     this.lastCheck = new Date();
-    this.stats = {
-      totalChecks: 0,
-      rolesAdded: 0,
-      rolesRemoved: 0,
-      errors: 0
-    };
 
     // Start the checking loop if enabled
     if (this.config.enabled) {
@@ -46,20 +36,7 @@ export class VanityManager {
    * Save configuration
    */
   async saveConfig() {
-    this.configLoader.set('vanity', {
-      enabled: this.config.enabled,
-      checkIntervalSeconds: this.config.checkIntervalSeconds,
-      vanityStrings: this.config.vanityStrings,
-      roles: this.config.roles,
-      logChannel: this.config.logChannel,
-      caseSensitive: this.config.caseSensitive,
-      checkUsername: this.config.checkUsername,
-      checkNickname: this.config.checkNickname,
-      checkBio: this.config.checkBio,
-      checkStatus: this.config.checkStatus,
-      exemptRoles: this.config.exemptRoles,
-      removeOnVanityLoss: this.config.removeOnVanityLoss
-    });
+    this.configLoader.set('vanity', this.config);
     return this.configLoader.save();
   }
 
@@ -175,7 +152,6 @@ export class VanityManager {
 
     console.log('[VanityManager] Running scheduled vanity check...');
     this.lastCheck = new Date();
-    this.stats.totalChecks++;
 
     for (const guild of this.client.guilds.cache.values()) {
       for (const member of guild.members.cache.values()) {
@@ -210,7 +186,6 @@ export class VanityManager {
           // Add role
           try {
             await member.roles.add(role, 'Has vanity in name/bio/status');
-            this.stats.rolesAdded++;
             await this.logAction(member.guild, {
               action: 'Role Added',
               member: member,
@@ -219,13 +194,11 @@ export class VanityManager {
             });
           } catch (error) {
             console.error(`[VanityManager] Failed to add role to ${member.user.tag}:`, error);
-            this.stats.errors++;
           }
         } else if (!hasVanity && hasRole && this.config.removeOnVanityLoss) {
           // Remove role
           try {
             await member.roles.remove(role, 'No longer has vanity in name/bio/status');
-            this.stats.rolesRemoved++;
             await this.logAction(member.guild, {
               action: 'Role Removed',
               member: member,
@@ -234,13 +207,11 @@ export class VanityManager {
             });
           } catch (error) {
             console.error(`[VanityManager] Failed to remove role from ${member.user.tag}:`, error);
-            this.stats.errors++;
           }
         }
       }
     } catch (error) {
       console.error('[VanityManager] Error checking member vanity:', error);
-      this.stats.errors++;
     }
   }
 
@@ -305,7 +276,7 @@ export class VanityManager {
    * @returns {boolean}
    */
   isExempt(member) {
-    return member.roles.cache.some(role => this.config.exemptRoles.includes(role.id));
+    return member.roles.cache.some(role => this.config.exemptRoles?.includes(role.id));
   }
 
   /**
@@ -319,9 +290,7 @@ export class VanityManager {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = {
-      title: `Vanity System: ${data.action}`,
-      color: data.action === 'Role Added' ? 0x00ff00 : 0xff0000,
+    const embed = this.embedLoader.createEmbed({
       fields: [
         { 
           name: 'Member', 
@@ -338,9 +307,8 @@ export class VanityManager {
           value: data.reason, 
           inline: false 
         }
-      ],
-      timestamp: new Date().toISOString()
-    };
+      ]
+    });
 
     try {
       await channel.send({ embeds: [embed] });
@@ -355,6 +323,7 @@ export class VanityManager {
    * @returns {Promise<boolean>}
    */
   async addVanityString(vanity) {
+    if (!this.config.vanityStrings) this.config.vanityStrings = [];
     if (!this.config.vanityStrings.includes(vanity)) {
       this.config.vanityStrings.push(vanity);
       await this.saveConfig();
@@ -369,6 +338,7 @@ export class VanityManager {
    * @returns {Promise<boolean>}
    */
   async removeVanityString(vanity) {
+    if (!this.config.vanityStrings) return false;
     const index = this.config.vanityStrings.indexOf(vanity);
     if (index > -1) {
       this.config.vanityStrings.splice(index, 1);
@@ -384,6 +354,7 @@ export class VanityManager {
    * @returns {Promise<boolean>}
    */
   async addRole(roleId) {
+    if (!this.config.roles) this.config.roles = [];
     if (!this.config.roles.includes(roleId)) {
       this.config.roles.push(roleId);
       await this.saveConfig();
@@ -398,6 +369,7 @@ export class VanityManager {
    * @returns {Promise<boolean>}
    */
   async removeRole(roleId) {
+    if (!this.config.roles) return false;
     const index = this.config.roles.indexOf(roleId);
     if (index > -1) {
       this.config.roles.splice(index, 1);
@@ -422,16 +394,15 @@ export class VanityManager {
   }
 
   /**
-   * Get vanity system statistics
+   * Get vanity system configuration
    */
-  getStats() {
+  getConfig() {
     return {
       enabled: this.config.enabled,
       lastCheck: this.lastCheck,
       nextCheck: this.checkInterval ? new Date(this.lastCheck.getTime() + (this.config.checkIntervalSeconds * 1000)) : null,
-      vanityStrings: this.config.vanityStrings.length,
-      roles: this.config.roles.length,
-      stats: { ...this.stats }
+      vanityStrings: this.config.vanityStrings?.length || 0,
+      roles: this.config.roles?.length || 0
     };
   }
 

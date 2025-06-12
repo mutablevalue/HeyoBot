@@ -1,12 +1,6 @@
 // src/systems/welcomeSystem.js
-import { EmbedBuilder, ChannelType } from 'discord.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { ChannelType } from 'discord.js';
+import { EmbedLoader } from '../utils/embedLoader.js';
 
 export class WelcomeSystem {
   /**
@@ -16,39 +10,16 @@ export class WelcomeSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = new EmbedLoader(configLoader);
     
-    // Load welcome config
-    const welcomeConfig = this.configLoader.get('welcome') || {};
-    this.config = {
-      enabled: welcomeConfig.enabled ?? false,
-      channel: welcomeConfig.channel || null,
-      message: welcomeConfig.message || {
-        title: 'Welcome!',
-        description: 'Welcome {user} to **{server}**!\n\nYou are member #{memberCount}',
-        color: 0x00ff00,
-        thumbnail: true,
-        footer: 'Enjoy your stay!',
-        timestamp: true
-      },
-      dmEnabled: welcomeConfig.dmEnabled ?? false,
-      dmMessage: welcomeConfig.dmMessage || {
-        title: 'Welcome to {server}!',
-        description: 'Welcome {user}! We\'re glad to have you here.',
-        color: 0x00ff00,
-        footer: 'Have a great time!',
-        timestamp: true
-      },
-      roleOnJoin: welcomeConfig.roleOnJoin || null,
-      pingUser: welcomeConfig.pingUser ?? false,
-      deleteAfter: welcomeConfig.deleteAfter || null // seconds to delete welcome message after
-    };
-
-    // Stats tracking
-    this.stats = {
-      welcomesSent: 0,
-      dmsSent: 0,
-      errors: 0
-    };
+    // Load welcome config - no defaults
+    const welcomeConfig = this.configLoader.get('welcome');
+    if (!welcomeConfig) {
+      console.error('[WelcomeSystem] No welcome configuration found');
+      return;
+    }
+    
+    this.config = welcomeConfig;
 
     // Setup event listeners
     this.setupEventListeners();
@@ -58,16 +29,7 @@ export class WelcomeSystem {
    * Save configuration
    */
   async saveConfig() {
-    this.configLoader.set('welcome', {
-      enabled: this.config.enabled,
-      channel: this.config.channel,
-      message: this.config.message,
-      dmEnabled: this.config.dmEnabled,
-      dmMessage: this.config.dmMessage,
-      roleOnJoin: this.config.roleOnJoin,
-      pingUser: this.config.pingUser,
-      deleteAfter: this.config.deleteAfter
-    });
+    this.configLoader.set('welcome', this.config);
     return this.configLoader.save();
   }
 
@@ -77,7 +39,7 @@ export class WelcomeSystem {
   setupEventListeners() {
     this.client.on('guildMemberAdd', async (member) => {
       if (!this.config.enabled) return;
-      if (member.user.bot) return; // Skip bots
+      if (member.user.bot) return;
 
       try {
         // Auto role
@@ -103,7 +65,6 @@ export class WelcomeSystem {
         }
       } catch (error) {
         console.error('[WelcomeSystem] Error handling member join:', error);
-        this.stats.errors++;
       }
     });
   }
@@ -117,12 +78,14 @@ export class WelcomeSystem {
     if (!channel || channel.type !== ChannelType.GuildText) return;
 
     try {
-      const embed = this.createWelcomeEmbed(member, this.config.message);
+      const description = this.replacePlaceholders(this.config.message?.description || '', member);
+      const embed = this.embedLoader.createEmbed({
+        description: description,
+        formatDescription: false // Don't double-format welcome messages
+      });
       
       const content = this.config.pingUser ? `${member}` : undefined;
       const message = await channel.send({ content, embeds: [embed] });
-
-      this.stats.welcomesSent++;
 
       // Delete after specified time
       if (this.config.deleteAfter && this.config.deleteAfter > 0) {
@@ -132,7 +95,6 @@ export class WelcomeSystem {
       }
     } catch (error) {
       console.error('[WelcomeSystem] Error sending welcome message:', error);
-      this.stats.errors++;
     }
   }
 
@@ -142,76 +104,32 @@ export class WelcomeSystem {
    */
   async sendWelcomeDM(member) {
     try {
-      const embed = this.createWelcomeEmbed(member, this.config.dmMessage);
+      const description = this.replacePlaceholders(this.config.dmMessage?.description || '', member);
+      const embed = this.embedLoader.createEmbed({
+        description: description,
+        formatDescription: false
+      });
       await member.send({ embeds: [embed] });
-      this.stats.dmsSent++;
     } catch (error) {
-      // User might have DMs disabled
       console.error('[WelcomeSystem] Error sending welcome DM:', error);
     }
   }
 
   /**
-   * Create welcome embed
+   * Replace placeholders in text
+   * @param {string} text 
    * @param {import("discord.js").GuildMember} member 
-   * @param {Object} messageConfig 
-   * @returns {EmbedBuilder}
+   * @returns {string}
    */
-  createWelcomeEmbed(member, messageConfig) {
-    const embed = new EmbedBuilder();
-
-    // Replace placeholders
-    const replacePlaceholders = (text) => {
-      if (!text) return text;
-      return text
-        .replace(/{user}/g, member.user.username)
-        .replace(/{user\.mention}/g, `<@${member.user.id}>`)
-        .replace(/{user\.tag}/g, member.user.tag)
-        .replace(/{user\.id}/g, member.user.id)
-        .replace(/{server}/g, member.guild.name)
-        .replace(/{memberCount}/g, member.guild.memberCount);
-    };
-
-    if (messageConfig.title) {
-      embed.setTitle(replacePlaceholders(messageConfig.title));
-    }
-
-    if (messageConfig.description) {
-      embed.setDescription(replacePlaceholders(messageConfig.description));
-    }
-
-    if (messageConfig.color) {
-      embed.setColor(messageConfig.color);
-    }
-
-    if (messageConfig.thumbnail) {
-      embed.setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 512 }));
-    }
-
-    if (messageConfig.footer) {
-      embed.setFooter({ text: replacePlaceholders(messageConfig.footer) });
-    }
-
-    if (messageConfig.timestamp) {
-      embed.setTimestamp();
-    }
-
-    // Add fields if any
-    if (messageConfig.fields) {
-      const fields = messageConfig.fields.map(field => ({
-        name: replacePlaceholders(field.name),
-        value: replacePlaceholders(field.value),
-        inline: field.inline ?? false
-      }));
-      embed.addFields(fields);
-    }
-
-    // Add image if specified
-    if (messageConfig.image) {
-      embed.setImage(messageConfig.image);
-    }
-
-    return embed;
+  replacePlaceholders(text, member) {
+    if (!text) return text;
+    return text
+      .replace(/{user}/g, member.user.username)
+      .replace(/{user\.mention}/g, `<@${member.user.id}>`)
+      .replace(/{user\.tag}/g, member.user.tag)
+      .replace(/{user\.id}/g, member.user.id)
+      .replace(/{server}/g, member.guild.name)
+      .replace(/{memberCount}/g, member.guild.memberCount);
   }
 
   /**
@@ -247,6 +165,7 @@ export class WelcomeSystem {
    * @param {Object} messageConfig 
    */
   async setMessage(messageConfig) {
+    if (!this.config.message) this.config.message = {};
     this.config.message = { ...this.config.message, ...messageConfig };
     await this.saveConfig();
     return true;
@@ -257,6 +176,7 @@ export class WelcomeSystem {
    * @param {Object} messageConfig 
    */
   async setDMMessage(messageConfig) {
+    if (!this.config.dmMessage) this.config.dmMessage = {};
     this.config.dmMessage = { ...this.config.dmMessage, ...messageConfig };
     await this.saveConfig();
     return true;
@@ -273,14 +193,30 @@ export class WelcomeSystem {
   }
 
   /**
-   * Get welcome system statistics
+   * Get welcome system configuration
    */
-  getStats() {
+  getConfig() {
     return {
       enabled: this.config.enabled,
       channel: this.config.channel,
       dmEnabled: this.config.dmEnabled,
-      stats: { ...this.stats }
+      autoRole: this.config.roleOnJoin,
+      pingUser: this.config.pingUser,
+      deleteAfter: this.config.deleteAfter
     };
+  }
+
+  /**
+   * Create preview embed
+   * @param {import("discord.js").GuildMember} member 
+   * @param {Object} messageConfig 
+   * @returns {import("discord.js").EmbedBuilder}
+   */
+  createPreviewEmbed(member, messageConfig) {
+    const description = this.replacePlaceholders(messageConfig?.description || '', member);
+    return this.embedLoader.createEmbed({
+      description: description,
+      formatDescription: false
+    });
   }
 }

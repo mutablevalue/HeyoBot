@@ -212,27 +212,25 @@ export class SocialLookupSystem {
   
   async createTikTokEmbed(data) {
     if (!data) {
-      return new EmbedBuilder()
-        .setTitle('❌ TikTok User Not Found')
-        .setDescription('Could not find this TikTok user.')
-        .setColor(0xff0000);
+      return this.client.embedLoader.error('TikTok User Not Found\nCould not find this TikTok user.');
     }
     
-    const embed = new EmbedBuilder()
-      .setTitle(`${data.displayName} ${data.verified ? '✓' : ''}`)
-      .setURL(data.url)
-      .setDescription(data.bio || 'No bio available')
-      .setColor(0x000000)
-      .addFields(
-        { name: 'Username', value: `@${data.username}`, inline: true },
-        { name: 'Followers', value: data.followers, inline: true },
-        { name: 'Following', value: data.following, inline: true },
-        { name: 'Likes', value: data.likes, inline: true },
-        { name: 'Videos', value: data.videos, inline: true },
-        { name: 'Verified', value: data.verified ? 'Yes' : 'No', inline: true }
-      )
-      .setFooter({ text: 'TikTok Profile Lookup' })
-      .setTimestamp();
+    const fields = [
+      { name: 'Username', value: `@${data.username}`, inline: true },
+      { name: 'Followers', value: data.followers, inline: true },
+      { name: 'Following', value: data.following, inline: true },
+      { name: 'Likes', value: data.likes, inline: true },
+      { name: 'Videos', value: data.videos, inline: true },
+      { name: 'Verified', value: data.verified ? 'Yes' : 'No', inline: true }
+    ];
+    
+    const embed = this.client.embedLoader.createEmbed({
+      title: 'Social Lookup System',
+      description: `**${data.displayName}${data.verified ? ' ✓' : ''}**\n[View Profile](${data.url})\n\n${data.bio || 'No bio available'}`,
+      fields: fields,
+      footer: 'TikTok Profile Lookup',
+      formatDescription: false
+    });
     
     if (data.avatar) {
       embed.setThumbnail(data.avatar);
@@ -243,35 +241,33 @@ export class SocialLookupSystem {
   
   async createInstagramEmbed(data) {
     if (!data) {
-      return new EmbedBuilder()
-        .setTitle('❌ Instagram User Not Found')
-        .setDescription('Could not find this Instagram user.')
-        .setColor(0xff0000);
+      return this.client.embedLoader.error('Instagram User Not Found\nCould not find this Instagram user.');
     }
     
-    const embed = new EmbedBuilder()
-      .setTitle(`${data.displayName} ${data.verified ? '✓' : ''}`)
-      .setURL(data.url)
-      .setDescription(data.bio || 'No bio available')
-      .setColor(0xe4405f)
-      .addFields(
-        { name: 'Username', value: `@${data.username}`, inline: true },
-        { name: 'Followers', value: data.followers, inline: true },
-        { name: 'Following', value: data.following, inline: true },
-        { name: 'Posts', value: data.posts, inline: true },
-        { name: 'Private', value: data.isPrivate ? 'Yes' : 'No', inline: true },
-        { name: 'Verified', value: data.verified ? 'Yes' : 'No', inline: true }
-      )
-      .setFooter({ text: 'Instagram Profile Lookup' })
-      .setTimestamp();
+    const fields = [
+      { name: 'Username', value: `@${data.username}`, inline: true },
+      { name: 'Followers', value: data.followers, inline: true },
+      { name: 'Following', value: data.following, inline: true },
+      { name: 'Posts', value: data.posts, inline: true },
+      { name: 'Private', value: data.isPrivate ? 'Yes' : 'No', inline: true },
+      { name: 'Verified', value: data.verified ? 'Yes' : 'No', inline: true }
+    ];
     
     if (data.businessAccount && data.categoryName) {
-      embed.addFields({ 
+      fields.push({ 
         name: 'Business Category', 
         value: data.categoryName, 
         inline: false 
       });
     }
+    
+    const embed = this.client.embedLoader.createEmbed({
+      title: 'Social Lookup System',
+      description: `**${data.displayName}${data.verified ? ' ✓' : ''}**\n[View Profile](${data.url})\n\n${data.bio || 'No bio available'}`,
+      fields: fields,
+      footer: 'Instagram Profile Lookup',
+      formatDescription: false
+    });
     
     if (data.avatar) {
       embed.setThumbnail(data.avatar);

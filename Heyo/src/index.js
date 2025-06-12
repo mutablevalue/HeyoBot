@@ -37,6 +37,7 @@ import * as afkCommand from "./commands/afk.js";
 import * as funCommands from "./commands/funcommands.js";
 import * as welcomeCommand from "./commands/welcome.js";
 import * as channelCommands from "./commands/channels.js";
+import { EmbedLoader } from "./utils/embedLoader.js";
 import * as leaderboardCommands from "./commands/leaderboard.js";
 import * as eventCommands from "./commands/events.js";
 import * as boosterCommands from "./commands/booster.js";
@@ -103,6 +104,8 @@ async function main() {
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
   const boosterSystem = new BoosterSystem(client, config, moderationSystem);
+  const embedLoader = new EmbedLoader(config);
+
   
   const filterSystem = new FilterSystem(client, config);
   filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
@@ -217,6 +220,8 @@ const multiCommandFiles = [
       console.warn(`Skipping ${file} – it does not export both 'data' and 'execute'.`);
     }
   }
+
+  client.embedLoader = embedLoader;
 
   // 7) Initialize and start QueueManager
   const queueCfg     = config.get("queue") || {};
