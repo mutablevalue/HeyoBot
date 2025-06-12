@@ -22,11 +22,6 @@ export function setEmbedLoader(loader) {
   embedLoader = loader;
 }
 
-// Helper function to check if user is owner with bypass enabled
-function isOwnerWithBypass(member) {
-  return moderationSystem.config.ownerBypass && member.id === member.guild.ownerId;
-}
-
 // Helper function to parse multiple users from input
 function parseMultipleUsers(input) {
   if (!input) return [];
@@ -41,9 +36,13 @@ function parseMultipleUsers(input) {
 function canUseMultiUser(interaction, commandName) {
   const multiUserConfig = moderationSystem.config.multiUserCommands?.[commandName];
   if (!multiUserConfig?.enabled) return false;
-  if (multiUserConfig.requiresAntiNukeWhitelist && antiNukeInstance) {
-    return antiNukeInstance.isWhitelisted(interaction.user.id);
+  
+  // Check if user meets the permission level requirement
+  if (multiUserConfig.requiresPermissionLevel !== undefined && moderationSystem.permissionSystem) {
+    const userLevel = moderationSystem.permissionSystem.getPermissionLevel(interaction.member);
+    return userLevel >= multiUserConfig.requiresPermissionLevel;
   }
+  
   return true;
 }
 
@@ -331,9 +330,15 @@ export async function executeBan(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'ban')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to ban multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need whitelisted or higher permissions to ban multiple users at once.', 'message'), 
         ephemeral: true 
       });
+    }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.ban;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'ban', multiUserConfig.cooldownMultiplier);
     }
   }
   
@@ -355,8 +360,10 @@ export async function executeBan(interaction) {
           continue;
         }
         
-        if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
-          results.failed.push({ user: user.tag, reason: 'Higher or equal role' });
+        // Use moderation system's canManageMember check
+        const canManage = moderationSystem.canManageMember(interaction.member, member);
+        if (!canManage.allowed) {
+          results.failed.push({ user: user.tag, reason: canManage.reason });
           continue;
         }
       }
@@ -434,9 +441,15 @@ export async function executeKick(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'kick')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to kick multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need whitelisted or higher permissions to kick multiple users at once.', 'message'), 
         ephemeral: true 
       });
+    }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.kick;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'kick', multiUserConfig.cooldownMultiplier);
     }
   }
   
@@ -456,8 +469,10 @@ export async function executeKick(interaction) {
         continue;
       }
       
-      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
-        results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
+      // Use moderation system's canManageMember check
+      const canManage = moderationSystem.canManageMember(interaction.member, member);
+      if (!canManage.allowed) {
+        results.failed.push({ user: member.user.tag, reason: canManage.reason });
         continue;
       }
       
@@ -550,9 +565,15 @@ export async function executeTimeout(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'timeout')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to timeout multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need whitelisted or higher permissions to timeout multiple users at once.', 'message'), 
         ephemeral: true 
       });
+    }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.timeout;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'timeout', multiUserConfig.cooldownMultiplier);
     }
   }
   
@@ -567,13 +588,15 @@ export async function executeTimeout(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
-        results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
+      if (!member.moderatable) {
+        results.failed.push({ user: member.user.tag, reason: 'Cannot timeout (higher permissions)' });
         continue;
       }
       
-      if (!member.moderatable) {
-        results.failed.push({ user: member.user.tag, reason: 'Cannot timeout (higher permissions)' });
+      // Use moderation system's canManageMember check
+      const canManage = moderationSystem.canManageMember(interaction.member, member);
+      if (!canManage.allowed) {
+        results.failed.push({ user: member.user.tag, reason: canManage.reason });
         continue;
       }
       
@@ -655,9 +678,15 @@ export async function executeMute(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'mute')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to mute multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need whitelisted or higher permissions to mute multiple users at once.', 'message'), 
         ephemeral: true 
       });
+    }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.mute;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'mute', multiUserConfig.cooldownMultiplier);
     }
   }
   
@@ -674,8 +703,10 @@ export async function executeMute(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
-        results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
+      // Use moderation system's canManageMember check
+      const canManage = moderationSystem.canManageMember(interaction.member, member);
+      if (!canManage.allowed) {
+        results.failed.push({ user: member.user.tag, reason: canManage.reason });
         continue;
       }
       
@@ -756,9 +787,15 @@ export async function executeUnmute(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'unmute')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to unmute multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need moderator or higher permissions to unmute multiple users at once.', 'message'), 
         ephemeral: true 
       });
+    }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.unmute;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'unmute', multiUserConfig.cooldownMultiplier);
     }
   }
   
@@ -857,23 +894,23 @@ export async function executeRole(interaction) {
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'role')) {
       return interaction.reply({ 
-        content: embedLoader.format('You are not authorized to manage roles for multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
+        content: embedLoader.format('You need administrator or higher permissions to manage roles for multiple users at once.', 'message'), 
         ephemeral: true 
       });
     }
+    
+    // Apply cooldown multiplier for multi-user
+    const multiUserConfig = moderationSystem.config.multiUserCommands?.role;
+    if (multiUserConfig?.cooldownMultiplier) {
+      moderationSystem.applyCooldownMultiplier(interaction.user.id, 'role', multiUserConfig.cooldownMultiplier);
+    }
   }
   
-  if (!isOwnerWithBypass(interaction.member) && role.position >= interaction.member.roles.highest.position) {
+  // Use the moderation system's canManageRole method which includes AntiNuke admin bypass
+  const roleCheck = moderationSystem.canManageRole(interaction.member, role);
+  if (!roleCheck.allowed) {
     return interaction.reply({ 
-      content: embedLoader.format('You can only manage roles below your highest role.', 'message'), 
-      ephemeral: true 
-    });
-  }
-  
-  const botMember = await interaction.guild.members.fetch(interaction.client.user.id);
-  if (role.position >= botMember.roles.highest.position) {
-    return interaction.reply({ 
-      content: embedLoader.format('I cannot manage this role. It\'s higher than my highest role.', 'message'), 
+      content: embedLoader.format(roleCheck.reason, 'message'), 
       ephemeral: true 
     });
   }
@@ -1193,9 +1230,11 @@ export async function executeForceNickname(interaction) {
       });
     }
 
-    if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
+    // Use moderation system's canManageMember check
+    const canManage = moderationSystem.canManageMember(interaction.member, member);
+    if (!canManage.allowed) {
       return interaction.reply({ 
-        content: embedLoader.format('You cannot force a nickname on someone with an equal or higher role.', 'message'), 
+        content: embedLoader.format(canManage.reason, 'message'), 
         ephemeral: true 
       });
     }

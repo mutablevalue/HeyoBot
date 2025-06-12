@@ -154,12 +154,35 @@ export class VanityManager {
     this.lastCheck = new Date();
 
     for (const guild of this.client.guilds.cache.values()) {
+      // Only check members who already have vanity roles
+      for (const roleId of this.config.roles) {
+        const role = guild.roles.cache.get(roleId);
+        if (!role) continue;
+        
+        // Check each member with this role
+        for (const [memberId, member] of role.members) {
+          if (!member.user.bot) {
+            await this.checkMemberVanity(member);
+          }
+        }
+      }
+      
+      // Also check members without roles to see if they should get one
       for (const member of guild.members.cache.values()) {
-        if (!member.user.bot) {
+        if (!member.user.bot && !this.hasAnyVanityRole(member)) {
           await this.checkMemberVanity(member);
         }
       }
     }
+  }
+
+  /**
+   * Check if member has any vanity role
+   * @param {import("discord.js").GuildMember} member 
+   * @returns {boolean}
+   */
+  hasAnyVanityRole(member) {
+    return this.config.roles.some(roleId => member.roles.cache.has(roleId));
   }
 
   /**
@@ -182,8 +205,8 @@ export class VanityManager {
 
         const hasRole = currentRoles.has(roleId);
 
+        // Only add role if they have vanity and don't have the role
         if (hasVanity && !hasRole) {
-          // Add role
           try {
             await member.roles.add(role, 'Has vanity in name/bio/status');
             await this.logAction(member.guild, {
@@ -195,8 +218,9 @@ export class VanityManager {
           } catch (error) {
             console.error(`[VanityManager] Failed to add role to ${member.user.tag}:`, error);
           }
-        } else if (!hasVanity && hasRole && this.config.removeOnVanityLoss) {
-          // Remove role
+        } 
+        // Only remove role if they DON'T have vanity AND they HAVE the role AND removal is enabled
+        else if (!hasVanity && hasRole && this.config.removeOnVanityLoss) {
           try {
             await member.roles.remove(role, 'No longer has vanity in name/bio/status');
             await this.logAction(member.guild, {
@@ -209,6 +233,7 @@ export class VanityManager {
             console.error(`[VanityManager] Failed to remove role from ${member.user.tag}:`, error);
           }
         }
+        // If they don't have vanity and don't have the role, do nothing (this was the bug)
       }
     } catch (error) {
       console.error('[VanityManager] Error checking member vanity:', error);
@@ -285,12 +310,13 @@ export class VanityManager {
    * @param {Object} data 
    */
   async logAction(guild, data) {
-    if (!this.config.logChannel) return;
+    if (!this.config.enableLogging || !this.config.logChannel) return;
 
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
     const embed = this.embedLoader.createEmbed({
+      title: `Vanity ${data.action}`,
       fields: [
         { 
           name: 'Member', 
@@ -402,7 +428,13 @@ export class VanityManager {
       lastCheck: this.lastCheck,
       nextCheck: this.checkInterval ? new Date(this.lastCheck.getTime() + (this.config.checkIntervalSeconds * 1000)) : null,
       vanityStrings: this.config.vanityStrings?.length || 0,
-      roles: this.config.roles?.length || 0
+      roles: this.config.roles?.length || 0,
+      checkingSettings: {
+        username: this.config.checkUsername,
+        nickname: this.config.checkNickname,
+        bio: this.config.checkBio,
+        status: this.config.checkStatus
+      }
     };
   }
 

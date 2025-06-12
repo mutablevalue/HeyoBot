@@ -3,6 +3,7 @@ import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 let antiNukeInstance;
 let embedLoader;
+let permissionSystem;
 
 export function setAntiNuke(antiNuke) {
   antiNukeInstance = antiNuke;
@@ -12,62 +13,14 @@ export function setEmbedLoader(loader) {
   embedLoader = loader;
 }
 
+export function setPermissionSystem(system) {
+  permissionSystem = system;
+}
+
 export const data = new SlashCommandBuilder()
   .setName('antinuke')
   .setDescription('Manage Anti-Nuke system')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-  .addSubcommandGroup(group =>
-    group
-      .setName('whitelist')
-      .setDescription('Manage Anti-Nuke whitelist')
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('add')
-          .setDescription('Add a user or role to whitelist')
-          .addStringOption(option =>
-            option
-              .setName('type')
-              .setDescription('Type to add')
-              .setRequired(true)
-              .addChoices(
-                { name: 'user', value: 'user' },
-                { name: 'role', value: 'role' }
-              )
-          )
-          .addStringOption(option =>
-            option
-              .setName('id')
-              .setDescription('ID of the user or role')
-              .setRequired(true)
-          )
-      )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('remove')
-          .setDescription('Remove a user or role from whitelist')
-          .addStringOption(option =>
-            option
-              .setName('type')
-              .setDescription('Type to remove')
-              .setRequired(true)
-              .addChoices(
-                { name: 'user', value: 'user' },
-                { name: 'role', value: 'role' }
-              )
-          )
-          .addStringOption(option =>
-            option
-              .setName('id')
-              .setDescription('ID of the user or role')
-              .setRequired(true)
-          )
-      )
-      .addSubcommand(subcommand =>
-        subcommand
-          .setName('list')
-          .setDescription('List all whitelisted users and roles')
-      )
-  )
   .addSubcommand(subcommand =>
     subcommand
       .setName('stats')
@@ -109,140 +62,34 @@ export async function execute(interaction) {
     });
   }
 
-  const subcommandGroup = interaction.options.getSubcommandGroup(false);
+  // Check if user has AntiNuke admin permissions
+  if (permissionSystem) {
+    const hasPermission = permissionSystem.hasPermissionLevel(interaction.member, permissionSystem.LEVELS.ANTINUKE_ADMIN);
+    if (!hasPermission) {
+      const embed = embedLoader.error('Only AntiNuke administrators can manage AntiNuke settings.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  } else {
+    // Fallback to basic admin check
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      const embed = embedLoader.error('Only administrators can manage AntiNuke settings.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  }
+
   const subcommand = interaction.options.getSubcommand();
 
-  if (subcommandGroup === 'whitelist') {
-    switch (subcommand) {
-      case 'add':
-        await handleWhitelistAdd(interaction);
-        break;
-      case 'remove':
-        await handleWhitelistRemove(interaction);
-        break;
-      case 'list':
-        await handleWhitelistList(interaction);
-        break;
-    }
-  } else {
-    switch (subcommand) {
-      case 'stats':
-        await handleStats(interaction);
-        break;
-      case 'highalert':
-        await handleHighAlert(interaction);
-        break;
-      case 'raidmode':
-        await handleRaidMode(interaction);
-        break;
-    }
+  switch (subcommand) {
+    case 'stats':
+      await handleStats(interaction);
+      break;
+    case 'highalert':
+      await handleHighAlert(interaction);
+      break;
+    case 'raidmode':
+      await handleRaidMode(interaction);
+      break;
   }
-}
-
-async function handleWhitelistAdd(interaction) {
-  // Check admin permissions
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({
-      content: 'Only administrators can manage AntiNuke settings.',
-      ephemeral: true
-    });
-  }
-
-  const type = interaction.options.getString('type');
-  const id = interaction.options.getString('id');
-
-  // Validate ID format
-  if (!/^\d+$/.test(id)) {
-    return interaction.reply({
-      content: 'Invalid ID format. Please provide a valid Discord ID.',
-      ephemeral: true
-    });
-  }
-
-  const success = antiNukeInstance.addToWhitelist(type, id);
-
-  if (success) {
-    await antiNukeInstance.saveConfig();
-    
-    const embed = embedLoader.createEmbed({
-      description: `Successfully added ${type} ${type === 'user' ? `<@${id}>` : `<@&${id}>`} to whitelist`
-    });
-
-    await interaction.reply({ embeds: [embed] });
-  } else {
-    await interaction.reply({
-      content: `Failed to add ${type}. It may already be in the whitelist.`,
-      ephemeral: true
-    });
-  }
-}
-
-async function handleWhitelistRemove(interaction) {
-  // Check admin permissions
-  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-    return interaction.reply({
-      content: 'Only administrators can manage AntiNuke settings.',
-      ephemeral: true
-    });
-  }
-
-  const type = interaction.options.getString('type');
-  const id = interaction.options.getString('id');
-
-  // Validate ID format
-  if (!/^\d+$/.test(id)) {
-    return interaction.reply({
-      content: 'Invalid ID format. Please provide a valid Discord ID.',
-      ephemeral: true
-    });
-  }
-
-  const success = antiNukeInstance.removeFromWhitelist(type, id);
-
-  if (success) {
-    await antiNukeInstance.saveConfig();
-    
-    const embed = embedLoader.createEmbed({
-      description: `Successfully removed ${type} ${type === 'user' ? `<@${id}>` : `<@&${id}>`} from whitelist`
-    });
-
-    await interaction.reply({ embeds: [embed] });
-  } else {
-    await interaction.reply({
-      content: `Failed to remove ${type}. It may not be in the whitelist.`,
-      ephemeral: true
-    });
-  }
-}
-
-async function handleWhitelistList(interaction) {
-  // List whitelisted users
-  const whitelistedUsers = antiNukeInstance.config.whitelist?.users || [];
-  const whitelistedRoles = antiNukeInstance.config.whitelist?.roles || [];
-
-  const fields = [];
-
-  if (whitelistedUsers.length > 0) {
-    const userList = whitelistedUsers.map(userId => `<@${userId}> (${userId})`).join('\n');
-    fields.push({ name: 'Whitelisted Users', value: userList.slice(0, 1024) || 'None' });
-  } else {
-    fields.push({ name: 'Whitelisted Users', value: 'None' });
-  }
-
-  if (whitelistedRoles.length > 0) {
-    const roleList = whitelistedRoles.map(roleId => `<@&${roleId}> (${roleId})`).join('\n');
-    fields.push({ name: 'Whitelisted Roles', value: roleList.slice(0, 1024) || 'None' });
-  } else {
-    fields.push({ name: 'Whitelisted Roles', value: 'None' });
-  }
-
-  const embed = embedLoader.createEmbed({
-    title: 'AntiNuke Whitelist',
-    formatDescription: false,
-    fields
-  });
-
-  return interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function handleStats(interaction) {
@@ -277,7 +124,22 @@ async function handleStats(interaction) {
         `**Caps Spam**: ${stats.contentModeration.violations.capsSpam}`,
         `**Duplicates**: ${stats.contentModeration.violations.duplicates}`,
         `**Raids Detected**: ${stats.contentModeration.violations.raidsDetected}`,
-        `**Raid Mode**: ${stats.contentModeration.raidMode.enabled ? 'Active' : 'Inactive'}`
+        `**Raid Mode**: ${stats.contentModeration.raidMode.enabled ? 'ACTIVE' : 'Inactive'}`
+      ].join('\n'),
+      inline: false
+    });
+  }
+
+  // Add permission stats if available
+  if (permissionSystem) {
+    const permStats = permissionSystem.getStats();
+    fields.push({
+      name: 'Permission Hierarchy',
+      value: [
+        `**AntiNuke Admins**: ${permStats.antiNukeAdmins}`,
+        `**Administrators**: ${permStats.administrators}`,
+        `**Moderators**: ${permStats.moderators}`,
+        `**Total Whitelisted**: ${permStats.whitelisted}`
       ].join('\n'),
       inline: false
     });
@@ -298,12 +160,22 @@ async function handleHighAlert(interaction) {
   antiNukeInstance.setHighAlert(enabled);
   
   const embed = embedLoader.createEmbed({
+    title: 'High Alert Mode',
     description: enabled ? 
-      'High alert enabled. AntiNuke thresholds have been reduced by 50%.' : 
-      'High alert disabled. AntiNuke thresholds have been restored to normal.'
+      'High alert **ENABLED**. AntiNuke thresholds have been reduced for maximum protection.' : 
+      'High alert **DISABLED**. AntiNuke thresholds have been restored to normal levels.'
   });
   
   await interaction.reply({ embeds: [embed] });
+  
+  // Log the action
+  if (antiNukeInstance.embedLoader) {
+    antiNukeInstance.logSecurity(
+      interaction.guild, 
+      `High Alert ${enabled ? 'Enabled' : 'Disabled'}`, 
+      `Changed by ${interaction.user.tag}`
+    );
+  }
 }
 
 async function handleRaidMode(interaction) {
@@ -313,14 +185,24 @@ async function handleRaidMode(interaction) {
     const raidMode = antiNukeInstance.raidMode;
     
     const fields = [
-      { name: 'Status', value: raidMode.enabled ? 'Active' : 'Inactive', inline: true }
+      { name: 'Status', value: raidMode.enabled ? '**ACTIVE**' : 'Inactive', inline: true }
     ];
     
     if (raidMode.enabled) {
       fields.push(
-        { name: 'Triggered At', value: `<t:${Math.floor(raidMode.triggeredAt / 1000)}:F>`, inline: true },
-        { name: 'Reason', value: raidMode.triggeredBy || 'Manual', inline: true }
+        { name: 'Triggered At', value: `<t:${Math.floor(raidMode.triggeredAt / 1000)}:F>`, inline: false },
+        { name: 'Reason', value: raidMode.triggeredBy || 'Manual activation', inline: false }
       );
+      
+      // Show active restrictions
+      const restrictions = antiNukeInstance.config.raidMode?.restrictions || [];
+      if (restrictions.length > 0) {
+        fields.push({
+          name: 'Active Restrictions',
+          value: restrictions.map(r => `• ${r.replace(/([A-Z])/g, ' $1').trim()}`).join('\n'),
+          inline: false
+        });
+      }
     }
     
     const embed = embedLoader.createEmbed({
@@ -331,21 +213,39 @@ async function handleRaidMode(interaction) {
     
     await interaction.reply({ embeds: [embed] });
   } else if (action === 'enable') {
-    await antiNukeInstance.triggerRaidMode(interaction.guild, 'Manually triggered');
+    if (antiNukeInstance.raidMode.enabled) {
+      const embed = embedLoader.warning('Raid mode is already active.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    await interaction.deferReply();
+    await antiNukeInstance.triggerRaidMode(interaction.guild, `Manually triggered by ${interaction.user.tag}`);
     
     const embed = embedLoader.createEmbed({
-      description: 'Raid mode enabled. Server has been locked down.'
+      title: 'Raid Mode Activated',
+      description: 'Server has been locked down with the following restrictions:',
+      fields: [{
+        name: 'Active Restrictions',
+        value: (antiNukeInstance.config.raidMode?.restrictions || [])
+          .map(r => `• ${r.replace(/([A-Z])/g, ' $1').trim()}`)
+          .join('\n') || 'Default restrictions applied',
+        inline: false
+      }]
     });
     
-    await interaction.reply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
   } else if (action === 'disable') {
+    if (!antiNukeInstance.raidMode.enabled) {
+      const embed = embedLoader.warning('Raid mode is not currently active.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    await interaction.deferReply();
     await antiNukeInstance.disableRaidMode(interaction.guild);
     
-    const embed = embedLoader.createEmbed({
-      description: 'Raid mode disabled. Server has been restored to normal operation.'
-    });
+    const embed = embedLoader.success('Raid mode has been **disabled**. Server restrictions have been lifted.');
     
-    await interaction.reply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [embed] });
   }
 }
 

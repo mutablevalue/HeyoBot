@@ -20,18 +20,26 @@ rateLimit:
   windowMs: 60000
   limits:
     serverOwner: 0
-    administrator: 0
+    administrator: 10
     default: 5
-  customRoles: null
+    antiNukeAdmin: 0
+    whitelisted: 15
+    moderator: 20
+  customRoles:
+    "1234567890123456789": 30
+    "9876543210987654321": 25
   message: You're sending commands too quickly! Please wait {time} seconds.
+  permissionRoles:
+    antiNukeAdmin: []
+    administrator: []
+    whitelisted: []
+    moderator: []
   cleanupInterval: 60000
 moderation:
   ownerBypass: true
   permissions:
     administrator:
       users:
-        - "987654321098765432"
-        - "234567890123456789"
         - "1162730217895379025"
         - "825436754680348683"
       roles:
@@ -59,6 +67,7 @@ moderation:
         - verifyuser
         - verifylist
         - verifystatus
+        - message
     moderator:
       users:
         - "345678901234567890"
@@ -74,6 +83,18 @@ moderation:
         - emoji
         - verifylist
         - verifystatus
+    antiNukeAdmin:
+      users:
+        - "987654321098765432"
+        - "234567890123456789"
+        - "1135418923572023317"
+      roles: []
+      commands:
+        - all
+    whitelisted:
+      users: []
+      roles: []
+      commands: []
   permRoles:
     vc: "1380755737906647060"
     pic: "1380755738950893658"
@@ -110,32 +131,32 @@ moderation:
   multiUserCommands:
     ban:
       enabled: true
-      requiresAntiNukeWhitelist: true
+      requiresPermissionLevel: 2
       maxUsers: 10
       cooldownMultiplier: 2
     kick:
       enabled: true
-      requiresAntiNukeWhitelist: true
+      requiresPermissionLevel: 2
       maxUsers: 10
       cooldownMultiplier: 2
     timeout:
       enabled: true
-      requiresAntiNukeWhitelist: true
+      requiresPermissionLevel: 2
       maxUsers: 10
       cooldownMultiplier: 1.5
     mute:
       enabled: true
-      requiresAntiNukeWhitelist: true
+      requiresPermissionLevel: 2
       maxUsers: 10
       cooldownMultiplier: 1.5
     unmute:
       enabled: true
-      requiresAntiNukeWhitelist: false
+      requiresPermissionLevel: 1
       maxUsers: 10
       cooldownMultiplier: 1
     role:
       enabled: true
-      requiresAntiNukeWhitelist: true
+      requiresPermissionLevel: 3
       maxUsers: 20
       cooldownMultiplier: 1.5
 afk:
@@ -186,26 +207,23 @@ vanity:
   removeOnVanityLoss: true
 antiNuke:
   whitelist:
-    users:
-      - "123456789012345678"
-    roles:
-      - "876543210987654321"
-  adminUsers:
-    - "987654321098765432"
-    - "234567890123456789"
-    - "1162730217895379025"
-  adminRoles:
-    - "1235002473698299956"
+    users: []
+    roles: []
+  adminUsers: []
+  adminRoles: []
   limits:
     commands:
       maxActions: 5
       timeWindowSeconds: 60
+      highAlertMaxActions: 2
     bans:
       maxActions: 3
       timeWindowSeconds: 120
+      highAlertMaxActions: 1
     kicks:
       maxActions: 5
       timeWindowSeconds: 120
+      highAlertMaxActions: 2
     messages:
       maxMessages: 1
       timeWindowSeconds: 10
@@ -213,20 +231,34 @@ antiNuke:
     channelCreate:
       maxActions: 3
       timeWindowSeconds: 60
+      highAlertMaxActions: 1
     channelDelete:
       maxActions: 2
       timeWindowSeconds: 60
+      highAlertMaxActions: 1
     roleCreate:
       maxActions: 3
       timeWindowSeconds: 60
+      highAlertMaxActions: 1
     roleDelete:
       maxActions: 2
       timeWindowSeconds: 60
+      highAlertMaxActions: 1
     reactions:
       maxActions: 10
       timeWindowSeconds: 60
+      highAlertMaxActions: 5
   adminLogChannel: "1380422918017650719"
   abuseLogChannel: "1380422905191731210"
+  highAlert:
+    enabled: false
+    thresholdReduction: 0.5
+    autoEnable:
+      enabled: true
+      triggers:
+        suspiciousUsers: 5
+        trackedActions: 50
+        timeWindow: 300000
   contentModeration:
     enabled: true
     massMention:
@@ -252,6 +284,7 @@ antiNuke:
       joinThreshold: 10
       timeWindow: 30000
       lockdownEnabled: true
+      lockdownDuration: 600000
     timeoutDuration: 300000
     exemptRoles:
       - "1235002473698299956"
@@ -274,6 +307,14 @@ antiNuke:
       messages: 3
       reactions: 2
       massMention: 7
+  raidMode:
+    autoDisableAfter: 3600000
+    restrictions:
+      - disableInvites
+      - requireVerification
+      - limitChannelCreation
+      - preventMentions
+      - slowMode
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
@@ -461,6 +502,45 @@ filter:
   logChannel: null
   enableLogging: true
   trackStats: true
+permissionHierarchy:
+  levels:
+    user: 0
+    moderator: 1
+    whitelisted: 2
+    administrator: 3
+    antiNukeAdmin: 4
+    owner: 5
+  inheritance: true
+  roleManagement:
+    moderator:
+      canAssign: []
+      canRemove: []
+    whitelisted:
+      canAssign: []
+      canRemove: []
+    administrator:
+      canAssign:
+        - moderator
+      canRemove:
+        - moderator
+    antiNukeAdmin:
+      canAssign:
+        - moderator
+        - whitelisted
+        - administrator
+      canRemove:
+        - moderator
+        - whitelisted
+        - administrator
+      canWhitelist: true
+      canManagePermissions: true
+    owner:
+      canAssign:
+        - all
+      canRemove:
+        - all
+      canWhitelist: true
+      canManagePermissions: true
 embed:
   color: 8388608
   formatters:

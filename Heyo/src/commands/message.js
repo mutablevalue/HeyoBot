@@ -4,6 +4,7 @@ import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 let moderationSystem = null;
 let antiNuke = null;
 let embedLoader = null;
+let permissionSystem = null;
 
 export function setModerationSystem(system) {
   moderationSystem = system;
@@ -15,6 +16,10 @@ export function setAntiNuke(system) {
 
 export function setEmbedLoader(loader) {
   embedLoader = loader;
+}
+
+export function setPermissionSystem(system) {
+  permissionSystem = system;
 }
 
 export const data = new SlashCommandBuilder()
@@ -39,7 +44,7 @@ export const data = new SlashCommandBuilder()
       .setRequired(false))
   .addBooleanOption(option =>
     option.setName('mention_everyone')
-      .setDescription('Ping @everyone? (requires permission)')
+      .setDescription('Ping everyone? (requires permission)')
       .setRequired(false))
   .addStringOption(option =>
     option.setName('image_url')
@@ -51,23 +56,24 @@ export const data = new SlashCommandBuilder()
       .setRequired(false));
 
 export async function execute(interaction) {
-  // Check permissions - only server owner or AntiNuke admins
-  const isOwner = interaction.member.id === interaction.guild.ownerId;
-  const isAntiNukeAdmin = antiNuke && (
-    antiNuke.config.adminUsers?.includes(interaction.member.id) ||
-    interaction.member.roles.cache.some(role => antiNuke.config.adminRoles?.includes(role.id))
-  );
-
-  if (!isOwner && !isAntiNukeAdmin) {
-    const errorEmbed = embedLoader 
-      ? embedLoader.error('This command is restricted to server owner and AntiNuke admins only.')
-      : null;
-    
-    return interaction.reply({
-      embeds: errorEmbed ? [errorEmbed] : undefined,
-      content: errorEmbed ? undefined : 'This command is restricted to server owner and AntiNuke admins only.',
-      ephemeral: true
-    });
+  // Check permissions using unified system
+  if (permissionSystem) {
+    const level = permissionSystem.getPermissionLevel(interaction.member);
+    if (level < permissionSystem.LEVELS.ADMINISTRATOR) {
+      return interaction.reply({
+        content: embedLoader.format('You need Administrator permissions to use this command.', 'message'),
+        ephemeral: true
+      });
+    }
+  } else if (moderationSystem) {
+    // Fallback to moderation system check
+    const permCheck = moderationSystem.checkPermission(interaction.member, 'message');
+    if (!permCheck.allowed) {
+      return interaction.reply({ 
+        content: embedLoader.format(permCheck.reason, 'message'), 
+        ephemeral: true 
+      });
+    }
   }
 
   // Get options
@@ -81,26 +87,16 @@ export async function execute(interaction) {
 
   // Check if channel is a text channel
   if (!channel.isTextBased()) {
-    const errorEmbed = embedLoader 
-      ? embedLoader.error('Please select a text channel.')
-      : null;
-    
     return interaction.reply({
-      embeds: errorEmbed ? [errorEmbed] : undefined,
-      content: errorEmbed ? undefined : 'Please select a text channel.',
+      content: embedLoader.format('Please select a text channel.', 'message'),
       ephemeral: true
     });
   }
 
   // Check permissions to send in the channel
   if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
-    const errorEmbed = embedLoader 
-      ? embedLoader.error('I don\'t have permission to send messages in that channel.')
-      : null;
-    
     return interaction.reply({
-      embeds: errorEmbed ? [errorEmbed] : undefined,
-      content: errorEmbed ? undefined : 'I don\'t have permission to send messages in that channel.',
+      content: embedLoader.format('I don\'t have permission to send messages in that channel.', 'message'),
       ephemeral: true
     });
   }
@@ -108,60 +104,45 @@ export async function execute(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    // Create embed using embedLoader or fallback
-    let embed;
-    if (embedLoader) {
-      const embedOptions = {
-        description: content
-      };
-      
-      // Only add title if provided
-      if (title) {
-        embedOptions.title = title;
-      }
-      
-      // Only add footer if provided
-      if (footer) {
-        embedOptions.footer = footer;
-      }
-      
-      // Create embed without system name since this is a custom message
-      embed = embedLoader.createEmbed(embedOptions);
-      
-      // Add images if provided
-      if (imageUrl) embed.setImage(imageUrl);
-      if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
-    } else {
-      // Fallback embed creation
-      const { EmbedBuilder } = await import('discord.js');
-      embed = new EmbedBuilder()
-        .setColor(0x800080) // Maroon
-        .setDescription(content);
-      
-      if (title) embed.setTitle(title);
-      if (footer) embed.setFooter({ text: footer });
-      if (imageUrl) embed.setImage(imageUrl);
-      if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+    // Create embed using embedLoader
+    const embedOptions = {
+      description: content,
+      formatDescription: false // Don't add system prefix
+    };
+    
+    // Only add title if provided
+    if (title) {
+      embedOptions.title = title;
     }
+    
+    // Only add footer if provided
+    if (footer) {
+      embedOptions.footer = footer;
+    }
+    
+    // Create embed
+    const embed = embedLoader.createEmbed(embedOptions);
+    
+    // Add images if provided
+    if (imageUrl) embed.setImage(imageUrl);
+    if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
 
     // Prepare message options
     const messageOptions = {
       embeds: [embed]
     };
 
-    // Add @everyone ping if requested and user has permission
+    // Add everyone ping if requested and user has permission
     if (mentionEveryone) {
-      if (interaction.member.permissions.has(PermissionFlagsBits.MentionEveryone) || 
-          isOwner || isAntiNukeAdmin) {
+      const canMention = interaction.member.permissions.has(PermissionFlagsBits.MentionEveryone) || 
+                        interaction.member.id === interaction.guild.ownerId ||
+                        (permissionSystem && permissionSystem.getPermissionLevel(interaction.member) >= permissionSystem.LEVELS.ANTINUKE_ADMIN);
+      
+      if (canMention) {
         messageOptions.content = '@everyone';
       } else {
-        const errorEmbed = embedLoader 
-          ? embedLoader.error('You don\'t have permission to mention everyone.')
-          : null;
-        
         return interaction.editReply({
-          embeds: errorEmbed ? [errorEmbed] : undefined,
-          content: errorEmbed ? undefined : 'You don\'t have permission to mention everyone.'
+          content: embedLoader.format('You don\'t have permission to mention everyone.', 'message')
         });
       }
     }
@@ -170,16 +151,11 @@ export async function execute(interaction) {
     const sentMessage = await channel.send(messageOptions);
 
     // Reply with success
-    const successEmbed = embedLoader 
-      ? embedLoader.success(`Message sent successfully in ${channel}\n[Jump to message](${sentMessage.url})`)
-      : null;
-    
     await interaction.editReply({
-      embeds: successEmbed ? [successEmbed] : undefined,
-      content: successEmbed ? undefined : `Message sent successfully in ${channel}`
+      content: embedLoader.format(`Message sent successfully in ${channel}\n[Jump to message](${sentMessage.url})`, 'message')
     });
 
-    // Log the action if moderation system is available
+    // Log the action
     if (moderationSystem) {
       await moderationSystem.logAction(interaction.guild, {
         action: 'Custom Message Sent',
@@ -191,13 +167,8 @@ export async function execute(interaction) {
 
   } catch (error) {
     console.error('[Message Command] Error sending message:', error);
-    const errorEmbed = embedLoader 
-      ? embedLoader.error('Failed to send message. Please check my permissions and try again.')
-      : null;
-    
     await interaction.editReply({
-      embeds: errorEmbed ? [errorEmbed] : undefined,
-      content: errorEmbed ? undefined : 'Failed to send message. Please check my permissions and try again.'
+      content: embedLoader.format('Failed to send message. Please check my permissions and try again.', 'message')
     });
   }
 }
