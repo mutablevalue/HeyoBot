@@ -4,9 +4,14 @@
 import { SlashCommandBuilder, ActivityType } from 'discord.js';
 
 let antiNuke = null;
+let embedLoader = null;
 
 export function setAntiNuke(antiNukeSystem) {
   antiNuke = antiNukeSystem;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -65,8 +70,13 @@ export async function execute(interaction) {
   
   // Only allow server owner or antinuke admins
   if (!isOwner && !isAntiNukeAdmin) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Only the server owner and AntiNuke administrators can change the bot status.')
+      : null;
+    
     return interaction.reply({
-      content: '❌ Only the server owner and AntiNuke administrators can change the bot status.',
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Only the server owner and AntiNuke administrators can change the bot status.',
       ephemeral: true
     });
   }
@@ -93,8 +103,13 @@ export async function execute(interaction) {
   if (url && activityType === ActivityType.Streaming) {
     // Validate streaming URL
     if (!url.includes('twitch.tv') && !url.includes('youtube.com')) {
+      const errorEmbed = embedLoader 
+        ? embedLoader.error('Streaming URL must be a valid Twitch or YouTube URL.')
+        : null;
+      
       return interaction.reply({
-        content: '❌ Streaming URL must be a valid Twitch or YouTube URL.',
+        embeds: errorEmbed ? [errorEmbed] : undefined,
+        content: errorEmbed ? undefined : 'Streaming URL must be a valid Twitch or YouTube URL.',
         ephemeral: true
       });
     }
@@ -108,69 +123,75 @@ export async function execute(interaction) {
       status: color
     });
 
-    const statusEmojis = {
-      'online': '🟢',
-      'idle': '🟡',
-      'dnd': '🔴',
-      'invisible': '⚫'
+    const statusColors = {
+      'online': 'Online',
+      'idle': 'Idle',
+      'dnd': 'Do Not Disturb',
+      'invisible': 'Invisible'
     };
 
-    const embed = {
-      title: '✅ Status Updated',
-      description: `Bot status has been updated successfully!`,
-      fields: [
-        {
-          name: 'Status',
-          value: `${statusEmojis[color]} ${color.charAt(0).toUpperCase() + color.slice(1)}`,
-          inline: true
-        },
-        {
-          name: 'Activity',
-          value: `${type.charAt(0) + type.slice(1).toLowerCase()} ${text}`,
-          inline: true
-        },
-        {
-          name: 'Updated By',
-          value: `${interaction.user.tag}`,
-          inline: true
-        }
-      ],
-      color: 0x00ff00,
-      timestamp: new Date()
-    };
+    const fields = [
+      {
+        name: 'Status',
+        value: statusColors[color],
+        inline: true
+      },
+      {
+        name: 'Activity',
+        value: `${type.charAt(0) + type.slice(1).toLowerCase()} ${text}`,
+        inline: true
+      },
+      {
+        name: 'Updated By',
+        value: interaction.user.tag,
+        inline: true
+      }
+    ];
 
     if (url && activityType === ActivityType.Streaming) {
-      embed.fields.push({
+      fields.push({
         name: 'Stream URL',
         value: url,
         inline: false
       });
     }
 
-    await interaction.reply({ embeds: [embed] });
+    const embed = embedLoader 
+      ? embedLoader.success('Bot status has been updated successfully!', { fields })
+      : null;
+
+    await interaction.reply({ 
+      embeds: embed ? [embed] : undefined,
+      content: embed ? undefined : 'Status updated successfully!'
+    });
     
     // Log the status change if antinuke logging is enabled
     if (antiNuke && antiNuke.config.adminLogChannel) {
       const logChannel = interaction.guild.channels.cache.get(antiNuke.config.adminLogChannel);
       if (logChannel?.isTextBased()) {
-        const logEmbed = {
-          title: '📊 Bot Status Changed',
-          description: `${interaction.user.tag} changed the bot status`,
-          fields: [
-            { name: 'New Status', value: `${statusEmojis[color]} ${color}`, inline: true },
-            { name: 'Activity', value: `${type.charAt(0) + type.slice(1).toLowerCase()} ${text}`, inline: true }
-          ],
-          color: 0x3498db,
-          timestamp: new Date()
-        };
+        const logEmbed = embedLoader 
+          ? embedLoader.info(`${interaction.user.tag} changed the bot status`, {
+              fields: [
+                { name: 'New Status', value: statusColors[color], inline: true },
+                { name: 'Activity', value: `${type.charAt(0) + type.slice(1).toLowerCase()} ${text}`, inline: true }
+              ]
+            })
+          : null;
         
-        await logChannel.send({ embeds: [logEmbed] }).catch(console.error);
+        if (logEmbed) {
+          await logChannel.send({ embeds: [logEmbed] }).catch(console.error);
+        }
       }
     }
   } catch (error) {
     console.error('Error setting status:', error);
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Failed to update bot status. Please try again.')
+      : null;
+    
     await interaction.reply({
-      content: '❌ Failed to update bot status. Please try again.',
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Failed to update bot status. Please try again.',
       ephemeral: true
     });
   }

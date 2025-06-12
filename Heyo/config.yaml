@@ -24,6 +24,7 @@ rateLimit:
     default: 5
   customRoles: null
   message: You're sending commands too quickly! Please wait {time} seconds.
+  cleanupInterval: 60000
 moderation:
   ownerBypass: true
   permissions:
@@ -34,6 +35,7 @@ moderation:
         - "1162730217895379025"
       roles:
         - "1235002473698299956"
+        - "1380398417079046205"
       commands:
         - ban
         - unban
@@ -138,6 +140,7 @@ moderation:
 afk:
   enabled: true
   dataFile: afk_data.json
+  embedColor: 8421504
   removeOnMessage: true
   mentionResponse:
     showTimestamp: true
@@ -280,7 +283,7 @@ welcome:
   dmEnabled: false
   dmMessage:
     title: Welcome to {server}!
-    description: Welcome {user}! Were glad to have you here.
+    description: Welcome {user}! We're glad to have you here.
     color: 65280
     footer: Have a great time!
     timestamp: true
@@ -347,11 +350,12 @@ ticketSystem:
     Please describe your issue in detail and our support team will assist you shortly.
   categories: []
   panelEmbed:
-    title: Support Tickets
+    title: 🎫 Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
     color: 39423
     footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
+    buttonEmoji: 🎫
   autoDelete:
     enabled: true
     timeout: 300000
@@ -440,15 +444,6 @@ filter:
   logChannel: null
   enableLogging: true
   trackStats: true
-giveaway:
-  enabled: true
-  dataFile: giveaways.json
-  dmWinners: true
-  logChannel: null
-  stats:
-    totalGiveaways: 0
-    totalWinners: 0
-    totalParticipants: 0
 embed:
   color: 8388608
   formatters:
@@ -468,89 +463,6 @@ embed:
     showFooter: true
     footerText: ༒
     inline: true
-genderVerify:
-  enabled: true
-  dataFile: gender_verifications.json
-  cooldown: 86400000
-  maxAttemptsPerUser: 3
-  roleNames:
-    female: Verified Female
-    male: Verified Male
-  roleColors:
-    female: null
-    male: null
-  channelNames:
-    verify: verify
-    femaleOnly: female-chat
-    maleOnly: male-chat
-    verified: verified-chat
-    verifiedVC: verified-vc
-    reviewCategory: Staff Review
-    mainCategory: Gender Verification
-  reviewChannelFormat: verify-{number}
-  verifyEmbed:
-    description: |
-      To access gender-specific channels, you need to verify your identity.
-
-      Requirements:
-      A photo of your ID (only showing your photo and birthdate)
-      A selfie holding your ID or a second form of ID
-
-      Privacy Notice:
-      Your information will only be used for verification and will be deleted after the process.
-    buttonLabel: Start Verification
-  formModal:
-    title: Gender Verification Form
-    genderField:
-      label: Gender
-      placeholder: "Enter: male or female"
-      required: true
-    idPhotoField:
-      label: ID Photo URL
-      placeholder: Upload to imgur/discord and paste URL here
-      required: true
-    selfieField:
-      label: Selfie/Second ID URL
-      placeholder: Upload to imgur/discord and paste URL here
-      required: true
-    notesField:
-      label: Additional Notes (Optional)
-      placeholder: Any additional information for reviewers
-      required: false
-  messages:
-    alreadyVerified: You are already verified!
-    pendingVerification: You already have a pending verification request.
-    cooldownActive: Please wait {time} before submitting another verification.
-    maxAttemptsReached: You have reached the maximum number of verification attempts.
-    invalidGender: Please enter either "male" or "female".
-    invalidUrls: Please provide valid image URLs.
-    submitted: Your verification has been submitted! You will be notified once reviewed.
-    approved: Your verification has been approved! You now have access to gender-specific channels.
-    denied: "Your verification has been denied. Reason: {reason}"
-    errorSubmitting: Failed to submit verification. Please try again later.
-  notifications:
-    notifyOnSubmit: true
-    notifyOnReview: true
-    dmResults: true
-  logChannel: null
-  deleteDataAfterDays: 30
-  requireAge18: true
-  guilds:
-    "1379953422241103943":
-      guildId: "1379953422241103943"
-      roles:
-        female: "1382455703364440066"
-        male: "1382455711983730862"
-      channels:
-        verify: "1382455720624128030"
-        female: "1382455721714647122"
-        male: "1382455722918543402"
-        verified: "1382455723652546694"
-        verifiedVC: "1382455724570837057"
-        mainCategory: "1382455713187631164"
-        reviewCategory: "1382455714047463496"
-      panelMessageId: "1382455725544046696"
-      createdAt: 2025-06-11T20:26:21.348Z
 banAppeal:
   enabled: true
   dataFile: ban_appeals.json
@@ -600,20 +512,6 @@ banAppeal:
     error: An error occurred while submitting your appeal. Please try again later.
   logChannel: null
   enableLogging: true
-entrance:
-  enabled: true
-  dataFile: entrance.json
-  defaultRoleName: Verified
-  welcomeMessage: |
-    Welcome to the server! 
-
-    You now have access to all channels. Please make sure to read the rules and enjoy your stay!
-  dmWelcome: false
-  removeReactionAfterVerify: false
-  logVerifications: true
-  stats:
-    totalVerified: 3
-    totalUnverified: 3
 confess:
   enabled: true
   dataFile: confess_data.json
@@ -680,6 +578,103 @@ socialLookup:
     instagram:
       enabled: true
       baseUrl: https://www.instagram.com/
+entrance:
+  enabled: true
+  dataFile: entrance.json
+  defaultRoleName: Verified
+  welcomeMessage: |
+    Welcome to the server! 
+
+    You now have access to all channels. Please make sure to read the rules and enjoy your stay!
+  dmWelcome: false
+  removeReactionAfterVerify: false
+  logVerifications: true
+  stats:
+    totalVerified: 3
+    totalUnverified: 3
+genderVerify:
+  enabled: true
+  dataFile: gender_verifications.json
+  cooldown: 86400000
+  maxAttemptsPerUser: 3
+  roleNames:
+    female: Verified Female
+    male: Verified Male
+  roleColors:
+    female: null
+    male: null
+  channelNames:
+    verify: verify
+    femaleOnly: female-chat
+    maleOnly: male-chat
+    verified: verified-chat
+    verifiedVC: verified-vc
+    reviewCategory: Staff Review
+    mainCategory: Gender Verification
+  reviewChannelFormat: verify-{number}
+  verifyEmbed:
+    description: |
+      To access gender-specific channels, you need to verify your identity.
+
+      Requirements:
+      A photo of your ID (only showing your photo and birthdate)
+      A selfie holding your ID or a second form of ID
+
+      Privacy Notice:
+      Your information will only be used for verification and will be deleted after the process.
+    buttonLabel: Start Verification
+  formModal:
+    title: Gender Verification Form
+    genderField:
+      label: Gender
+      placeholder: "Enter: male or female"
+      required: true
+    idPhotoField:
+      label: ID Photo URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    selfieField:
+      label: Selfie/Second ID URL
+      placeholder: Upload to imgur/discord and paste URL here
+      required: true
+    notesField:
+      label: Additional Notes (Optional)
+      placeholder: Any additional information for reviewers
+      required: false
+  messages:
+    alreadyVerified: You are already verified!
+    pendingVerification: You already have a pending verification request.
+    cooldownActive: Please wait {time} before submitting another verification.
+    maxAttemptsReached: You have reached the maximum number of verification attempts.
+    invalidGender: Please enter either 'male' or 'female'.
+    invalidUrls: Please provide valid image URLs.
+    submitted: Your verification has been submitted! You will be notified once reviewed.
+    approved: Your verification has been approved! You now have access to gender-specific channels.
+    denied: "Your verification has been denied. Reason: {reason}"
+    errorSubmitting: Failed to submit verification. Please try again later.
+  notifications:
+    notifyOnSubmit: true
+    notifyOnReview: true
+    dmResults: true
+  logChannel: null
+  deleteDataAfterDays: 30
+  requireAge18: true
+  guilds:
+    "1379953422241103943":
+      guildId: "1379953422241103943"
+      roles:
+        female: "1382455703364440066"
+        male: "1382455711983730862"
+      channels:
+        verify: "1382455720624128030"
+        female: "1382455721714647122"
+        male: "1382455722918543402"
+        verified: "1382455723652546694"
+        verifiedVC: "1382455724570837057"
+        mainCategory: "1382455713187631164"
+        reviewCategory: "1382455714047463496"
+      panelMessageId: "1382455725544046696"
+      createdAt: 2025-06-11T20:26:21.348Z
 friendGroup:
   enabled: true
   dataFile: friend_groups.json
@@ -725,3 +720,12 @@ friendGroup:
         friendGroups: "1382584383768363079"
       createdAt: 2025-06-11T23:15:19.546Z
       updatedAt: 2025-06-12T04:57:36.376Z
+giveaway:
+  enabled: true
+  dataFile: giveaways.json
+  dmWinners: true
+  logChannel: null
+  stats:
+    totalGiveaways: 0
+    totalWinners: 0
+    totalParticipants: 0

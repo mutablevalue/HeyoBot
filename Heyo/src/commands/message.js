@@ -1,8 +1,9 @@
 // src/commands/message.js
-import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 let moderationSystem = null;
 let antiNuke = null;
+let embedLoader = null;
 
 export function setModerationSystem(system) {
   moderationSystem = system;
@@ -10,6 +11,10 @@ export function setModerationSystem(system) {
 
 export function setAntiNuke(system) {
   antiNuke = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -33,10 +38,6 @@ export const data = new SlashCommandBuilder()
       .setDescription('Embed footer (optional)')
       .setRequired(false))
   .addBooleanOption(option =>
-    option.setName('timestamp')
-      .setDescription('Add timestamp to embed?')
-      .setRequired(false))
-  .addBooleanOption(option =>
     option.setName('mention_everyone')
       .setDescription('Ping @everyone? (requires permission)')
       .setRequired(false))
@@ -58,8 +59,13 @@ export async function execute(interaction) {
   );
 
   if (!isOwner && !isAntiNukeAdmin) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('This command is restricted to server owner and AntiNuke admins only.')
+      : null;
+    
     return interaction.reply({
-      content: '❌ This command is restricted to server owner and AntiNuke admins only.',
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'This command is restricted to server owner and AntiNuke admins only.',
       ephemeral: true
     });
   }
@@ -69,23 +75,32 @@ export async function execute(interaction) {
   const content = interaction.options.getString('content');
   const title = interaction.options.getString('title');
   const footer = interaction.options.getString('footer');
-  const timestamp = interaction.options.getBoolean('timestamp') ?? false;
   const mentionEveryone = interaction.options.getBoolean('mention_everyone') ?? false;
   const imageUrl = interaction.options.getString('image_url');
   const thumbnailUrl = interaction.options.getString('thumbnail_url');
 
   // Check if channel is a text channel
   if (!channel.isTextBased()) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Please select a text channel.')
+      : null;
+    
     return interaction.reply({
-      content: '❌ Please select a text channel.',
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Please select a text channel.',
       ephemeral: true
     });
   }
 
   // Check permissions to send in the channel
   if (!channel.permissionsFor(interaction.guild.members.me).has(['SendMessages', 'EmbedLinks'])) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('I don\'t have permission to send messages in that channel.')
+      : null;
+    
     return interaction.reply({
-      content: '❌ I don\'t have permission to send messages in that channel.',
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'I don\'t have permission to send messages in that channel.',
       ephemeral: true
     });
   }
@@ -93,17 +108,41 @@ export async function execute(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    // Create black embed
-    const embed = new EmbedBuilder()
-      .setColor(0x000000) // Black color
-      .setDescription(content);
-
-    // Add optional fields
-    if (title) embed.setTitle(title);
-    if (footer) embed.setFooter({ text: footer });
-    if (timestamp) embed.setTimestamp();
-    if (imageUrl) embed.setImage(imageUrl);
-    if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+    // Create embed using embedLoader or fallback
+    let embed;
+    if (embedLoader) {
+      const embedOptions = {
+        description: content
+      };
+      
+      // Only add title if provided
+      if (title) {
+        embedOptions.title = title;
+      }
+      
+      // Only add footer if provided
+      if (footer) {
+        embedOptions.footer = footer;
+      }
+      
+      // Create embed without system name since this is a custom message
+      embed = embedLoader.createEmbed(embedOptions);
+      
+      // Add images if provided
+      if (imageUrl) embed.setImage(imageUrl);
+      if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+    } else {
+      // Fallback embed creation
+      const { EmbedBuilder } = await import('discord.js');
+      embed = new EmbedBuilder()
+        .setColor(0x800080) // Maroon
+        .setDescription(content);
+      
+      if (title) embed.setTitle(title);
+      if (footer) embed.setFooter({ text: footer });
+      if (imageUrl) embed.setImage(imageUrl);
+      if (thumbnailUrl) embed.setThumbnail(thumbnailUrl);
+    }
 
     // Prepare message options
     const messageOptions = {
@@ -116,8 +155,13 @@ export async function execute(interaction) {
           isOwner || isAntiNukeAdmin) {
         messageOptions.content = '@everyone';
       } else {
+        const errorEmbed = embedLoader 
+          ? embedLoader.error('You don\'t have permission to mention everyone.')
+          : null;
+        
         return interaction.editReply({
-          content: '❌ You don\'t have permission to mention everyone.'
+          embeds: errorEmbed ? [errorEmbed] : undefined,
+          content: errorEmbed ? undefined : 'You don\'t have permission to mention everyone.'
         });
       }
     }
@@ -126,8 +170,13 @@ export async function execute(interaction) {
     const sentMessage = await channel.send(messageOptions);
 
     // Reply with success
+    const successEmbed = embedLoader 
+      ? embedLoader.success(`Message sent successfully in ${channel}\n[Jump to message](${sentMessage.url})`)
+      : null;
+    
     await interaction.editReply({
-      content: `✅ Message sent successfully in ${channel}\n[Jump to message](${sentMessage.url})`
+      embeds: successEmbed ? [successEmbed] : undefined,
+      content: successEmbed ? undefined : `Message sent successfully in ${channel}`
     });
 
     // Log the action if moderation system is available
@@ -142,8 +191,13 @@ export async function execute(interaction) {
 
   } catch (error) {
     console.error('[Message Command] Error sending message:', error);
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Failed to send message. Please check my permissions and try again.')
+      : null;
+    
     await interaction.editReply({
-      content: '❌ Failed to send message. Please check my permissions and try again.'
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Failed to send message. Please check my permissions and try again.'
     });
   }
 }

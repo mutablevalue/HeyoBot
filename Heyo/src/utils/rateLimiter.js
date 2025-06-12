@@ -1,3 +1,4 @@
+// src/utils/rateLimiter.js
 import { PermissionFlagsBits } from 'discord.js';
 
 export class RateLimiter {
@@ -5,8 +6,10 @@ export class RateLimiter {
     this.userLimits = new Map();
     this.config = config;
     
-    // Clean up expired entries every minute
-    setInterval(() => this.cleanup(), 60000);
+    // Clean up expired entries based on config interval
+    if (this.config.cleanupInterval) {
+      setInterval(() => this.cleanup(), this.config.cleanupInterval);
+    }
   }
 
   async checkLimit(member) {

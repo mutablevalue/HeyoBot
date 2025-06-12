@@ -1,14 +1,18 @@
 // src/commands/emoji.js
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
+  PermissionFlagsBits
 } from 'discord.js';
 
 let moderationSystem = null;
+let embedLoader = null;
 
 export function setModerationSystem(system) {
   moderationSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -59,22 +63,40 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!moderationSystem) {
-    return interaction.reply({ content: '❌ Moderation system not loaded.', ephemeral: true });
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Moderation system not loaded.')
+      : null;
+    
+    return interaction.reply({ 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Moderation system not loaded.',
+      ephemeral: true 
+    });
   }
 
   // Check permissions using moderation system
   const permCheck = moderationSystem.checkPermission(interaction.member, 'emoji');
   if (!permCheck.allowed) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error(permCheck.reason)
+      : null;
+    
     return interaction.reply({ 
-      content: `❌ ${permCheck.reason}`, 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : permCheck.reason,
       ephemeral: true 
     });
   }
 
   // Check bot permissions
   if (!interaction.guild.members.me.permissions.has(PermissionFlagsBits.ManageGuildExpressions)) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('I need the **Manage Emojis and Stickers** permission to manage emojis.')
+      : null;
+    
     return interaction.reply({ 
-      content: '❌ I need the **Manage Emojis and Stickers** permission to manage emojis.', 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'I need the Manage Emojis and Stickers permission to manage emojis.',
       ephemeral: true 
     });
   }
@@ -98,24 +120,39 @@ async function executeAdd(interaction) {
   // Validate emoji name
   const validNameRegex = /^[a-zA-Z0-9_]+$/;
   if (!validNameRegex.test(name)) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Emoji name can only contain letters, numbers, and underscores.')
+      : null;
+    
     return interaction.editReply({
-      content: '❌ Emoji name can only contain letters, numbers, and underscores.'
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Emoji name can only contain letters, numbers, and underscores.'
     });
   }
 
   // Check file type
   const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
   if (!validTypes.includes(attachment.contentType)) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Invalid file type. Please use PNG, JPG, or GIF images.')
+      : null;
+    
     return interaction.editReply({
-      content: '❌ Invalid file type. Please use PNG, JPG, or GIF images.'
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Invalid file type. Please use PNG, JPG, or GIF images.'
     });
   }
 
   // Check file size (emojis must be under 256KB)
   const maxSize = 256 * 1024; // 256KB in bytes
   if (attachment.size > maxSize) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error(`File is too large. Emojis must be under 256KB. Your file is ${(attachment.size / 1024).toFixed(2)}KB.`)
+      : null;
+    
     return interaction.editReply({
-      content: `❌ File is too large. Emojis must be under 256KB. Your file is ${(attachment.size / 1024).toFixed(2)}KB.`
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : `File is too large. Emojis must be under 256KB. Your file is ${(attachment.size / 1024).toFixed(2)}KB.`
     });
   }
 
@@ -132,8 +169,13 @@ async function executeAdd(interaction) {
   const currentEmojis = interaction.guild.emojis.cache.size;
 
   if (currentEmojis >= maxEmojis) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error(`This server has reached its emoji limit (${currentEmojis}/${maxEmojis}). Consider boosting the server for more emoji slots!`)
+      : null;
+    
     return interaction.editReply({
-      content: `❌ This server has reached its emoji limit (${currentEmojis}/${maxEmojis}). Consider boosting the server for more emoji slots!`
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : `This server has reached its emoji limit (${currentEmojis}/${maxEmojis}). Consider boosting the server for more emoji slots!`
     });
   }
 
@@ -146,62 +188,67 @@ async function executeAdd(interaction) {
     });
 
     // Create success embed
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Emoji Added Successfully!')
-      .setColor(0x00ff00)
-      .addFields(
-        {
-          name: 'Emoji',
-          value: `${emoji} \`:${emoji.name}:\``,
-          inline: true
-        },
-        {
-          name: 'Name',
-          value: emoji.name,
-          inline: true
-        },
-        {
-          name: 'Type',
-          value: emoji.animated ? 'Animated' : 'Static',
-          inline: true
-        },
-        {
-          name: 'Added By',
-          value: interaction.user.toString(),
-          inline: true
-        },
-        {
-          name: 'Emoji Slots',
-          value: `${currentEmojis + 1}/${maxEmojis}`,
-          inline: true
-        }
-      )
-      .setThumbnail(emoji.url)
-      .setTimestamp();
+    const fields = [
+      {
+        name: 'Emoji',
+        value: `${emoji} \`:${emoji.name}:\``,
+        inline: true
+      },
+      {
+        name: 'Name',
+        value: emoji.name,
+        inline: true
+      },
+      {
+        name: 'Type',
+        value: emoji.animated ? 'Animated' : 'Static',
+        inline: true
+      },
+      {
+        name: 'Added By',
+        value: interaction.user.toString(),
+        inline: true
+      },
+      {
+        name: 'Emoji Slots',
+        value: `${currentEmojis + 1}/${maxEmojis}`,
+        inline: true
+      }
+    ];
 
     if (reason !== `Added by ${interaction.user.tag}`) {
-      embed.addFields({
+      fields.push({
         name: 'Reason',
         value: reason,
         inline: false
       });
     }
 
-    await interaction.editReply({ embeds: [embed] });
+    const embed = embedLoader 
+      ? embedLoader.success('Emoji added successfully!', { fields })
+      : null;
+
+    if (embed && emoji.url) {
+      embed.setThumbnail(emoji.url);
+    }
+
+    await interaction.editReply({ 
+      embeds: embed ? [embed] : undefined,
+      content: embed ? undefined : `Emoji added successfully! ${emoji}`
+    });
 
     // Log the action
     await moderationSystem.logAction(interaction.guild, {
       action: 'Emoji Added',
       moderator: interaction.user,
       target: `:${emoji.name}: (${emoji.id})`,
-      reason: reason,
-      color: 0x00ff00
+      reason: reason
     });
 
   } catch (error) {
     console.error('Error adding emoji:', error);
     
-    let errorMessage = '❌ Failed to add emoji. ';
+    let errorMessage = 'Failed to add emoji. ';
     
     if (error.code === 30008) {
       errorMessage += 'Maximum number of emojis reached.';
@@ -213,7 +260,14 @@ async function executeAdd(interaction) {
       errorMessage += error.message || 'Unknown error occurred.';
     }
 
-    await interaction.editReply({ content: errorMessage });
+    const errorEmbed = embedLoader 
+      ? embedLoader.error(errorMessage)
+      : null;
+
+    await interaction.editReply({ 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : errorMessage
+    });
   }
 }
 
@@ -241,8 +295,13 @@ async function executeRemove(interaction) {
   }
 
   if (!emoji) {
+    const errorEmbed = embedLoader 
+      ? embedLoader.error('Could not find that emoji in this server. Please use the emoji itself or its ID.')
+      : null;
+    
     return interaction.editReply({
-      content: '❌ Could not find that emoji in this server. Please use the emoji itself or its ID.'
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Could not find that emoji in this server. Please use the emoji itself or its ID.'
     });
   }
 
@@ -258,62 +317,67 @@ async function executeRemove(interaction) {
     await emoji.delete(reason);
 
     // Create success embed
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Emoji Removed Successfully!')
-      .setColor(0xff0000)
-      .addFields(
-        {
-          name: 'Emoji Name',
-          value: `:${emojiInfo.name}:`,
-          inline: true
-        },
-        {
-          name: 'Emoji ID',
-          value: emojiInfo.id,
-          inline: true
-        },
-        {
-          name: 'Type',
-          value: emojiInfo.animated ? 'Animated' : 'Static',
-          inline: true
-        },
-        {
-          name: 'Removed By',
-          value: interaction.user.toString(),
-          inline: true
-        },
-        {
-          name: 'Emoji Slots',
-          value: `${interaction.guild.emojis.cache.size}/${getMaxEmojis(interaction.guild)}`,
-          inline: true
-        }
-      )
-      .setThumbnail(emojiInfo.url)
-      .setTimestamp();
+    const fields = [
+      {
+        name: 'Emoji Name',
+        value: `:${emojiInfo.name}:`,
+        inline: true
+      },
+      {
+        name: 'Emoji ID',
+        value: emojiInfo.id,
+        inline: true
+      },
+      {
+        name: 'Type',
+        value: emojiInfo.animated ? 'Animated' : 'Static',
+        inline: true
+      },
+      {
+        name: 'Removed By',
+        value: interaction.user.toString(),
+        inline: true
+      },
+      {
+        name: 'Emoji Slots',
+        value: `${interaction.guild.emojis.cache.size}/${getMaxEmojis(interaction.guild)}`,
+        inline: true
+      }
+    ];
 
     if (reason !== `Removed by ${interaction.user.tag}`) {
-      embed.addFields({
+      fields.push({
         name: 'Reason',
         value: reason,
         inline: false
       });
     }
 
-    await interaction.editReply({ embeds: [embed] });
+    const embed = embedLoader 
+      ? embedLoader.success('Emoji removed successfully!', { fields })
+      : null;
+
+    if (embed && emojiInfo.url) {
+      embed.setThumbnail(emojiInfo.url);
+    }
+
+    await interaction.editReply({ 
+      embeds: embed ? [embed] : undefined,
+      content: embed ? undefined : `Emoji removed successfully! :${emojiInfo.name}:`
+    });
 
     // Log the action
     await moderationSystem.logAction(interaction.guild, {
       action: 'Emoji Removed',
       moderator: interaction.user,
       target: `:${emojiInfo.name}: (${emojiInfo.id})`,
-      reason: reason,
-      color: 0xff0000
+      reason: reason
     });
 
   } catch (error) {
     console.error('Error removing emoji:', error);
     
-    let errorMessage = '❌ Failed to remove emoji. ';
+    let errorMessage = 'Failed to remove emoji. ';
     
     if (error.code === 50013) {
       errorMessage += 'Missing permissions.';
@@ -323,7 +387,14 @@ async function executeRemove(interaction) {
       errorMessage += error.message || 'Unknown error occurred.';
     }
 
-    await interaction.editReply({ content: errorMessage });
+    const errorEmbed = embedLoader 
+      ? embedLoader.error(errorMessage)
+      : null;
+
+    await interaction.editReply({ 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : errorMessage
+    });
   }
 }
 

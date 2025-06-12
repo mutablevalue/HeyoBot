@@ -9,6 +9,7 @@ import { Client, Collection, Events, ActivityType, Partials } from "discord.js";
 import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import { EmbedLoader } from "./utils/embedLoader.js";
+import { RateLimiter } from "./utils/rateLimiter.js";
 import AntiNuke from "./systems/antiNuke.js";
 import { J2CManager } from "./systems/j2cManager.js";
 import { ModerationSystem } from "./systems/moderationSystem.js";
@@ -30,6 +31,7 @@ import { SocialLookupSystem } from "./systems/socialLookupSystem.js";
 import { EntranceSystem } from "./systems/entranceSystem.js";
 import { GenderVerifySystem } from "./systems/genderVerifySystem.js";
 import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
+import { GiveawaySystem } from "./systems/giveawaySystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -56,8 +58,10 @@ import * as emojiCommand from "./commands/emoji.js";
 import * as genderVerifyCommands from "./commands/genderverify.js";
 import * as messageCommand from "./commands/message.js";
 import * as friendGroupCommands from "./commands/friendgroup.js";
-import { GiveawaySystem } from "./systems/giveawaySystem.js";
 import * as giveawayCommands from "./commands/giveaway.js";
+import * as rateLimitCommand from "./commands/ratelimit.js";
+import * as pingCommand from "./commands/ping.js";
+import * as rootCommand from "./commands/root.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,30 +87,34 @@ async function main() {
     ]
   });
 
-  // 3) Initialize systems with hierarchy: EmbedLoader -> AntiNuke -> ModerationSystem -> Other Systems
+  // 3) Initialize systems with hierarchy: EmbedLoader -> RateLimiter -> AntiNuke -> ModerationSystem -> Other Systems
   
   // First: EmbedLoader (needed by many systems)
   const embedLoader = new EmbedLoader(config);
   
-const antiNuke = new AntiNuke(client, config);
-antiNuke.embedLoader = embedLoader; // ADD THIS LINE
+  // Initialize RateLimiter with config
+  const rateLimiterConfig = config.get("rateLimit");
+  const rateLimiter = new RateLimiter(rateLimiterConfig);
+  
+  const antiNuke = new AntiNuke(client, config);
+  antiNuke.embedLoader = embedLoader;
   
   // Second level: ModerationSystem (depends on AntiNuke for hierarchy)
   const moderationSystem = new ModerationSystem(client, config);
-  moderationSystem.setAntiNuke(antiNuke); // Set AntiNuke reference for hierarchy checking
-  moderationSystem.setEmbedLoader(embedLoader); //Set AntiNuke reference for hierarchy checking
+  moderationSystem.setAntiNuke(antiNuke);
+  moderationSystem.setEmbedLoader(embedLoader);
   
   // Third level: All other systems (depend on ModerationSystem for permissions and EmbedLoader for visuals)
   const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
-afkManager.embedLoader = embedLoader; // ADD THIS LINE
+  afkManager.embedLoader = embedLoader;
   const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
   friendGroupSystem.embedLoader = embedLoader;
   
- const linkProtection = new LinkProtection(client, config);
-  linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
-  linkProtection.setEmbedLoader(embedLoader); // Ad
+  const linkProtection = new LinkProtection(client, config);
+  linkProtection.setModerationSystem(moderationSystem);
+  linkProtection.setEmbedLoader(embedLoader);
   
   const welcomeSystem = new WelcomeSystem(client, config);
   const roleTracker = new RoleTracker(client, config, embedLoader);
@@ -116,34 +124,36 @@ afkManager.embedLoader = embedLoader; // ADD THIS LINE
   boosterSystem.embedLoader = embedLoader;
   
   const filterSystem = new FilterSystem(client, config);
-  filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
-filterSystem.setEmbedLoader(embedLoader); // Add this line
+  filterSystem.setModerationSystem(moderationSystem);
+  filterSystem.setEmbedLoader(embedLoader);
   
   const banAppealSystem = new BanAppealSystem(client, config);
   banAppealSystem.embedLoader = embedLoader;
   const ticketSystem = new TicketSystem(client, config);
   const confessSystem = new ConfessSystem(client, config);
+  confessSystem.setEmbedLoader(embedLoader);
   const skullboardSystem = new SkullboardSystem(client, config, embedLoader, antiNuke);
   const snipeSystem = new SnipeSystem(client, config, embedLoader);
   const socialLookupSystem = new SocialLookupSystem(client, config);
   const entranceSystem = new EntranceSystem(client, config);
+  entranceSystem.setEmbedLoader(embedLoader);
   const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
   genderVerifySystem.embedLoader = embedLoader;
   const giveawaySystem = new GiveawaySystem(client, config, embedLoader);
 
   // 4) Pass systems into commands that need them
-   antiNukeCommand.setAntiNuke(antiNuke);
-   antiNukeCommand.setEmbedLoader(embedLoader); // ADD THIS LINE
+  antiNukeCommand.setAntiNuke(antiNuke);
+  antiNukeCommand.setEmbedLoader(embedLoader);
   
   setupJ2CCommand.setJ2CManager(j2cManager);
   setupJ2CCommand.setEmbedLoader(embedLoader);
   vcCommand.setJ2CManager(j2cManager);
-vcCommand.setEmbedLoader(embedLoader);
+  vcCommand.setEmbedLoader(embedLoader);
   moderationCommands.setModerationSystem(moderationSystem);
-  moderationCommands.setEmbedLoader(embedLoader); // Add this lin
+  moderationCommands.setEmbedLoader(embedLoader);
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
-afkCommand.setEmbedLoader(embedLoader); // ADD THIS LINE
+  afkCommand.setEmbedLoader(embedLoader);
   welcomeCommand.setWelcomeSystem(welcomeSystem);
   giveawayCommands.setGiveawaySystem(giveawaySystem);
   giveawayCommands.setEmbedLoader(embedLoader);
@@ -152,49 +162,56 @@ afkCommand.setEmbedLoader(embedLoader); // ADD THIS LINE
   channelCommands.setModerationSystem(moderationSystem);
   channelCommands.setRoleTracker(roleTracker);
   channelCommands.setEmbedLoader(embedLoader);
-  entranceSystem.setEmbedLoader(embedLoader); // Add this line
   
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
-leaderboardCommands.setEmbedLoader(embedLoader);
- eventCommands.setEventHostingSystem(eventHostingSystem);
-eventCommands.setLeaderboardSystem(leaderboardSystem);
-eventCommands.setEmbedLoader(embedLoader); // Add this line
+  leaderboardCommands.setEmbedLoader(embedLoader);
+  eventCommands.setEventHostingSystem(eventHostingSystem);
+  eventCommands.setLeaderboardSystem(leaderboardSystem);
+  eventCommands.setEmbedLoader(embedLoader);
   boosterCommands.setBoosterSystem(boosterSystem);
-boosterCommands.setEmbedLoader(embedLoader); // ADD THIS LINE
+  boosterCommands.setEmbedLoader(embedLoader);
   filterCommands.setFilterSystem(filterSystem);
-filterCommands.setEmbedLoader(embedLoader); // Add this line
+  filterCommands.setEmbedLoader(embedLoader);
   banAppealCommands.setBanAppealSystem(banAppealSystem);
-banAppealCommands.setEmbedLoader(embedLoader); // ADD THIS LINE
+  banAppealCommands.setEmbedLoader(embedLoader);
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
-confessCommands.setEmbedLoader(embedLoader); // Add this line
+  confessCommands.setEmbedLoader(embedLoader);
   
   // Skullboard commands need all three systems
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   skullboardCommands.setModerationSystem(moderationSystem);
   skullboardCommands.setEmbedLoader(embedLoader);
-  confessSystem.setEmbedLoader(embedLoader); // Add this line
-  
   
   // Snipe commands need both SnipeSystem and EmbedLoader
   snipeCommands.setSnipeSystem(snipeSystem);
   snipeCommands.setEmbedLoader(embedLoader);
   
   socialCommands.setSocialLookupSystem(socialLookupSystem);
+  socialCommands.setEmbedLoader(embedLoader);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
-setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
+  setupEntranceCommand.setEmbedLoader(embedLoader);
   emojiCommand.setModerationSystem(moderationSystem);
+  emojiCommand.setEmbedLoader(embedLoader);
   genderVerifyCommands.setGenderVerifySystem(genderVerifySystem);
   genderVerifyCommands.setModerationSystem(moderationSystem);
   messageCommand.setModerationSystem(moderationSystem);
   messageCommand.setAntiNuke(antiNuke);
+  messageCommand.setEmbedLoader(embedLoader);
   friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
   friendGroupCommands.setModerationSystem(moderationSystem);
   
-
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
   setStatusCommand.setAntiNuke(antiNuke);
+  setStatusCommand.setEmbedLoader(embedLoader);
+  
+  // RateLimiter and other utility commands
+  rateLimitCommand.setRateLimiter(rateLimiter);
+  rateLimitCommand.setEmbedLoader(embedLoader);
+  pingCommand.setEmbedLoader(embedLoader);
+  rootCommand.setModerationSystem(moderationSystem);
+  rootCommand.setEmbedLoader(embedLoader);
 
   // 5) Prepare client.commands collection
   client.commands = new Collection();
@@ -205,8 +222,8 @@ setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
     .readdirSync(commandsDir)
     .filter((file) => file.endsWith(".js"));
 
-  // Exclude root.js from loading
-  const excludedFiles = ['root.js'];
+  // Exclude files if needed (root.js removed from excluded files)
+  const excludedFiles = [];
 
   for (const file of commandFiles) {
     // Skip excluded files
@@ -319,7 +336,7 @@ setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
       };
 
       client.user.setPresence(presenceData);
-      console.log(`✅ Bot presence set to: ${presenceData.status} - ${activityOptions.name}`);
+      console.log(`Bot presence set to: ${presenceData.status} - ${activityOptions.name}`);
     }
 
     // ADD CLEANUP INTERVAL FOR ANTINUKE CONTENT MODERATION
@@ -355,6 +372,7 @@ setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
     console.log(`Owner Bypass: ${moderationSystem.config.ownerBypass ? 'ENABLED' : 'DISABLED'}`);
     console.log('---');
     console.log('EmbedLoader: Active (Unified Visual System)');
+    console.log(`Rate Limiter: Active (Window: ${rateLimiterConfig.windowMs}ms, Default limit: ${rateLimiterConfig.limits.default}/min)`);
     console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
     console.log('Moderation System: Active (Centralized Permissions)');
     console.log('J2C Manager: Active');
@@ -381,19 +399,30 @@ setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
     console.log('====================\n');
   });
 
-  // 9) Handle slash command interactions
+  // 9) Handle slash command interactions with rate limiting
   client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
+
+      // Check rate limit if member exists
+      if (interaction.member && rateLimiter) {
+        const rateLimitCheck = await rateLimiter.checkLimit(interaction.member);
+        if (!rateLimitCheck.allowed) {
+          const message = rateLimiter.getCooldownMessage(rateLimitCheck.timeLeft);
+          const embed = embedLoader.error(message);
+          return interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+      }
 
       try {
         await command.execute(interaction);
       } catch (err) {
         console.error(`Error executing /${interaction.commandName}:`, err);
         if (interaction.isRepliable()) {
+          const errorEmbed = embedLoader.error("There was an error while executing this command.");
           await interaction.reply({
-            content: "There was an error while executing this command.",
+            embeds: [errorEmbed],
             ephemeral: true
           });
         }

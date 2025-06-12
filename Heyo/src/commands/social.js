@@ -1,13 +1,17 @@
 // src/commands/social.js
 import {
-  SlashCommandBuilder,
-  EmbedBuilder
+  SlashCommandBuilder
 } from 'discord.js';
 
 let socialLookupSystem = null;
+let embedLoader = null;
 
 export function setSocialLookupSystem(system) {
   socialLookupSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 // TikTok lookup command
@@ -62,8 +66,10 @@ export const socialData = new SlashCommandBuilder()
 // Execute functions
 export async function executeTT(interaction) {
   if (!socialLookupSystem) {
+    const message = embedLoader ? embedLoader.error('Social lookup system not loaded.') : null;
     return interaction.reply({ 
-      content: '❌ Social lookup system not loaded.', 
+      embeds: message ? [message] : undefined,
+      content: message ? undefined : 'Social lookup system not loaded.',
       ephemeral: true 
     });
   }
@@ -73,8 +79,13 @@ export async function executeTT(interaction) {
   // Check rate limit
   if (!socialLookupSystem.checkRateLimit(interaction.user.id)) {
     const remaining = socialLookupSystem.getRateLimitRemaining(interaction.user.id);
+    const message = embedLoader 
+      ? embedLoader.error(`Please wait ${remaining} seconds before using this command again.`)
+      : `Please wait ${remaining} seconds before using this command again.`;
+    
     return interaction.reply({ 
-      content: `⏰ Please wait ${remaining} seconds before using this command again.`, 
+      embeds: embedLoader ? [message] : undefined,
+      content: embedLoader ? undefined : message,
       ephemeral: true 
     });
   }
@@ -93,16 +104,23 @@ export async function executeTT(interaction) {
     
   } catch (error) {
     console.error('[Social] TikTok lookup error:', error);
+    const errorEmbed = embedLoader
+      ? embedLoader.error('Failed to look up TikTok user. Please try again later.')
+      : null;
+    
     await interaction.editReply({ 
-      content: '❌ Failed to look up TikTok user. Please try again later.' 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Failed to look up TikTok user. Please try again later.'
     });
   }
 }
 
 export async function executeIG(interaction) {
   if (!socialLookupSystem) {
+    const message = embedLoader ? embedLoader.error('Social lookup system not loaded.') : null;
     return interaction.reply({ 
-      content: '❌ Social lookup system not loaded.', 
+      embeds: message ? [message] : undefined,
+      content: message ? undefined : 'Social lookup system not loaded.',
       ephemeral: true 
     });
   }
@@ -112,8 +130,13 @@ export async function executeIG(interaction) {
   // Check rate limit
   if (!socialLookupSystem.checkRateLimit(interaction.user.id)) {
     const remaining = socialLookupSystem.getRateLimitRemaining(interaction.user.id);
+    const message = embedLoader 
+      ? embedLoader.error(`Please wait ${remaining} seconds before using this command again.`)
+      : `Please wait ${remaining} seconds before using this command again.`;
+    
     return interaction.reply({ 
-      content: `⏰ Please wait ${remaining} seconds before using this command again.`, 
+      embeds: embedLoader ? [message] : undefined,
+      content: embedLoader ? undefined : message,
       ephemeral: true 
     });
   }
@@ -132,16 +155,23 @@ export async function executeIG(interaction) {
     
   } catch (error) {
     console.error('[Social] Instagram lookup error:', error);
+    const errorEmbed = embedLoader
+      ? embedLoader.error('Failed to look up Instagram user. Please try again later.')
+      : null;
+    
     await interaction.editReply({ 
-      content: '❌ Failed to look up Instagram user. Please try again later.' 
+      embeds: errorEmbed ? [errorEmbed] : undefined,
+      content: errorEmbed ? undefined : 'Failed to look up Instagram user. Please try again later.'
     });
   }
 }
 
 export async function executeSocial(interaction) {
   if (!socialLookupSystem) {
+    const message = embedLoader ? embedLoader.error('Social lookup system not loaded.') : null;
     return interaction.reply({ 
-      content: '❌ Social lookup system not loaded.', 
+      embeds: message ? [message] : undefined,
+      content: message ? undefined : 'Social lookup system not loaded.',
       ephemeral: true 
     });
   }
