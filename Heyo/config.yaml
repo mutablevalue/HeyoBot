@@ -478,6 +478,9 @@ genderVerify:
   roleNames:
     female: Verified Female
     male: Verified Male
+  roleColors:
+    female: null
+    male: null
   channelNames:
     verify: verify
     femaleOnly: female-chat
@@ -499,6 +502,7 @@ genderVerify:
       Your information will only be used for verification and will be deleted after the process.
     buttonLabel: Start Verification
   formModal:
+    title: Gender Verification Form
     genderField:
       label: Gender
       placeholder: "Enter: male or female"
@@ -530,7 +534,7 @@ genderVerify:
     notifyOnSubmit: true
     notifyOnReview: true
     dmResults: true
-  logChannel: "1380422918017650719"
+  logChannel: null
   deleteDataAfterDays: 30
   requireAge18: true
   guilds:
@@ -681,7 +685,7 @@ socialLookup:
 friendGroup:
   enabled: true
   dataFile: friend_groups.json
-  minMembers: 6
+  minMembers: 1
   cooldown: 604800000
   maxApplicationsPerUser: 1
   reviewCategory: Staff Review
@@ -709,10 +713,17 @@ friendGroup:
   deleteDataAfterDays: 30
   maxActiveGroups: 50
   maxActiveApplications: 20
+  allowedPermissions:
+    - ViewChannel
+    - Connect
+    - Speak
+    - Stream
+    - UseVAD
   guilds:
     "1379953422241103943":
       guildId: "1379953422241103943"
       categories:
         review: "1382498243547496508"
-        friendGroups: "1382498244520841257"
+        friendGroups: "1382584383768363079"
       createdAt: 2025-06-11T23:15:19.546Z
+      updatedAt: 2025-06-12T04:57:36.376Z

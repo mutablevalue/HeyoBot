@@ -17,7 +17,9 @@
       "approverTag": "notarustdev",
       "guildId": "1379953422241103943",
       "tempRoleId": "1382501847570583672",
-      "status": "pending_setup"
+      "status": "pending_setup",
+      "voiceChannelId": "1382584495663878266",
+      "voiceChannelName": "new"
     }
   },
   "guilds": {
@@ -25,9 +27,10 @@
       "guildId": "1379953422241103943",
       "categories": {
         "review": "1382498243547496508",
-        "friendGroups": "1382498244520841257"
+        "friendGroups": "1382584383768363079"
       },
-      "createdAt": "2025-06-11T23:15:19.546Z"
+      "createdAt": "2025-06-11T23:15:19.546Z",
+      "updatedAt": "2025-06-12T04:57:36.376Z"
     }
   }
 }

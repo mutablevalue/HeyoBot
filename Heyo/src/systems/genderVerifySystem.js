@@ -68,8 +68,8 @@ export class GenderVerifySystem {
     // Get config from config loader
     this.config = this.configLoader.get('genderVerify') || {};
     
-    // Initialize default config if not exists
-    this.initializeDefaultConfig();
+    // Initialize from config - no defaults
+    this.loadConfigValues();
     
     // If config has guild setups, preserve them
     const savedGuilds = this.config.guilds || {};
@@ -78,10 +78,10 @@ export class GenderVerifySystem {
     // Active verifications tracking
     this.activeVerifications = new Map(); // verificationId -> verification data
     this.userVerifications = new Map(); // userId -> verificationId
-    this.acceptedUsers = new Map(); // userId -> {gender, images, approvedAt, approvedBy, guildId}
+    this.acceptedUsers = new Map(); // userId -> {gender, approvedAt, approvedBy, guildId}
     
     // Load data
-    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'gender_verifications.json');
+    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
     this.loadVerificationData();
 
     // Setup event listeners
@@ -96,94 +96,19 @@ export class GenderVerifySystem {
   }
 
   /**
-   * Initialize default configuration
+   * Load configuration values from config
    */
-  initializeDefaultConfig() {
-    const defaults = {
-      enabled: true,  // Changed to true by default
-      dataFile: 'gender_verifications.json',
-      cooldown: 86400000, // 24 hours
-      maxAttemptsPerUser: 3,
-      roleNames: {
-        female: 'Verified Female',
-        male: 'Verified Male'
-      },
-      roleColors: {
-        female: 0x99aab5,  // Default gray
-        male: 0x99aab5     // Default gray
-      },
-      channelNames: {
-        verify: 'verify',           // Public view, no send
-        femaleOnly: 'female-chat',  // Public view, female-only send
-        maleOnly: 'male-chat',      // Public view, male-only send
-        verified: 'verified-chat',  // Hidden, all verified can send
-        verifiedVC: 'verified-vc',  // Hidden, all verified can join
-        reviewCategory: 'Verification Reviews',
-        mainCategory: 'Gender Verification'
-      },
-      reviewChannelFormat: 'verify-{number}',
-      verifyEmbed: {
-        title: '✅ Gender Verification',
-        description: 'To access gender-specific channels, you need to verify your identity.\n\n**Requirements:**\n• A photo of your ID (only showing your photo and birthdate)\n• A selfie holding your ID or a second form of ID\n\n**Privacy Notice:**\nYour information will only be used for verification and will be deleted after the process.',
-        color: 0x0099ff,
-        footer: 'Click the button below to start',
-        buttonLabel: 'Start Verification',
-        buttonEmoji: '✅'
-      },
-      formModal: {
-        title: 'Gender Verification Form',
-        genderField: {
-          label: 'Gender',
-          placeholder: 'Enter: male or female',
-          required: true
-        },
-        idPhotoField: {
-          label: 'ID Photo URL',
-          placeholder: 'Upload to imgur/discord and paste URL here',
-          required: true
-        },
-        selfieField: {
-          label: 'Selfie/Second ID URL',
-          placeholder: 'Upload to imgur/discord and paste URL here',
-          required: true
-        },
-        notesField: {
-          label: 'Additional Notes (Optional)',
-          placeholder: 'Any additional information for reviewers',
-          required: false
-        }
-      },
-      messages: {
-        alreadyVerified: '✅ You are already verified!',
-        pendingVerification: '⏳ You already have a pending verification request.',
-        cooldownActive: '⏰ Please wait {time} before submitting another verification.',
-        maxAttemptsReached: '❌ You have reached the maximum number of verification attempts.',
-        invalidGender: '❌ Please enter either "male" or "female".',
-        invalidUrls: '❌ Please provide valid image URLs.',
-        submitted: '✅ Your verification has been submitted! You will be notified once reviewed.',
-        approved: '✅ Your verification has been approved! You now have access to gender-specific channels.',
-        denied: '❌ Your verification has been denied. Reason: {reason}',
-        errorSubmitting: '❌ Failed to submit verification. Please try again later.'
-      },
-      notifications: {
-        notifyOnSubmit: true,
-        notifyOnReview: true,
-        dmResults: true
-      },
-      logChannel: null,
-      deleteDataAfterDays: 30,
-      requireAge18: true
-    };
-
-    // Deep merge with existing config
-    this.config = this.deepMerge(defaults, this.config);
+  loadConfigValues() {
+    // Required config values - no defaults
+    if (!this.config.dataFile || !this.config.cooldown || !this.config.maxAttemptsPerUser ||
+        !this.config.roleNames || !this.config.channelNames || !this.config.messages) {
+      console.error('[GenderVerifySystem] Missing required configuration values');
+    }
     
-    // Ensure guilds object exists and is preserved
+    // Ensure guilds object exists
     if (!this.config.guilds) {
       this.config.guilds = {};
     }
-    
-    console.log(`[GenderVerifySystem] After initialization, guilds: ${Object.keys(this.config.guilds).length}`);
   }
 
   /**
@@ -326,15 +251,15 @@ export class GenderVerifySystem {
     }
 
     try {
-      // Create or get roles with customizable colors (default to neutral gray)
+      // Create or get roles
       const femaleRole = await this.createOrGetRole(guild, 
         options.femaleRoleName || this.config.roleNames.female,
-        { color: options.femaleRoleColor || 0x99aab5, hoist: true }
+        { color: this.config.roleColors?.female || null, hoist: true }
       );
       
       const maleRole = await this.createOrGetRole(guild,
         options.maleRoleName || this.config.roleNames.male,
-        { color: options.maleRoleColor || 0x99aab5, hoist: true }
+        { color: this.config.roleColors?.male || null, hoist: true }
       );
 
       // Create main category for all verification channels
@@ -414,7 +339,7 @@ export class GenderVerifySystem {
 
       // Create verified-only channels (completely invisible to non-verified)
       const verifiedChannel = await this.createOrGetChannel(guild, {
-        name: options.verifiedChannelName || 'verified-chat',
+        name: options.verifiedChannelName || this.config.channelNames.verified,
         type: ChannelType.GuildText,
         parent: mainCategory.id,
         topic: 'Chat for all verified members',
@@ -439,7 +364,7 @@ export class GenderVerifySystem {
       });
 
       const verifiedVC = await this.createOrGetChannel(guild, {
-        name: options.verifiedVCName || 'verified-vc',
+        name: options.verifiedVCName || this.config.channelNames.verifiedVC,
         type: ChannelType.GuildVoice,
         parent: mainCategory.id,
         userLimit: 0,
@@ -513,7 +438,6 @@ export class GenderVerifySystem {
 
       // Send verification panel with custom message if provided
       const panelOptions = {};
-      if (options.messageTitle) panelOptions.title = options.messageTitle;
       if (options.messageDescription) panelOptions.description = options.messageDescription;
       if (options.messageFooter) panelOptions.footer = options.messageFooter;
       if (options.buttonLabel) panelOptions.buttonLabel = options.buttonLabel;
@@ -577,16 +501,20 @@ export class GenderVerifySystem {
    * Create verification panel
    */
   async createVerificationPanel(channel, options = {}) {
-    const embed = new EmbedBuilder()
-      .setTitle(options.title || this.config.verifyEmbed.title)
-      .setDescription(options.description || this.config.verifyEmbed.description)
-      .setColor(options.color || this.config.verifyEmbed.color)
-      .setFooter({ text: options.footer || this.config.verifyEmbed.footer });
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    
+    const embed = embedLoader.system(
+      'Gender Verification',
+      options.description || this.config.verifyEmbed.description
+    );
+
+    if (options.footer) {
+      embed.setFooter({ text: embedLoader.format(options.footer, 'footer') });
+    }
 
     const button = new ButtonBuilder()
       .setCustomId('gender_verify_start')
       .setLabel(options.buttonLabel || this.config.verifyEmbed.buttonLabel)
-      .setEmoji(options.buttonEmoji || this.config.verifyEmbed.buttonEmoji)
       .setStyle(ButtonStyle.Primary);
 
     const row = new ActionRowBuilder().addComponents(button);
@@ -637,7 +565,7 @@ export class GenderVerifySystem {
     
     if (!guildSetup) {
       return interaction.reply({
-        content: '❌ Gender verification is not properly configured. An admin needs to run `/setupgenderverify` first.',
+        content: 'Gender verification is not properly configured. An admin needs to run `/setupgenderverify` first.',
         ephemeral: true
       });
     }
@@ -656,7 +584,7 @@ export class GenderVerifySystem {
       });
       
       return interaction.reply({
-        content: '✅ Server owners are exempt from verification requirements.',
+        content: 'Server owners are exempt from verification requirements.',
         ephemeral: true
       });
     }
@@ -675,7 +603,7 @@ export class GenderVerifySystem {
       });
       
       return interaction.reply({
-        content: '✅ AntiNuke administrators are exempt from verification requirements.',
+        content: 'AntiNuke administrators are exempt from verification requirements.',
         ephemeral: true
       });
     }
@@ -690,7 +618,7 @@ export class GenderVerifySystem {
       });
       
       return interaction.reply({
-        content: '✅ System administrators are exempt from verification requirements.',
+        content: 'System administrators are exempt from verification requirements.',
         ephemeral: true
       });
     }
@@ -840,18 +768,15 @@ export class GenderVerifySystem {
 
         console.log(`[GenderVerifySystem] Verification created successfully: ${verification.id}`);
 
-        // Send success message
-        const successEmbed = new EmbedBuilder()
-          .setTitle('✅ Verification Submitted')
-          .setDescription(this.config.messages.submitted)
-          .setColor(0x00ff00)
-          .addFields(
-            { name: 'Verification ID', value: `#${verification.id.slice(-4)}`, inline: true },
-            { name: 'Gender', value: gender.charAt(0).toUpperCase() + gender.slice(1), inline: true },
-            { name: 'Status', value: 'Pending Review', inline: true }
-          )
-          .setFooter({ text: 'You will be notified via DM once your verification is reviewed.' })
-          .setTimestamp();
+        // Send success message using embedLoader
+        const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+        const successEmbed = embedLoader.success(
+          this.config.messages.submitted
+        ).addFields(
+          { name: 'Verification ID', value: `#${verification.id.slice(-4)}`, inline: true },
+          { name: 'Gender', value: gender.charAt(0).toUpperCase() + gender.slice(1), inline: true },
+          { name: 'Status', value: 'Pending Review', inline: true }
+        );
 
         await interaction.editReply({
           embeds: [successEmbed],
@@ -867,9 +792,9 @@ export class GenderVerifySystem {
         // Provide more detailed error message
         let errorMessage = this.config.messages.errorSubmitting;
         if (error.message.includes('Guild setup not found')) {
-          errorMessage = '❌ Gender verification is not properly set up in this server. Please ask an admin to run /setupgenderverify';
+          errorMessage = 'Gender verification is not properly set up in this server. Please ask an admin to run /setupgenderverify';
         } else if (error.message.includes('category not found')) {
-          errorMessage = '❌ Review category not found. Please contact an administrator to fix the setup.';
+          errorMessage = 'Review category not found. Please contact an administrator to fix the setup.';
         }
         
         await interaction.editReply({
@@ -879,7 +804,7 @@ export class GenderVerifySystem {
     } catch (error) {
       console.error('[GenderVerifySystem] Fatal error in handleModalSubmit:', error);
       await interaction.editReply({
-        content: '❌ An unexpected error occurred. Please try again later.'
+        content: 'An unexpected error occurred. Please try again later.'
       }).catch(() => {});
     }
   }
@@ -1003,10 +928,6 @@ export class GenderVerifySystem {
         guildId: guild.id,
         channelId: reviewChannel.id,
         gender: data.gender,
-        images: {
-          idPhoto: data.idPhoto,
-          selfie: data.selfie
-        },
         notes: data.notes,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -1017,38 +938,35 @@ export class GenderVerifySystem {
       this.userVerifications.set(user.id, verificationId);
       this.saveVerificationData();
 
-      // Send review embeds
-      const reviewEmbed = new EmbedBuilder()
-        .setTitle(`Gender Verification #${verificationId.slice(-4)}`)
-        .setDescription(`User ${user} has submitted a verification request`)
-        .setColor(0xffff00)
-        .addFields(
+      // Send review embeds using embedLoader
+      const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+      
+      const reviewEmbed = embedLoader.createEmbed({
+        description: `User ${user} has submitted a verification request`,
+        fields: [
           { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
           { name: 'Gender', value: data.gender.charAt(0).toUpperCase() + data.gender.slice(1), inline: true },
           { name: 'Account Age', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
           { name: 'Notes', value: data.notes || 'None' },
           { name: 'ID Photo', value: `[View Image](${data.idPhoto})`, inline: true },
           { name: 'Selfie/Second ID', value: `[View Image](${data.selfie})`, inline: true }
-        )
-        .setImage(data.idPhoto)
-        .setTimestamp();
+        ]
+      }).setImage(data.idPhoto);
 
       const selfieEmbed = new EmbedBuilder()
         .setTitle('Selfie/Second ID')
         .setImage(data.selfie)
-        .setColor(0xffff00);
+        .setColor(embedLoader.config.color);
 
       const actionRow = new ActionRowBuilder()
         .addComponents(
           new ButtonBuilder()
             .setCustomId(`verify_approve_${verificationId}`)
             .setLabel('Approve')
-            .setEmoji('✅')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`verify_deny_${verificationId}`)
             .setLabel('Deny')
-            .setEmoji('❌')
             .setStyle(ButtonStyle.Danger)
         );
 
@@ -1101,7 +1019,7 @@ export class GenderVerifySystem {
 
     if (!verification) {
       return interaction.reply({
-        content: '❌ This verification no longer exists.',
+        content: 'This verification no longer exists.',
         ephemeral: true
       });
     }
@@ -1138,7 +1056,7 @@ export class GenderVerifySystem {
         permissionLevel = 'System Moderator';
       } else {
         return interaction.reply({
-          content: `❌ You do not have permission to review verifications.`,
+          content: `You do not have permission to review verifications.`,
           ephemeral: true
         });
       }
@@ -1154,7 +1072,7 @@ export class GenderVerifySystem {
 
     if (verification.status !== 'pending') {
       return interaction.reply({
-        content: '❌ This verification has already been reviewed.',
+        content: 'This verification has already been reviewed.',
         ephemeral: true
       });
     }
@@ -1175,7 +1093,7 @@ export class GenderVerifySystem {
       console.error('[GenderVerifySystem] Error handling verification action:', error);
       if (type === 'approve') {
         await interaction.editReply({
-          content: '❌ Failed to process verification.'
+          content: 'Failed to process verification.'
         });
       }
     }
@@ -1192,7 +1110,7 @@ export class GenderVerifySystem {
 
     if (!member) {
       return interaction.editReply({
-        content: '❌ User is no longer in the server.'
+        content: 'User is no longer in the server.'
       });
     }
 
@@ -1200,10 +1118,9 @@ export class GenderVerifySystem {
     const roleId = verification.gender === 'female' ? guildSetup.roles.female : guildSetup.roles.male;
     await member.roles.add(roleId, `Gender verification approved by ${interaction.user.tag}`);
 
-    // Store accepted user data with images
+    // Store accepted user data
     this.acceptedUsers.set(verification.userId, {
       gender: verification.gender,
-      images: verification.images,
       approvedAt: new Date().toISOString(),
       approvedBy: interaction.user.id,
       approverTag: interaction.user.tag,
@@ -1217,29 +1134,22 @@ export class GenderVerifySystem {
 
     this.saveVerificationData();
 
-    // Send confirmation
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Verification Approved')
-      .setDescription(`${user.tag} has been verified as ${verification.gender}`)
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
-        { name: 'Role assigned', value: `<@&${roleId}>`, inline: true }
-      )
-      .setTimestamp();
+    // Send confirmation using embedLoader
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    const confirmEmbed = embedLoader.success(
+      `${user.tag} has been verified as ${verification.gender}`
+    ).addFields(
+      { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+      { name: 'Role assigned', value: `<@&${roleId}>`, inline: true }
+    );
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [confirmEmbed] });
 
     // DM user if enabled
     if (this.config.notifications.dmResults) {
       try {
-        await user.send({
-          embeds: [new EmbedBuilder()
-            .setTitle('✅ Verification Approved')
-            .setDescription(this.config.messages.approved)
-            .setColor(0x00ff00)
-          ]
-        });
+        const dmEmbed = embedLoader.success(this.config.messages.approved);
+        await user.send({ embeds: [dmEmbed] });
       } catch (error) {
         console.log('[GenderVerifySystem] Could not DM user');
       }
@@ -1313,29 +1223,24 @@ export class GenderVerifySystem {
 
     this.saveVerificationData();
 
-    // Send confirmation
-    const embed = new EmbedBuilder()
-      .setTitle('❌ Verification Denied')
-      .setDescription(`${user.tag}'s verification has been denied`)
-      .setColor(0xff0000)
-      .addFields(
-        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
+    // Send confirmation using embedLoader
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    const confirmEmbed = embedLoader.error(
+      `${user.tag}'s verification has been denied`
+    ).addFields(
+      { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+      { name: 'Reason', value: reason }
+    );
 
-    await modalSubmit.editReply({ embeds: [embed] });
+    await modalSubmit.editReply({ embeds: [confirmEmbed] });
 
     // DM user if enabled
     if (this.config.notifications.dmResults) {
       try {
-        await user.send({
-          embeds: [new EmbedBuilder()
-            .setTitle('❌ Verification Denied')
-            .setDescription(this.config.messages.denied.replace('{reason}', reason))
-            .setColor(0xff0000)
-          ]
-        });
+        const dmEmbed = embedLoader.error(
+          this.config.messages.denied.replace('{reason}', reason)
+        );
+        await user.send({ embeds: [dmEmbed] });
       } catch (error) {
         console.log('[GenderVerifySystem] Could not DM user');
       }
@@ -1376,7 +1281,7 @@ export class GenderVerifySystem {
 
     return await guild.roles.create({
       name,
-      color: options.color || 0x99aab5,
+      color: options.color || null,
       hoist: options.hoist || false,
       mentionable: options.mentionable || false,
       reason: 'Gender verification system setup'
@@ -1453,55 +1358,9 @@ export class GenderVerifySystem {
   }
 
   async logAction(guild, data) {
-    const logChannelId = this.config.logChannel || this.moderationSystem.config.logChannel;
-    if (!logChannelId) return;
-
-    const channel = guild.channels.cache.get(logChannelId);
-    if (!channel?.isTextBased()) return;
-
-    const embed = new EmbedBuilder()
-      .setTitle(`Gender Verify: ${data.action}`)
-      .setColor(data.action.includes('Approved') ? 0x00ff00 : 
-                data.action.includes('Denied') ? 0xff0000 : 0x0099ff)
-      .setTimestamp();
-
-    if (data.user) {
-      embed.addFields({ name: 'User', value: `${data.user.tag} (${data.user.id})`, inline: true });
-    }
-
-    if (data.moderator) {
-      embed.addFields({ name: 'Moderator', value: `${data.moderator.tag}`, inline: true });
-    }
-
-    if (data.verificationId) {
-      embed.addFields({ name: 'Verification ID', value: `#${data.verificationId}`, inline: true });
-    }
-
-    if (data.gender) {
-      embed.addFields({ name: 'Gender', value: data.gender, inline: true });
-    }
-
-    if (data.reason) {
-      embed.addFields({ name: 'Reason', value: data.reason });
-    }
-
-    if (data.reviewChannel) {
-      embed.addFields({ name: 'Review Channel', value: data.reviewChannel, inline: true });
-    }
-
-    if (data.additional) {
-      embed.addFields({ name: 'Additional Info', value: data.additional });
-    }
-
-    if (data.target) {
-      embed.addFields({ name: 'Target', value: data.target, inline: true });
-    }
-
-    try {
-      await channel.send({ embeds: [embed] });
-    } catch (error) {
-      console.error('[GenderVerifySystem] Failed to log action:', error);
-    }
+    if (!this.moderationSystem) return;
+    
+    await this.moderationSystem.logAction(guild, data);
   }
 
   /**

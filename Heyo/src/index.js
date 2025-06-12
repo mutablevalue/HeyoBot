@@ -101,6 +101,7 @@ async function main() {
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
   const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
+  friendGroupSystem.embedLoader = embedLoader;
   
  const linkProtection = new LinkProtection(client, config);
   linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
@@ -123,6 +124,7 @@ async function main() {
   const socialLookupSystem = new SocialLookupSystem(client, config);
   const entranceSystem = new EntranceSystem(client, config);
   const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
+  genderVerifySystem.embedLoader = embedLoader;
   const giveawaySystem = new GiveawaySystem(client, config, embedLoader);
 
   // 4) Pass systems into commands that need them

@@ -53,8 +53,8 @@ export class FriendGroupSystem {
     // Get config from config loader
     this.config = this.configLoader.get('friendGroup') || {};
     
-    // Initialize default config if not exists
-    this.initializeDefaultConfig();
+    // Load configuration values - no defaults
+    this.loadConfigValues();
     
     // Active applications tracking
     this.activeApplications = new Map(); // applicationId -> application data
@@ -62,7 +62,7 @@ export class FriendGroupSystem {
     this.acceptedGroups = new Map(); // ownerId -> group data
     
     // Load data
-    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'friend_groups.json');
+    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
     this.loadGroupData();
 
     // Setup event listeners
@@ -77,64 +77,19 @@ export class FriendGroupSystem {
   }
 
   /**
-   * Initialize default configuration
+   * Load configuration values from config
    */
-  initializeDefaultConfig() {
-    // Always reload from config first
-    const currentConfig = this.configLoader.get('friendGroup') || {};
-    console.log(`[FriendGroupSystem] Loading config, current minMembers: ${currentConfig.minMembers}`);
-    
-    const defaults = {
-      enabled: true,
-      dataFile: 'friend_groups.json',
-      minMembers: 6,
-      cooldown: 604800000, // 7 days
-      maxApplicationsPerUser: 1,
-      reviewCategory: 'Staff Review',
-      friendGroupCategory: 'Friendgroups',
-      applicationChannelFormat: 'fg-app-{number}',
-      tempOwnerRole: 'fgowner(temp)',
-      defaultRoleColor: null, // No color by default
-      vcUserLimit: 0, // No limit
-      vcBitrate: 64000,
-      messages: {
-        alreadyHasGroup: '❌ You already own a friend group!',
-        pendingApplication: '⏳ You already have a pending application.',
-        cooldownActive: '⏰ Please wait {time} before applying again.',
-        notEnoughMembers: '❌ You must mention at least {min} members.',
-        applicationSubmitted: '✅ Your friend group application has been submitted!',
-        applicationApproved: '✅ Your friend group application has been approved! Check your DMs for instructions.',
-        applicationDenied: '❌ Your friend group application has been denied. Reason: {reason}',
-        setupRequired: '❌ Friend group system is not set up. An admin needs to run `/setupfg` first.',
-        errorSubmitting: '❌ Failed to submit application. Please try again later.'
-      },
-      notifications: {
-        notifyOnSubmit: true,
-        notifyOnReview: true,
-        dmResults: true
-      },
-      logChannel: null,
-      deleteDataAfterDays: 30,
-      maxActiveGroups: 50,
-      maxActiveApplications: 20,
-      allowedPermissions: [
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.Connect,
-        PermissionFlagsBits.Speak,
-        PermissionFlagsBits.Stream,
-        PermissionFlagsBits.UseVAD
-      ]
-    };
-
-    // Deep merge with current config (current config takes priority)
-    this.config = this.deepMerge(defaults, currentConfig);
+  loadConfigValues() {
+    // Required config values - no defaults
+    if (!this.config.dataFile || !this.config.minMembers || !this.config.cooldown ||
+        !this.config.messages || !this.config.reviewCategory || !this.config.friendGroupCategory) {
+      console.error('[FriendGroupSystem] Missing required configuration values');
+    }
     
     // Ensure guilds object exists
     if (!this.config.guilds) {
       this.config.guilds = {};
     }
-    
-    console.log(`[FriendGroupSystem] Config initialized. Final minMembers: ${this.config.minMembers}`);
   }
 
   /**
@@ -323,17 +278,14 @@ export class FriendGroupSystem {
         notes
       );
 
-      const embed = new EmbedBuilder()
-        .setTitle('✅ Application Submitted')
-        .setDescription(this.config.messages.applicationSubmitted)
-        .setColor(0x00ff00)
-        .addFields(
-          { name: 'Application ID', value: `#${application.id.slice(-4)}`, inline: true },
-          { name: 'Members', value: `${uniqueMembers.length}`, inline: true },
-          { name: 'Status', value: 'Pending Review', inline: true }
-        )
-        .setFooter({ text: 'You will be notified once your application is reviewed.' })
-        .setTimestamp();
+      const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+      const embed = embedLoader.success(
+        this.config.messages.applicationSubmitted
+      ).addFields(
+        { name: 'Application ID', value: `#${application.id.slice(-4)}`, inline: true },
+        { name: 'Members', value: `${uniqueMembers.length}`, inline: true },
+        { name: 'Status', value: 'Pending Review', inline: true }
+      );
 
       await interaction.editReply({ embeds: [embed] });
 
@@ -363,7 +315,7 @@ export class FriendGroupSystem {
       
       console.log(`[FriendGroupSystem] Config reloaded. MinMembers from file: ${currentConfig.minMembers}, Using: ${this.config.minMembers}`);
     } else {
-      console.log('[FriendGroupSystem] No friendGroup config found in file, using defaults');
+      console.log('[FriendGroupSystem] No friendGroup config found in file, using existing');
     }
   }
 
@@ -539,31 +491,28 @@ export class FriendGroupSystem {
       }
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Friend Group Application #${application.id.slice(-4)}`)
-      .setDescription(`User ${user} has submitted a friend group application`)
-      .setColor(0xffff00)
-      .addFields(
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    const embed = embedLoader.createEmbed({
+      description: `User ${user} has submitted a friend group application`,
+      fields: [
         { name: 'Applicant', value: `${user.tag} (${user.id})`, inline: true },
         { name: 'Member Count', value: `${application.members.length}`, inline: true },
         { name: 'Account Age', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
         { name: 'Activity Plan', value: application.activity || 'None provided' },
         { name: 'Members', value: memberList.join('\n').slice(0, 1024) },
         { name: 'Additional Notes', value: application.notes || 'None' }
-      )
-      .setTimestamp();
+      ]
+    });
 
     const actionRow = new ActionRowBuilder()
       .addComponents(
         new ButtonBuilder()
           .setCustomId(`fg_approve_${application.id}`)
           .setLabel('Approve')
-          .setEmoji('✅')
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
           .setCustomId(`fg_deny_${application.id}`)
           .setLabel('Deny')
-          .setEmoji('❌')
           .setStyle(ButtonStyle.Danger)
       );
 
@@ -666,7 +615,7 @@ export class FriendGroupSystem {
 
     if (!application) {
       return interaction.reply({
-        content: '❌ This application no longer exists.',
+        content: 'This application no longer exists.',
         ephemeral: true
       });
     }
@@ -704,14 +653,14 @@ export class FriendGroupSystem {
     
     if (!canReview) {
       return interaction.reply({
-        content: '❌ You do not have permission to review applications.',
+        content: 'You do not have permission to review applications.',
         ephemeral: true
       });
     }
 
     if (application.status !== 'pending') {
       return interaction.reply({
-        content: '❌ This application has already been reviewed.',
+        content: 'This application has already been reviewed.',
         ephemeral: true
       });
     }
@@ -763,7 +712,7 @@ export class FriendGroupSystem {
     
     if (!application) {
       return interaction.reply({
-        content: '❌ Application not found.',
+        content: 'Application not found.',
         ephemeral: true
       });
     }
@@ -784,13 +733,13 @@ export class FriendGroupSystem {
 
     if (!member) {
       return interaction.editReply({
-        content: '❌ User is no longer in the server.'
+        content: 'User is no longer in the server.'
       });
     }
 
     // Create temporary owner role
     const tempRole = await this.createOrGetRole(guild, this.config.tempOwnerRole, {
-      color: 0x808080,
+      color: null,
       hoist: false
     });
 
@@ -815,37 +764,33 @@ export class FriendGroupSystem {
 
     this.saveGroupData();
 
-    // Send confirmation
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Application Approved')
-      .setDescription(`${user.tag}'s friend group application has been approved`)
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
-        { name: 'Temporary role assigned', value: `<@&${tempRole.id}>`, inline: true }
-      )
-      .setTimestamp();
+    // Send confirmation using embedLoader
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    const confirmEmbed = embedLoader.success(
+      `${user.tag}'s friend group application has been approved`
+    ).addFields(
+      { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+      { name: 'Temporary role assigned', value: `<@&${tempRole.id}>`, inline: true }
+    );
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [confirmEmbed] });
 
     // DM user with instructions
     if (this.config.notifications.dmResults) {
       try {
-        const dmEmbed = new EmbedBuilder()
-          .setTitle('✅ Friend Group Application Approved!')
-          .setDescription('Your friend group application has been approved!')
-          .setColor(0x00ff00)
-          .addFields(
-            { 
-              name: 'Next Steps', 
-              value: `1. Use \`/renamefg\` to rename your owner role\n2. Use \`/createfgrole\` to create your friend group role\n3. Use \`/createfgvc\` to create your voice channel\n4. Use \`/fgvc role allow <role>\` to set permissions`
-            },
-            {
-              name: 'Your Members',
-              value: `You applied with ${application.members.length} members`
-            }
-          )
-          .setTimestamp();
+        const dmEmbed = embedLoader.system(
+          'Friend Group Application Approved',
+          'Your friend group application has been approved!'
+        ).addFields(
+          { 
+            name: 'Next Steps', 
+            value: `1. Use \`/renamefg\` to rename your owner role\n2. Use \`/createfgrole\` to create your friend group role\n3. Use \`/createfgvc\` to create your voice channel\n4. Use \`/fgvc role allow <role>\` to set permissions`
+          },
+          {
+            name: 'Your Members',
+            value: `You applied with ${application.members.length} members`
+          }
+        );
 
         await user.send({ embeds: [dmEmbed] });
       } catch (error) {
@@ -892,29 +837,24 @@ export class FriendGroupSystem {
 
     this.saveGroupData();
 
-    // Send confirmation
-    const embed = new EmbedBuilder()
-      .setTitle('❌ Application Denied')
-      .setDescription(`${user.tag}'s friend group application has been denied`)
-      .setColor(0xff0000)
-      .addFields(
-        { name: 'Reviewed by', value: interaction.user.tag, inline: true },
-        { name: 'Reason', value: reason }
-      )
-      .setTimestamp();
+    // Send confirmation using embedLoader
+    const embedLoader = this.moderationSystem.embedLoader || this.client.embedLoader;
+    const confirmEmbed = embedLoader.error(
+      `${user.tag}'s friend group application has been denied`
+    ).addFields(
+      { name: 'Reviewed by', value: interaction.user.tag, inline: true },
+      { name: 'Reason', value: reason }
+    );
 
-    await interaction.editReply({ embeds: [embed] });
+    await interaction.editReply({ embeds: [confirmEmbed] });
 
     // DM user if enabled
     if (this.config.notifications.dmResults) {
       try {
-        await user.send({
-          embeds: [new EmbedBuilder()
-            .setTitle('❌ Friend Group Application Denied')
-            .setDescription(this.config.messages.applicationDenied.replace('{reason}', reason))
-            .setColor(0xff0000)
-          ]
-        });
+        const dmEmbed = embedLoader.error(
+          this.config.messages.applicationDenied.replace('{reason}', reason)
+        );
+        await user.send({ embeds: [dmEmbed] });
       } catch (error) {
         console.log('[FriendGroupSystem] Could not DM user');
       }
@@ -1076,47 +1016,9 @@ export class FriendGroupSystem {
   }
 
   async logAction(guild, data) {
-    const logChannelId = this.config.logChannel || this.moderationSystem.config.logChannel;
-    if (!logChannelId) return;
-
-    const channel = guild.channels.cache.get(logChannelId);
-    if (!channel?.isTextBased()) return;
-
-    const embed = new EmbedBuilder()
-      .setTitle(`Friend Group: ${data.action}`)
-      .setColor(data.action.includes('Approved') ? 0x00ff00 : 
-                data.action.includes('Denied') ? 0xff0000 : 0x0099ff)
-      .setTimestamp();
-
-    if (data.user) {
-      embed.addFields({ name: 'User', value: `${data.user.tag} (${data.user.id})`, inline: true });
-    }
-
-    if (data.moderator) {
-      embed.addFields({ name: 'Moderator', value: `${data.moderator.tag}`, inline: true });
-    }
-
-    if (data.applicationId) {
-      embed.addFields({ name: 'Application ID', value: `#${data.applicationId}`, inline: true });
-    }
-
-    if (data.memberCount) {
-      embed.addFields({ name: 'Member Count', value: String(data.memberCount), inline: true });
-    }
-
-    if (data.reason) {
-      embed.addFields({ name: 'Reason', value: data.reason });
-    }
-
-    if (data.reviewChannel) {
-      embed.addFields({ name: 'Review Channel', value: data.reviewChannel, inline: true });
-    }
-
-    try {
-      await channel.send({ embeds: [embed] });
-    } catch (error) {
-      console.error('[FriendGroupSystem] Failed to log action:', error);
-    }
+    if (!this.moderationSystem) return;
+    
+    await this.moderationSystem.logAction(guild, data);
   }
 
   /**

@@ -9,7 +9,7 @@
  * - System Moderator → Can review verifications only
  * - Regular User → Must complete verification
  */
-import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 let genderVerifySystem = null;
 let moderationSystem = null;
@@ -41,14 +41,6 @@ export const commands = [
           .setDescription('Name for the verified male role')
           .setRequired(false))
       .addStringOption(option =>
-        option.setName('female_role_color')
-          .setDescription('Hex color for female role (e.g., #FF69B4)')
-          .setRequired(false))
-      .addStringOption(option =>
-        option.setName('male_role_color')
-          .setDescription('Hex color for male role (e.g., #0099FF)')
-          .setRequired(false))
-      .addStringOption(option =>
         option.setName('verify_channel_name')
           .setDescription('Name for the verification channel')
           .setRequired(false))
@@ -67,10 +59,6 @@ export const commands = [
       .addStringOption(option =>
         option.setName('verified_vc_name')
           .setDescription('Name for the verified members voice channel')
-          .setRequired(false))
-      .addStringOption(option =>
-        option.setName('message_title')
-          .setDescription('Custom title for the verification message')
           .setRequired(false))
       .addStringOption(option =>
         option.setName('message_description')
@@ -92,7 +80,7 @@ export const commands = [
     async execute(interaction) {
       if (!genderVerifySystem) {
         return interaction.reply({
-          content: '❌ Gender verification system is not initialized.',
+          content: 'Gender verification system is not initialized.',
           ephemeral: true
         });
       }
@@ -112,7 +100,7 @@ export const commands = [
       const hasPermission = (isOwner && ownerBypassEnabled) || isAntiNukeAdmin || isSystemAdmin;
       
       if (!hasPermission) {
-        let errorMessage = '❌ You do not have permission to configure the gender verification system.\n\n';
+        let errorMessage = 'You do not have permission to configure the gender verification system.\n\n';
         errorMessage += 'Required permissions (any of the following):\n';
         errorMessage += '• Server Owner (with `ownerBypass` enabled in config)\n';
         errorMessage += '• AntiNuke Administrator\n';
@@ -135,27 +123,16 @@ export const commands = [
         hasPermission
       });
 
-      // Parse color options
-      const parseColor = (colorStr) => {
-        if (!colorStr) return null;
-        // Remove # if present and convert to integer
-        const hex = colorStr.replace('#', '');
-        return parseInt(hex, 16);
-      };
-
       // Get options
       const options = {
         mainCategoryName: interaction.options.getString('category_name'),
         femaleRoleName: interaction.options.getString('female_role_name'),
         maleRoleName: interaction.options.getString('male_role_name'),
-        femaleRoleColor: parseColor(interaction.options.getString('female_role_color')),
-        maleRoleColor: parseColor(interaction.options.getString('male_role_color')),
         verifyChannelName: interaction.options.getString('verify_channel_name'),
         femaleChannelName: interaction.options.getString('female_channel_name'),
         maleChannelName: interaction.options.getString('male_channel_name'),
         verifiedChannelName: interaction.options.getString('verified_channel_name'),
         verifiedVCName: interaction.options.getString('verified_vc_name'),
-        messageTitle: interaction.options.getString('message_title'),
         messageDescription: interaction.options.getString('message_description'),
         messageFooter: interaction.options.getString('message_footer'),
         buttonLabel: interaction.options.getString('button_label'),
@@ -165,22 +142,22 @@ export const commands = [
       // Setup the system
       const result = await genderVerifySystem.setupGenderVerification(interaction.guild, options);
 
+      const embedLoader = moderationSystem.embedLoader || interaction.client.embedLoader;
+
       if (result.success) {
-        const embed = new EmbedBuilder()
-          .setTitle('✅ Gender Verification System Setup')
-          .setDescription(result.message)
-          .setColor(0x00ff00)
-          .addFields(
-            { name: 'Category', value: `All channels created in **${options.mainCategoryName || 'Gender Verification'}** category`, inline: false },
-            { name: 'Female Role', value: `<@&${result.setup.roles.female}>`, inline: true },
-            { name: 'Male Role', value: `<@&${result.setup.roles.male}>`, inline: true },
-            { name: 'Verify Channel', value: `<#${result.setup.channels.verify}>`, inline: true },
-            { name: 'Female Channel', value: `<#${result.setup.channels.female}>`, inline: true },
-            { name: 'Male Channel', value: `<#${result.setup.channels.male}>`, inline: true },
-            { name: 'Verified Chat', value: `<#${result.setup.channels.verified}>`, inline: true },
-            { name: 'Verified VC', value: `<#${result.setup.channels.verifiedVC}>`, inline: true }
-          )
-          .setTimestamp();
+        const embed = embedLoader.system(
+          'Gender Verification',
+          result.message
+        ).addFields(
+          { name: 'Category', value: `All channels created in **${options.mainCategoryName || 'Gender Verification'}** category`, inline: false },
+          { name: 'Female Role', value: `<@&${result.setup.roles.female}>`, inline: true },
+          { name: 'Male Role', value: `<@&${result.setup.roles.male}>`, inline: true },
+          { name: 'Verify Channel', value: `<#${result.setup.channels.verify}>`, inline: true },
+          { name: 'Female Channel', value: `<#${result.setup.channels.female}>`, inline: true },
+          { name: 'Male Channel', value: `<#${result.setup.channels.male}>`, inline: true },
+          { name: 'Verified Chat', value: `<#${result.setup.channels.verified}>`, inline: true },
+          { name: 'Verified VC', value: `<#${result.setup.channels.verifiedVC}>`, inline: true }
+        );
 
         await interaction.editReply({ embeds: [embed] });
 
@@ -202,11 +179,7 @@ export const commands = [
           });
         }
       } else {
-        const embed = new EmbedBuilder()
-          .setTitle('❌ Setup Failed')
-          .setDescription(result.message)
-          .setColor(0xff0000)
-          .setTimestamp();
+        const embed = embedLoader.error(result.message);
 
         if (result.error) {
           embed.addFields({ name: 'Error', value: result.error });
@@ -226,7 +199,7 @@ export const commands = [
     async execute(interaction) {
       if (!genderVerifySystem) {
         return interaction.reply({
-          content: '❌ Gender verification system is not initialized.',
+          content: 'Gender verification system is not initialized.',
           ephemeral: true
         });
       }
@@ -247,17 +220,17 @@ export const commands = [
       if (!((isOwner && ownerBypassEnabled) || isAntiNukeAdmin || hasModPerms || 
             interaction.member.permissions.has(PermissionFlagsBits.ManageRoles))) {
         return interaction.reply({
-          content: '❌ You do not have permission to view verification stats.',
+          content: 'You do not have permission to view verification stats.',
           ephemeral: true
         });
       }
 
       const stats = genderVerifySystem.getStats();
+      const embedLoader = moderationSystem.embedLoader || interaction.client.embedLoader;
       
-      const embed = new EmbedBuilder()
-        .setTitle('📊 Gender Verification Statistics')
-        .setColor(0x0099ff)
-        .addFields(
+      const embed = embedLoader.createEmbed({
+        description: 'Gender verification system statistics',
+        fields: [
           { name: 'Total Submitted', value: String(stats.totalSubmitted), inline: true },
           { name: 'Total Approved', value: String(stats.totalApproved), inline: true },
           { name: 'Total Denied', value: String(stats.totalDenied), inline: true },
@@ -265,8 +238,8 @@ export const commands = [
           { name: 'Approval Rate', value: stats.totalSubmitted > 0 
             ? `${Math.round((stats.totalApproved / stats.totalSubmitted) * 100)}%` 
             : 'N/A', inline: true }
-        )
-        .setTimestamp();
+        ]
+      });
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
@@ -293,7 +266,7 @@ export const commands = [
     async execute(interaction) {
       if (!genderVerifySystem) {
         return interaction.reply({
-          content: '❌ Gender verification system is not initialized.',
+          content: 'Gender verification system is not initialized.',
           ephemeral: true
         });
       }
@@ -313,7 +286,7 @@ export const commands = [
       const hasPermission = (isOwner && ownerBypassEnabled) || isAntiNukeAdmin || isSystemAdmin;
       
       if (!hasPermission) {
-        let errorMessage = '❌ You do not have permission to manually verify users.\n\n';
+        let errorMessage = 'You do not have permission to manually verify users.\n\n';
         errorMessage += 'Required permissions (any of the following):\n';
         errorMessage += '• Server Owner (with `ownerBypass` enabled in config)\n';
         errorMessage += '• AntiNuke Administrator\n';
@@ -331,7 +304,7 @@ export const commands = [
 
       if (!member) {
         return interaction.reply({
-          content: '❌ User is not in this server.',
+          content: 'User is not in this server.',
           ephemeral: true
         });
       }
@@ -339,7 +312,7 @@ export const commands = [
       const guildSetup = genderVerifySystem.config.guilds?.[interaction.guild.id];
       if (!guildSetup) {
         return interaction.reply({
-          content: '❌ Gender verification is not set up in this server.',
+          content: 'Gender verification is not set up in this server.',
           ephemeral: true
         });
       }
@@ -348,7 +321,7 @@ export const commands = [
       if (member.roles.cache.has(guildSetup.roles.female) || 
           member.roles.cache.has(guildSetup.roles.male)) {
         return interaction.reply({
-          content: '❌ User is already verified.',
+          content: 'User is already verified.',
           ephemeral: true
         });
       }
@@ -363,7 +336,6 @@ export const commands = [
         // Add to accepted users
         genderVerifySystem.acceptedUsers.set(user.id, {
           gender: gender,
-          images: { manual: true },
           approvedAt: new Date().toISOString(),
           approvedBy: interaction.user.id,
           approverTag: interaction.user.tag,
@@ -371,15 +343,13 @@ export const commands = [
         });
         genderVerifySystem.saveVerificationData();
 
-        const embed = new EmbedBuilder()
-          .setTitle('✅ User Manually Verified')
-          .setDescription(`${user} has been verified as ${gender}`)
-          .setColor(0x00ff00)
-          .addFields(
-            { name: 'Verified by', value: interaction.user.tag, inline: true },
-            { name: 'Role assigned', value: `<@&${roleId}>`, inline: true }
-          )
-          .setTimestamp();
+        const embedLoader = moderationSystem.embedLoader || interaction.client.embedLoader;
+        const embed = embedLoader.success(
+          `${user} has been verified as ${gender}`
+        ).addFields(
+          { name: 'Verified by', value: interaction.user.tag, inline: true },
+          { name: 'Role assigned', value: `<@&${roleId}>`, inline: true }
+        );
 
         await interaction.editReply({ embeds: [embed] });
 
@@ -404,7 +374,7 @@ export const commands = [
       } catch (error) {
         console.error('Error in manual verification:', error);
         await interaction.editReply({
-          content: '❌ Failed to verify user. Please check my permissions.'
+          content: 'Failed to verify user. Please check my permissions.'
         });
       }
     }
@@ -419,7 +389,7 @@ export const commands = [
     async execute(interaction) {
       if (!genderVerifySystem) {
         return interaction.reply({
-          content: '❌ Gender verification system is not initialized.',
+          content: 'Gender verification system is not initialized.',
           ephemeral: true
         });
       }
@@ -440,7 +410,7 @@ export const commands = [
       if (!((isOwner && ownerBypassEnabled) || isAntiNukeAdmin || hasModPerms || 
             interaction.member.permissions.has(PermissionFlagsBits.ManageRoles))) {
         return interaction.reply({
-          content: '❌ You do not have permission to check verification status.',
+          content: 'You do not have permission to check verification status.',
           ephemeral: true
         });
       }
@@ -454,10 +424,10 @@ export const commands = [
       const pendingCount = Array.from(genderVerifySystem.activeVerifications.values())
         .filter(v => v.guildId === interaction.guild.id && v.status === 'pending').length;
       
-      const embed = new EmbedBuilder()
-        .setTitle('🔍 Gender Verification Status')
-        .setColor(guildSetup ? 0x00ff00 : 0xff0000)
-        .setTimestamp();
+      const embedLoader = moderationSystem.embedLoader || interaction.client.embedLoader;
+      const embed = embedLoader.createEmbed({
+        description: guildSetup ? 'Gender verification is set up' : 'Gender verification is not set up'
+      });
 
       if (guildSetup) {
         const guild = interaction.guild;
@@ -471,34 +441,25 @@ export const commands = [
         const femaleRole = guild.roles.cache.get(guildSetup.roles.female);
         const maleRole = guild.roles.cache.get(guildSetup.roles.male);
 
-        embed.setDescription('✅ Gender verification is set up')
-          .addFields(
-            { name: 'Setup Date', value: `<t:${Math.floor(new Date(guildSetup.createdAt).getTime() / 1000)}:F>`, inline: false },
-            { name: 'Main Category', value: mainCategory ? mainCategory.name : '❌ Not found', inline: false },
-            { name: 'Verify Channel', value: verifyChannel ? `<#${verifyChannel.id}>` : '❌ Not found', inline: true },
-            { name: 'Female Channel', value: femaleChannel ? `<#${femaleChannel.id}>` : '❌ Not found', inline: true },
-            { name: 'Male Channel', value: maleChannel ? `<#${maleChannel.id}>` : '❌ Not found', inline: true },
-            { name: 'Verified Chat', value: verifiedChannel ? `<#${verifiedChannel.id}>` : '❌ Not found', inline: true },
-            { name: 'Verified VC', value: verifiedVC ? `<#${verifiedVC.id}>` : '❌ Not found', inline: true },
-            { name: 'Review Category', value: reviewCategory ? reviewCategory.name : '❌ Not found', inline: true },
-            { name: 'Female Role', value: femaleRole ? `<@&${femaleRole.id}>` : '❌ Not found', inline: true },
-            { name: 'Male Role', value: maleRole ? `<@&${maleRole.id}>` : '❌ Not found', inline: true },
-            { name: 'Accepted Users', value: String(acceptedCount), inline: true },
-            { name: 'Pending Verifications', value: String(pendingCount), inline: true }
-          );
+        embed.addFields(
+          { name: 'Setup Date', value: `<t:${Math.floor(new Date(guildSetup.createdAt).getTime() / 1000)}:F>`, inline: false },
+          { name: 'Main Category', value: mainCategory ? mainCategory.name : 'Not found', inline: false },
+          { name: 'Verify Channel', value: verifyChannel ? `<#${verifyChannel.id}>` : 'Not found', inline: true },
+          { name: 'Female Channel', value: femaleChannel ? `<#${femaleChannel.id}>` : 'Not found', inline: true },
+          { name: 'Male Channel', value: maleChannel ? `<#${maleChannel.id}>` : 'Not found', inline: true },
+          { name: 'Verified Chat', value: verifiedChannel ? `<#${verifiedChannel.id}>` : 'Not found', inline: true },
+          { name: 'Verified VC', value: verifiedVC ? `<#${verifiedVC.id}>` : 'Not found', inline: true },
+          { name: 'Review Category', value: reviewCategory ? reviewCategory.name : 'Not found', inline: true },
+          { name: 'Female Role', value: femaleRole ? `<@&${femaleRole.id}>` : 'Not found', inline: true },
+          { name: 'Male Role', value: maleRole ? `<@&${maleRole.id}>` : 'Not found', inline: true },
+          { name: 'Accepted Users', value: String(acceptedCount), inline: true },
+          { name: 'Pending Verifications', value: String(pendingCount), inline: true }
+        );
       } else {
-        embed.setDescription('❌ Gender verification is not set up')
-          .addFields(
-            { name: 'Next Step', value: 'An administrator needs to run `/setupgenderverify`' }
-          );
+        embed.addFields(
+          { name: 'Next Step', value: 'An administrator needs to run `/setupgenderverify`' }
+        );
       }
-
-      // Debug info
-      embed.addFields({
-        name: 'Debug Info',
-        value: `System Enabled: ${genderVerifySystem.config.enabled}\nTotal Guilds: ${Object.keys(genderVerifySystem.config.guilds || {}).length}\nThis Guild ID: ${interaction.guild.id}`,
-        inline: false
-      });
 
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
