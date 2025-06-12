@@ -12,34 +12,8 @@ const __dirname = dirname(__filename);
 export class BirthdaySystem {
   constructor(client, config) {
     this.client = client;
-    this.config = config.get('birthday') || {};
+    this.config = config.get('birthday');
     this.embedLoader = null;
-    
-    // Configuration with defaults
-    this.config = {
-      enabled: this.config.enabled ?? true,
-      dataFile: this.config.dataFile || 'birthdays.json',
-      announcementChannel: this.config.announcementChannel || null,
-      birthdayRole: this.config.birthdayRole || null,
-      removeRoleAfterDay: this.config.removeRoleAfterDay ?? true,
-      dmUser: this.config.dmUser ?? true,
-      minimumAge: this.config.minimumAge || 13,
-      maximumAge: this.config.maximumAge || 100,
-      timezone: this.config.timezone || 'UTC',
-      checkTime: this.config.checkTime || '00:00', // Time to check birthdays daily
-      messages: {
-        announcement: this.config.messages?.announcement || '🎉 Happy Birthday {user}! 🎂',
-        dm: this.config.messages?.dm || 'Happy Birthday! 🎉 Hope you have an amazing day!',
-        firstMessage: this.config.messages?.firstMessage || '🎂 It\'s {user}\'s birthday today! 🎉',
-        ...this.config.messages
-      },
-      stats: {
-        totalBirthdays: this.config.stats?.totalBirthdays || 0,
-        birthdaysToday: this.config.stats?.birthdaysToday || 0,
-        ...this.config.stats
-      },
-      ...this.config
-    };
     
     this.dataPath = path.join(__dirname, '..', '..', 'data', this.config.dataFile);
     this.birthdays = new Map();
