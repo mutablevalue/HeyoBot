@@ -1,14 +1,18 @@
 // src/commands/giveaway.js
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
+  PermissionFlagsBits
 } from 'discord.js';
 
 let giveawaySystem = null;
+let embedLoader = null;
 
 export function setGiveawaySystem(system) {
   giveawaySystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const giveawayData = new SlashCommandBuilder()
@@ -190,7 +194,10 @@ export const giveawayRequireData = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!giveawaySystem) {
-    return interaction.reply({ content: '❌ Giveaway system not loaded.', ephemeral: true });
+    return interaction.reply({ 
+      content: embedLoader.format('Giveaway system not loaded.'), 
+      ephemeral: true 
+    });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -213,7 +220,10 @@ export async function execute(interaction) {
 
 export async function executeRequire(interaction) {
   if (!giveawaySystem) {
-    return interaction.reply({ content: '❌ Giveaway system not loaded.', ephemeral: true });
+    return interaction.reply({ 
+      content: embedLoader.format('Giveaway system not loaded.'), 
+      ephemeral: true 
+    });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -223,14 +233,14 @@ export async function executeRequire(interaction) {
   const giveaway = giveawaySystem.activeGiveaways.get(messageId);
   if (!giveaway) {
     return interaction.reply({
-      content: '❌ Giveaway not found.',
+      content: embedLoader.format('Giveaway not found.'),
       ephemeral: true
     });
   }
 
   if (giveaway.status !== 'active') {
     return interaction.reply({
-      content: '❌ Can only modify requirements for active giveaways.',
+      content: embedLoader.format('Can only modify requirements for active giveaways.'),
       ephemeral: true
     });
   }
@@ -256,7 +266,7 @@ async function executeStart(interaction) {
   const duration = parseDuration(durationStr);
   if (!duration) {
     return interaction.reply({
-      content: '❌ Invalid duration format. Use formats like: 1h, 30m, 1d, 1w',
+      content: embedLoader.format('Invalid duration format. Use formats like: 1h, 30m, 1d, 1w'),
       ephemeral: true
     });
   }
@@ -264,7 +274,7 @@ async function executeStart(interaction) {
   // Check minimum duration
   if (duration < 60000) { // 1 minute
     return interaction.reply({
-      content: '❌ Giveaway duration must be at least 1 minute.',
+      content: embedLoader.format('Giveaway duration must be at least 1 minute.'),
       ephemeral: true
     });
   }
@@ -278,27 +288,24 @@ async function executeStart(interaction) {
       duration: duration,
       winnerCount: winners,
       hostId: interaction.user.id,
-      description: description,
-      embedColor: 0xff73fa
+      description: description
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Giveaway Started!')
-      .setDescription(`Successfully started giveaway for **${prize}**`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: embedLoader.format(`Giveaway Started!\n\nSuccessfully started giveaway for **${prize}**`),
+      fields: [
         { name: 'Channel', value: `${channel}`, inline: true },
         { name: 'Winners', value: `${winners}`, inline: true },
         { name: 'Duration', value: formatDuration(duration), inline: true },
         { name: 'Message ID', value: giveawayData.message.id, inline: false }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+      ]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[Giveaway Command] Error starting giveaway:', error);
     await interaction.editReply({
-      content: `❌ Failed to start giveaway: ${error.message}`
+      content: embedLoader.format(`Failed to start giveaway: ${error.message}`)
     });
   }
 }
@@ -309,14 +316,14 @@ async function executeEnd(interaction) {
   const giveaway = giveawaySystem.activeGiveaways.get(messageId);
   if (!giveaway) {
     return interaction.reply({
-      content: '❌ Giveaway not found.',
+      content: embedLoader.format('Giveaway not found.'),
       ephemeral: true
     });
   }
 
   if (giveaway.status !== 'active') {
     return interaction.reply({
-      content: '❌ This giveaway has already ended.',
+      content: embedLoader.format('This giveaway has already ended.'),
       ephemeral: true
     });
   }
@@ -325,11 +332,9 @@ async function executeEnd(interaction) {
 
   await giveawaySystem.endGiveaway(messageId);
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Giveaway Ended')
-    .setDescription(`Ended giveaway for **${giveaway.prize}**`)
-    .setColor(0x00ff00)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: embedLoader.format(`Giveaway Ended\n\nEnded giveaway for **${giveaway.prize}**`)
+  });
 
   await interaction.editReply({ embeds: [embed] });
 }
@@ -341,14 +346,14 @@ async function executeReroll(interaction) {
   const giveaway = giveawaySystem.activeGiveaways.get(messageId);
   if (!giveaway) {
     return interaction.reply({
-      content: '❌ Giveaway not found.',
+      content: embedLoader.format('Giveaway not found.'),
       ephemeral: true
     });
   }
 
   if (giveaway.status !== 'ended') {
     return interaction.reply({
-      content: '❌ Can only reroll ended giveaways.',
+      content: embedLoader.format('Can only reroll ended giveaways.'),
       ephemeral: true
     });
   }
@@ -369,19 +374,17 @@ async function executeCancel(interaction) {
   const giveaway = giveawaySystem.activeGiveaways.get(messageId);
   if (!giveaway) {
     return interaction.reply({
-      content: '❌ Giveaway not found.',
+      content: embedLoader.format('Giveaway not found.'),
       ephemeral: true
     });
   }
 
   await giveawaySystem.cancelGiveaway(messageId, reason);
 
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Giveaway Cancelled')
-    .setDescription(`Cancelled giveaway for **${giveaway.prize}**`)
-    .addFields({ name: 'Reason', value: reason })
-    .setColor(0xff0000)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: embedLoader.format(`Giveaway Cancelled\n\nCancelled giveaway for **${giveaway.prize}**`),
+    fields: [{ name: 'Reason', value: reason }]
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -392,22 +395,15 @@ async function executeList(interaction) {
 
   if (activeGiveaways.length === 0) {
     return interaction.reply({
-      content: '📋 No active giveaways in this server.',
+      content: embedLoader.format('No active giveaways in this server.'),
       ephemeral: true
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('🎉 Active Giveaways')
-    .setColor(0xff73fa)
-    .setTimestamp()
-    .setFooter({ text: `Total: ${activeGiveaways.length} active giveaways` });
-
-  for (const giveaway of activeGiveaways.slice(0, 10)) {
+  const fields = activeGiveaways.slice(0, 10).map(giveaway => {
     const channel = interaction.guild.channels.cache.get(giveaway.channelId);
-    const timeLeft = new Date(giveaway.endTime).getTime() - Date.now();
     
-    embed.addFields({
+    return {
       name: giveaway.prize,
       value: [
         `Channel: ${channel || 'Unknown'}`,
@@ -417,12 +413,15 @@ async function executeList(interaction) {
         `Message ID: ${giveaway.messageId}`
       ].join('\n'),
       inline: false
-    });
-  }
+    };
+  });
 
-  if (activeGiveaways.length > 10) {
-    embed.setFooter({ text: `Showing 10 of ${activeGiveaways.length} giveaways` });
-  }
+  const embed = embedLoader.createEmbed({
+    title: 'Giveaway System',
+    description: embedLoader.format('Active Giveaways'),
+    fields: fields,
+    footer: activeGiveaways.length > 10 ? `Showing 10 of ${activeGiveaways.length} giveaways` : `Total: ${activeGiveaways.length} active giveaways`
+  });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -430,16 +429,16 @@ async function executeList(interaction) {
 async function executeStats(interaction) {
   const stats = giveawaySystem.getStats();
 
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Giveaway Statistics')
-    .setColor(0xff73fa)
-    .addFields(
-      { name: 'Total Giveaways', value: `${stats.stats.totalGiveaways}`, inline: true },
+  const embed = embedLoader.createEmbed({
+    title: 'Giveaway System',
+    description: embedLoader.format('Statistics'),
+    fields: [
+      { name: 'Total Giveaways', value: `${stats.stats.totalGiveaways || 0}`, inline: true },
       { name: 'Active Giveaways', value: `${stats.activeGiveaways}`, inline: true },
-      { name: 'Total Winners', value: `${stats.stats.totalWinners}`, inline: true },
-      { name: 'Total Participants', value: `${stats.stats.totalParticipants}`, inline: true }
-    )
-    .setTimestamp();
+      { name: 'Total Winners', value: `${stats.stats.totalWinners || 0}`, inline: true },
+      { name: 'Total Participants', value: `${stats.stats.totalParticipants || 0}`, inline: true }
+    ]
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -450,7 +449,7 @@ async function executeRequireRole(interaction, giveaway) {
 
   if (!requiredRole && !blacklistRole) {
     return interaction.reply({
-      content: '❌ Please specify at least one role requirement.',
+      content: embedLoader.format('Please specify at least one role requirement.'),
       ephemeral: true
     });
   }
@@ -472,17 +471,18 @@ async function executeRequireRole(interaction, giveaway) {
 
   giveawaySystem.saveGiveawayData();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Requirements Updated')
-    .setDescription('Role requirements have been updated for the giveaway.')
-    .setColor(0x00ff00);
-
+  const fields = [];
   if (requiredRole) {
-    embed.addFields({ name: 'Required Role', value: `${requiredRole}`, inline: true });
+    fields.push({ name: 'Required Role', value: `${requiredRole}`, inline: true });
   }
   if (blacklistRole) {
-    embed.addFields({ name: 'Blacklisted Role', value: `${blacklistRole}`, inline: true });
+    fields.push({ name: 'Blacklisted Role', value: `${blacklistRole}`, inline: true });
   }
+
+  const embed = embedLoader.createEmbed({
+    description: embedLoader.format('Requirements Updated\n\nRole requirements have been updated for the giveaway.'),
+    fields: fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -493,7 +493,7 @@ async function executeRequireAccount(interaction, giveaway) {
 
   if (!accountAge && !serverTime) {
     return interaction.reply({
-      content: '❌ Please specify at least one account requirement.',
+      content: embedLoader.format('Please specify at least one account requirement.'),
       ephemeral: true
     });
   }
@@ -508,17 +508,18 @@ async function executeRequireAccount(interaction, giveaway) {
 
   giveawaySystem.saveGiveawayData();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Requirements Updated')
-    .setDescription('Account requirements have been updated for the giveaway.')
-    .setColor(0x00ff00);
-
+  const fields = [];
   if (accountAge) {
-    embed.addFields({ name: 'Min Account Age', value: `${accountAge} days`, inline: true });
+    fields.push({ name: 'Min Account Age', value: `${accountAge} days`, inline: true });
   }
   if (serverTime) {
-    embed.addFields({ name: 'Min Server Time', value: `${serverTime} days`, inline: true });
+    fields.push({ name: 'Min Server Time', value: `${serverTime} days`, inline: true });
   }
+
+  const embed = embedLoader.createEmbed({
+    description: embedLoader.format('Requirements Updated\n\nAccount requirements have been updated for the giveaway.'),
+    fields: fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -541,11 +542,9 @@ async function executeBonus(interaction, giveaway) {
 
   giveawaySystem.saveGiveawayData();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Bonus Entries Added')
-    .setDescription(`Members with ${role} will receive ${entries}x entries!`)
-    .setColor(0x00ff00)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: embedLoader.format(`Bonus Entries Added\n\nMembers with ${role} will receive ${entries}x entries!`)
+  });
 
   await interaction.reply({ embeds: [embed] });
 }

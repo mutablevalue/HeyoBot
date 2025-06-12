@@ -138,8 +138,10 @@ moderation:
 afk:
   enabled: true
   dataFile: afk_data.json
+  embedColor: 8421504
   removeOnMessage: true
   mentionResponse:
+    showTimestamp: true
     showReason: true
 linkProtection:
   enabled: true
@@ -157,7 +159,7 @@ linkProtection:
     - "1234567890123456789"
   logChannel: "1380422905191731210"
   deleteMessage: true
-  warningMessage: You do not have permission to send links in this channel.  # No emoji
+  warningMessage: You do not have permission to send links in this channel.
   ephemeralWarning: true
 vanity:
   enabled: true
@@ -254,10 +256,16 @@ antiNuke:
     - "1235002473698299956"
     - "456789012345678901"
 j2c:
-  defaultChannelName: Create Voice Channel
+  defaultChannelName: Join to Create
   logChannel: null
   categoryId: null
-  j2cChannelId: "1380618466557558786"
+  j2cChannelId: null
+  defaultCategoryName: Voice Channels
+  guilds:
+    "1379953422241103943":
+      j2cChannelId: "1382574668766121994"
+      categoryId: "1382574667310698516"
+      createdAt: 2025-06-12T04:19:00.215Z
 welcome:
   enabled: false
   channel: null
@@ -266,13 +274,17 @@ welcome:
     description: |-
       Welcome {user} to {server}!
       You are member #{memberCount}
+    color: 65280
     thumbnail: true
     footer: Enjoy your stay!
+    timestamp: true
   dmEnabled: false
   dmMessage:
     title: Welcome to {server}!
     description: Welcome {user}! Were glad to have you here.
+    color: 65280
     footer: Have a great time!
+    timestamp: true
   roleOnJoin: null
   pingUser: false
   deleteAfter: null
@@ -338,6 +350,7 @@ ticketSystem:
   panelEmbed:
     title: Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
+    color: 39423
     footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
     buttonEmoji: 🎫
@@ -429,6 +442,15 @@ filter:
   logChannel: null
   enableLogging: true
   trackStats: true
+giveaway:
+  enabled: true
+  dataFile: giveaways.json
+  dmWinners: true
+  logChannel: null
+  stats:
+    totalGiveaways: 0
+    totalWinners: 0
+    totalParticipants: 0
 embed:
   color: 8388608
   formatters:
@@ -446,7 +468,7 @@ embed:
       suffix: ""
   defaults:
     showFooter: true
-    footerText: "༒"
+    footerText: ༒
     inline: true
 genderVerify:
   enabled: true

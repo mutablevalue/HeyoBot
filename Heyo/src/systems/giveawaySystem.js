@@ -3,7 +3,8 @@ import {
   EmbedBuilder, 
   ActionRowBuilder, 
   ButtonBuilder, 
-  ButtonStyle
+  ButtonStyle,
+  ChannelType
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
@@ -17,10 +18,12 @@ export class GiveawaySystem {
   /**
    * @param {import("discord.js").Client} client
    * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
+   * @param {import("../utils/embedLoader.js").EmbedLoader} embedLoader
    */
-  constructor(client, configLoader) {
+  constructor(client, configLoader, embedLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = embedLoader;
     
     // Get giveaway config from config loader
     this.config = this.configLoader.get('giveaway');
@@ -73,11 +76,7 @@ export class GiveawaySystem {
     try {
       const data = {
         activeGiveaways: Object.fromEntries(this.activeGiveaways),
-        stats: {
-          totalGiveaways: this.config.stats?.totalGiveaways || 0,
-          totalWinners: this.config.stats?.totalWinners || 0,
-          totalParticipants: this.config.stats?.totalParticipants || 0
-        }
+        stats: this.config.stats || {}
       };
 
       const dir = path.dirname(this.dataPath);
@@ -148,9 +147,7 @@ export class GiveawaySystem {
       hostId,
       requirements = {},
       bonusEntries = [],
-      description = null,
-      thumbnailUrl = null,
-      embedColor = this.config.embedColor
+      description = null
     } = options;
 
     const channel = this.client.channels.cache.get(channelId);
@@ -159,24 +156,19 @@ export class GiveawaySystem {
     }
 
     // Generate giveaway ID
-    this.config.stats = this.config.stats || { totalGiveaways: 0 };
-    this.config.stats.totalGiveaways++;
+    this.config.stats = this.config.stats || {};
+    this.config.stats.totalGiveaways = (this.config.stats.totalGiveaways || 0) + 1;
     const giveawayId = `gw_${Date.now()}_${this.config.stats.totalGiveaways}`;
     
     // Calculate end time
     const endTime = new Date(Date.now() + duration);
     
     // Create embed
-    const embed = new EmbedBuilder()
-      .setTitle('🎉 GIVEAWAY 🎉')
-      .setDescription(`${description ? description + '\n\n' : ''}**Prize:** ${prize}\n**Winners:** ${winnerCount}\n**Ends:** <t:${Math.floor(endTime.getTime() / 1000)}:R>`)
-      .setColor(embedColor)
-      .setTimestamp(endTime)
-      .setFooter({ text: `${winnerCount} winner${winnerCount > 1 ? 's' : ''} | Ends at` });
-
-    if (thumbnailUrl) {
-      embed.setThumbnail(thumbnailUrl);
-    }
+    const embedOptions = {
+      title: 'Giveaway',
+      description: `${description ? description + '\n\n' : ''}Prize: ${prize}\nWinners: ${winnerCount}\nEnds: <t:${Math.floor(endTime.getTime() / 1000)}:R>`,
+      fields: []
+    };
 
     // Add requirements field if any
     if (Object.keys(requirements).length > 0) {
@@ -197,8 +189,8 @@ export class GiveawaySystem {
       }
       
       if (reqText.length > 0) {
-        embed.addFields({
-          name: '📋 Requirements',
+        embedOptions.fields.push({
+          name: 'Requirements',
           value: reqText.join('\n'),
           inline: false
         });
@@ -211,8 +203,8 @@ export class GiveawaySystem {
         `• <@&${b.roleId}>: ${b.entries}x entries`
       ).join('\n');
       
-      embed.addFields({
-        name: '🎯 Bonus Entries',
+      embedOptions.fields.push({
+        name: 'Bonus Entries',
         value: bonusText,
         inline: false
       });
@@ -220,18 +212,19 @@ export class GiveawaySystem {
 
     // Add host field
     if (hostId) {
-      embed.addFields({
+      embedOptions.fields.push({
         name: 'Hosted by',
         value: `<@${hostId}>`,
         inline: true
       });
     }
 
+    const embed = this.embedLoader.createEmbed(embedOptions);
+
     // Create button
     const button = new ButtonBuilder()
       .setCustomId('giveaway_enter')
-      .setLabel('Enter Giveaway')
-      .setEmoji(this.config.enterEmoji)
+      .setLabel(`Enter Giveaway`)
       .setStyle(ButtonStyle.Primary);
 
     const row = new ActionRowBuilder().addComponents(button);
@@ -256,9 +249,7 @@ export class GiveawaySystem {
       participants: [],
       winners: [],
       status: 'active',
-      createdAt: new Date().toISOString(),
-      endTime: endTime.toISOString(),
-      ended: false
+      endTime: endTime.toISOString()
     };
 
     // Save giveaway
@@ -269,7 +260,7 @@ export class GiveawaySystem {
     this.scheduleEnd(giveawayData, duration);
 
     // Log creation
-    if (this.config.enableLogging) {
+    if (this.config.logChannel) {
       await this.logAction(channel.guild, {
         action: 'Giveaway Created',
         giveaway: giveawayData,
@@ -307,7 +298,7 @@ export class GiveawaySystem {
     const giveaway = this.activeGiveaways.get(interaction.message.id);
     if (!giveaway) {
       return interaction.reply({
-        content: '❌ This giveaway is no longer active.',
+        content: this.embedLoader.format('This giveaway is no longer active.'),
         ephemeral: true
       });
     }
@@ -336,7 +327,7 @@ export class GiveawaySystem {
       this.saveGiveawayData();
       
       return interaction.reply({
-        content: '❌ You have left the giveaway.',
+        content: this.embedLoader.format('You have left the giveaway.'),
         ephemeral: true
       });
     }
@@ -345,7 +336,7 @@ export class GiveawaySystem {
     const eligible = await this.checkRequirements(interaction.member, giveaway);
     if (!eligible.allowed) {
       return interaction.reply({
-        content: `❌ You do not meet the requirements:\n${eligible.reasons.join('\n')}`,
+        content: this.embedLoader.format(`You do not meet the requirements:\n${eligible.reasons.join('\n')}`),
         ephemeral: true
       });
     }
@@ -359,7 +350,6 @@ export class GiveawaySystem {
       giveaway.participants.push(userId);
     }
     
-    this.config.stats = this.config.stats || {};
     this.config.stats.totalParticipants = (this.config.stats.totalParticipants || 0) + 1;
     
     this.saveGiveawayData();
@@ -368,7 +358,7 @@ export class GiveawaySystem {
     await this.updateGiveawayMessage(giveaway);
 
     await interaction.reply({
-      content: `✅ You have entered the giveaway!${bonusMultiplier > 1 ? ` (${bonusMultiplier}x entries)` : ''}`,
+      content: this.embedLoader.format(`You have entered the giveaway!${bonusMultiplier > 1 ? ` (${bonusMultiplier}x entries)` : ''}`),
       ephemeral: true
     });
   }
@@ -471,7 +461,6 @@ export class GiveawaySystem {
       const button = new ButtonBuilder()
         .setCustomId('giveaway_enter')
         .setLabel(`Enter Giveaway (${uniqueParticipants})`)
-        .setEmoji(this.config.enterEmoji)
         .setStyle(ButtonStyle.Primary);
 
       const row = new ActionRowBuilder().addComponents(button);
@@ -492,7 +481,6 @@ export class GiveawaySystem {
 
     giveaway.ended = true;
     giveaway.status = 'ended';
-    giveaway.endedAt = new Date().toISOString();
 
     try {
       const channel = this.client.channels.cache.get(giveaway.channelId);
@@ -504,17 +492,15 @@ export class GiveawaySystem {
       giveaway.winners = winners;
 
       // Update stats
-      this.config.stats = this.config.stats || {};
       this.config.stats.totalWinners = (this.config.stats.totalWinners || 0) + winners.length;
 
       // Update embed
       const embed = EmbedBuilder.from(message.embeds[0]);
       
       if (winners.length > 0) {
-        embed.setTitle('🎉 GIVEAWAY ENDED 🎉')
-          .setColor(0x00ff00)
+        embed.setTitle(this.embedLoader.format('Giveaway Ended', 'header'))
           .addFields({
-            name: '🏆 Winner' + (winners.length > 1 ? 's' : ''),
+            name: 'Winner' + (winners.length > 1 ? 's' : ''),
             value: winners.map(id => `<@${id}>`).join('\n'),
             inline: false
           });
@@ -523,7 +509,6 @@ export class GiveawaySystem {
         const button = new ButtonBuilder()
           .setCustomId('giveaway_reroll')
           .setLabel('Reroll')
-          .setEmoji('🔄')
           .setStyle(ButtonStyle.Secondary);
 
         const row = new ActionRowBuilder().addComponents(button);
@@ -542,15 +527,14 @@ export class GiveawaySystem {
           }
         }
       } else {
-        embed.setTitle('🎉 GIVEAWAY ENDED 🎉')
-          .setColor(0xff0000)
-          .setDescription(`**Prize:** ${giveaway.prize}\n\nNo valid participants.`);
+        embed.setTitle(this.embedLoader.format('Giveaway Ended', 'header'))
+          .setDescription(`Prize: ${giveaway.prize}\n\nNo valid participants.`);
 
         await message.edit({ embeds: [embed], components: [] });
       }
 
       // Log end
-      if (this.config.enableLogging) {
+      if (this.config.logChannel) {
         await this.logAction(channel.guild, {
           action: 'Giveaway Ended',
           giveaway: giveaway,
@@ -611,7 +595,7 @@ export class GiveawaySystem {
 
     if (!canReroll) {
       return interaction.reply({
-        content: '❌ You do not have permission to reroll this giveaway.',
+        content: this.embedLoader.format('You do not have permission to reroll this giveaway.'),
         ephemeral: true
       });
     }
@@ -623,7 +607,7 @@ export class GiveawaySystem {
 
     if (eligibleParticipants.length === 0) {
       return interaction.reply({
-        content: '❌ No eligible participants left for reroll.',
+        content: this.embedLoader.format('No eligible participants left for reroll.'),
         ephemeral: true
       });
     }
@@ -637,7 +621,7 @@ export class GiveawaySystem {
 
     if (newWinners.length === 0) {
       return interaction.reply({
-        content: '❌ Could not select a new winner.',
+        content: this.embedLoader.format('Could not select a new winner.'),
         ephemeral: true
       });
     }
@@ -647,7 +631,7 @@ export class GiveawaySystem {
     this.saveGiveawayData();
 
     await interaction.reply({
-      content: `🎉 Reroll winner: ${newWinners.map(id => `<@${id}>`).join(', ')}! You won **${giveaway.prize}**!`
+      content: `Reroll winner: ${newWinners.map(id => `<@${id}>`).join(', ')}! You won **${giveaway.prize}**!`
     });
 
     // DM new winner if enabled
@@ -658,7 +642,7 @@ export class GiveawaySystem {
     }
 
     // Log reroll
-    if (this.config.enableLogging) {
+    if (this.config.logChannel) {
       await this.logAction(interaction.guild, {
         action: 'Giveaway Rerolled',
         giveaway: giveaway,
@@ -678,15 +662,14 @@ export class GiveawaySystem {
       const user = await this.client.users.fetch(winnerId);
       const guild = this.client.guilds.cache.get(giveaway.guildId);
 
-      const embed = new EmbedBuilder()
-        .setTitle('🎉 Congratulations! You Won!')
-        .setDescription(`You won the giveaway in **${guild.name}**!`)
-        .addFields(
+      const embed = this.embedLoader.createEmbed({
+        title: 'Giveaway',
+        description: this.embedLoader.format(`Congratulations! You Won!\n\nYou won the giveaway in **${guild.name}**!`),
+        fields: [
           { name: 'Prize', value: giveaway.prize, inline: true },
           { name: 'Hosted by', value: giveaway.hostId ? `<@${giveaway.hostId}>` : 'System', inline: true }
-        )
-        .setColor(0xffd700)
-        .setTimestamp();
+        ]
+      });
 
       await user.send({ embeds: [embed] });
     } catch (error) {
@@ -704,18 +687,16 @@ export class GiveawaySystem {
     if (!giveaway) return;
 
     giveaway.status = 'cancelled';
-    giveaway.cancelledAt = new Date().toISOString();
-    giveaway.cancelReason = reason;
 
     try {
       const channel = this.client.channels.cache.get(giveaway.channelId);
       const message = await channel?.messages.fetch(messageId);
       
       if (message) {
-        const embed = EmbedBuilder.from(message.embeds[0])
-          .setTitle('❌ GIVEAWAY CANCELLED')
-          .setColor(0xff0000)
-          .setDescription(`This giveaway has been cancelled.\n\n**Reason:** ${reason}`);
+        const embed = this.embedLoader.createEmbed({
+          title: 'Giveaway Cancelled',
+          description: `This giveaway has been cancelled.\n\nReason: ${reason}`
+        });
 
         await message.edit({ embeds: [embed], components: [] });
       }
@@ -734,7 +715,7 @@ export class GiveawaySystem {
     this.saveGiveawayData();
 
     // Log cancellation
-    if (this.config.enableLogging) {
+    if (this.config.logChannel) {
       const guild = this.client.guilds.cache.get(giveaway.guildId);
       await this.logAction(guild, {
         action: 'Giveaway Cancelled',
@@ -750,42 +731,34 @@ export class GiveawaySystem {
    * @param {Object} data
    */
   async logAction(guild, data) {
-    if (!this.config.enableLogging || !this.config.logChannel) return;
+    if (!this.config.logChannel) return;
 
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Giveaway System: ${data.action}`)
-      .setColor(
-        data.action.includes('Created') ? 0x00ff00 :
-        data.action.includes('Ended') ? 0xffd700 :
-        data.action.includes('Cancelled') ? 0xff0000 :
-        0x0099ff
-      )
-      .setTimestamp();
+    const fields = [];
 
     if (data.giveaway) {
-      embed.addFields(
+      fields.push(
         { name: 'Prize', value: data.giveaway.prize, inline: true },
         { name: 'Winners', value: `${data.giveaway.winnerCount}`, inline: true }
       );
     }
 
     if (data.host) {
-      embed.addFields({ name: 'Host', value: data.host, inline: true });
+      fields.push({ name: 'Host', value: data.host, inline: true });
     }
 
     if (data.winners) {
-      embed.addFields({ name: 'Winners', value: data.winners || 'None', inline: false });
+      fields.push({ name: 'Winners', value: data.winners || 'None', inline: false });
     }
 
     if (data.newWinners) {
-      embed.addFields({ name: 'New Winners', value: data.newWinners, inline: false });
+      fields.push({ name: 'New Winners', value: data.newWinners, inline: false });
     }
 
     if (data.rerolledBy) {
-      embed.addFields({ 
+      fields.push({ 
         name: 'Rerolled By', 
         value: `${data.rerolledBy.tag} (${data.rerolledBy.id})`, 
         inline: true 
@@ -793,8 +766,14 @@ export class GiveawaySystem {
     }
 
     if (data.reason) {
-      embed.addFields({ name: 'Reason', value: data.reason, inline: false });
+      fields.push({ name: 'Reason', value: data.reason, inline: false });
     }
+
+    const embed = this.embedLoader.createEmbed({
+      title: 'Giveaway System',
+      description: this.embedLoader.format(data.action),
+      fields: fields
+    });
 
     try {
       await channel.send({ embeds: [embed] });
@@ -810,11 +789,7 @@ export class GiveawaySystem {
     return {
       enabled: this.config.enabled,
       activeGiveaways: this.activeGiveaways.size,
-      stats: this.config.stats || {
-        totalGiveaways: 0,
-        totalWinners: 0,
-        totalParticipants: 0
-      }
+      stats: this.config.stats || {}
     };
   }
 

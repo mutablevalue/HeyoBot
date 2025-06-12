@@ -76,7 +76,10 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!interaction.guild) {
-    await interaction.reply({ content: 'This command can only be used in a server.', ephemeral: true });
+    await interaction.reply({ 
+      content: embedLoader.format('This command can only be used in a server.'), 
+      ephemeral: true 
+    });
     return;
   }
   
@@ -84,9 +87,9 @@ export async function execute(interaction) {
   
   // Handle help command
   if (subcommand === 'help') {
-    const embed = embedLoader.createEmbed()
-      .setTitle('Voice Channel Commands')
-      .setDescription(
+    const embed = embedLoader.createEmbed({
+      title: 'Voice Channel Commands',
+      description: 
         'Commands for managing your created voice channel\n\n' +
         '/vc lock - Lock your voice channel (prevent new users from joining)\n' +
         '/vc unlock - Unlock your voice channel\n' +
@@ -94,8 +97,9 @@ export async function execute(interaction) {
         '/vc allow <user> - Allow a rejected user back into your channel\n' +
         '/vc limit <number> - Set user limit for your channel (0 for unlimited)\n' +
         '/vc rename <name> - Rename your voice channel\n\n' +
-        'You must be in your created voice channel to use these commands'
-      );
+        'You must be in your created voice channel to use these commands',
+      formatDescription: false
+    });
     
     await interaction.reply({ embeds: [embed], ephemeral: true });
     return;
@@ -104,15 +108,17 @@ export async function execute(interaction) {
   // Check if user is in a voice channel
   const voiceChannel = interaction.member.voice.channel;
   if (!voiceChannel) {
-    const embed = embedLoader.createEmbed()
-      .setDescription('You must be in a voice channel to use this command');
+    const embed = embedLoader.createEmbed({
+      description: embedLoader.format('You must be in a voice channel to use this command')
+    });
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
   // Check if user owns the channel
   if (!j2cManagerInstance.isUserOwner(interaction.user.id, voiceChannel.id)) {
-    const embed = embedLoader.createEmbed()
-      .setDescription('You do not own this voice channel');
+    const embed = embedLoader.createEmbed({
+      description: embedLoader.format('You do not own this voice channel')
+    });
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
@@ -121,8 +127,11 @@ export async function execute(interaction) {
     case 'lock': {
       const result = await j2cManagerInstance.lockChannel(voiceChannel, interaction.user.id);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? 'Your voice channel has been locked. No new users can join.' : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          'Your voice channel has been locked. No new users can join.' : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -131,8 +140,11 @@ export async function execute(interaction) {
     case 'unlock': {
       const result = await j2cManagerInstance.unlockChannel(voiceChannel, interaction.user.id);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? 'Your voice channel has been unlocked. New users can join.' : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          'Your voice channel has been unlocked. New users can join.' : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -142,8 +154,11 @@ export async function execute(interaction) {
       const targetUser = interaction.options.getUser('user');
       const result = await j2cManagerInstance.rejectUser(voiceChannel, interaction.user.id, targetUser.id);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? `${targetUser.username} has been rejected from your voice channel` : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          `${targetUser.username} has been rejected from your voice channel` : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -153,8 +168,11 @@ export async function execute(interaction) {
       const targetUser = interaction.options.getUser('user');
       const result = await j2cManagerInstance.allowUser(voiceChannel, interaction.user.id, targetUser.id);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? `${targetUser.username} can now join your voice channel again` : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          `${targetUser.username} can now join your voice channel again` : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -164,8 +182,11 @@ export async function execute(interaction) {
       const limit = interaction.options.getInteger('limit');
       const result = await j2cManagerInstance.setUserLimit(voiceChannel, interaction.user.id, limit);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? `User limit set to ${limit === 0 ? 'unlimited' : limit}` : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          `User limit set to ${limit === 0 ? 'unlimited' : limit}` : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -175,8 +196,11 @@ export async function execute(interaction) {
       const newName = interaction.options.getString('name');
       const result = await j2cManagerInstance.renameChannel(voiceChannel, interaction.user.id, newName);
       
-      const embed = embedLoader.createEmbed()
-        .setDescription(result.success ? `Channel renamed to: ${newName}` : result.message);
+      const embed = embedLoader.createEmbed({
+        description: embedLoader.format(result.success ? 
+          `Channel renamed to: ${newName}` : 
+          result.message)
+      });
       
       await interaction.reply({ embeds: [embed] });
       break;

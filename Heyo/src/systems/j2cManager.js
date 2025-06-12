@@ -15,7 +15,7 @@ export class J2CManager extends EventEmitter {
     this.client = client;
     this.config = configLoader;
     
-    // Map to store J2C channel info: guildId -> j2cChannelId
+    // Map to store J2C channel info: guildId -> { j2cChannelId, categoryId }
     this.j2cChannels = new Map();
     
     // Map to store created channels: channelId -> { ownerId, guildId }
@@ -26,25 +26,31 @@ export class J2CManager extends EventEmitter {
 
     // Load persisted J2C channel after client is ready
     this.client.once('ready', () => {
-      this._loadPersistedJ2CChannel();
+      this._loadPersistedJ2CData();
     });
 
     this.setupEventHandlers();
   }
 
   /**
-   * Load persisted J2C channel from config
+   * Load persisted J2C data from config
    */
-  _loadPersistedJ2CChannel() {
-    const persistedId = this.config.get("j2c.j2cChannelId");
-    if (!persistedId) return;
-
-    // Find the guild that has this voice channel
-    for (const [guildId, guild] of this.client.guilds.cache) {
-      const channel = guild.channels.cache.get(persistedId);
+  _loadPersistedJ2CData() {
+    const j2cData = this.config.get("j2c.guilds") || {};
+    
+    for (const [guildId, data] of Object.entries(j2cData)) {
+      const guild = this.client.guilds.cache.get(guildId);
+      if (!guild) continue;
+      
+      // Verify channel still exists
+      const channel = guild.channels.cache.get(data.j2cChannelId);
+      const category = guild.channels.cache.get(data.categoryId);
+      
       if (channel && channel.type === ChannelType.GuildVoice) {
-        this.j2cChannels.set(guildId, persistedId);
-        break;
+        this.j2cChannels.set(guildId, {
+          j2cChannelId: data.j2cChannelId,
+          categoryId: category ? data.categoryId : null
+        });
       }
     }
   }
@@ -80,9 +86,10 @@ export class J2CManager extends EventEmitter {
       }
 
       // If J2C channel itself is deleted, clear from config
-      if (this.j2cChannels.has(channel.guild.id) && this.j2cChannels.get(channel.guild.id) === channel.id) {
+      const j2cData = this.j2cChannels.get(channel.guild.id);
+      if (j2cData && j2cData.j2cChannelId === channel.id) {
         this.j2cChannels.delete(channel.guild.id);
-        this.config.set("j2c.j2cChannelId", null);
+        this.config.set(`j2c.guilds.${channel.guild.id}`, null);
         this.config.save().catch(console.error);
       }
     });
@@ -93,8 +100,8 @@ export class J2CManager extends EventEmitter {
     if (!member || !channel) return;
 
     // Check if this is the J2C channel
-    const j2cChannelId = this.j2cChannels.get(guild.id);
-    if (!j2cChannelId || channel.id !== j2cChannelId) return;
+    const j2cData = this.j2cChannels.get(guild.id);
+    if (!j2cData || channel.id !== j2cData.j2cChannelId) return;
 
     // Check if user already owns a channel
     if (this.userChannels.has(member.id)) {
@@ -110,14 +117,14 @@ export class J2CManager extends EventEmitter {
       }
     }
 
-    // Create new voice channel
-    const parentCategory = channel.parentId ? channel.parent : null;
+    // Get the category to create channel in
+    const categoryId = j2cData.categoryId;
     const channelName = `${member.displayName}'s Channel`;
     
     const newChannel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildVoice,
-      parent: parentCategory,
+      parent: categoryId,
       permissionOverwrites: [
         {
           id: member.id,
@@ -216,29 +223,36 @@ export class J2CManager extends EventEmitter {
   /**
    * Setup J2C channel for a guild
    */
-  async setupJ2C(guild, channelName) {
+  async setupJ2C(guild, channelName, categoryName) {
     // Check if already exists
-    if (this.j2cChannels.has(guild.id)) {
-      const existingId = this.j2cChannels.get(guild.id);
-      const existing = guild.channels.cache.get(existingId);
-      if (existing) {
-        return { success: false, message: 'J2C channel already exists', channel: existing };
+    const existingData = this.j2cChannels.get(guild.id);
+    if (existingData) {
+      const existingChannel = guild.channels.cache.get(existingData.j2cChannelId);
+      if (existingChannel) {
+        return { success: false, message: 'J2C channel already exists', channel: existingChannel };
       }
       // Clean up stale reference
       this.j2cChannels.delete(guild.id);
-      this.config.set("j2c.j2cChannelId", null);
+      this.config.set(`j2c.guilds.${guild.id}`, null);
       await this.config.save();
     }
 
-    // Get category from config if specified
-    const categoryId = this.config.get('j2c.categoryId');
-    const category = categoryId ? guild.channels.cache.get(categoryId) : null;
+    // Create category for J2C channels
+    const category = await guild.channels.create({
+      name: categoryName || this.config.get('j2c.defaultCategoryName') || 'Voice Channels',
+      type: ChannelType.GuildCategory,
+      permissionOverwrites: [
+        {
+          id: guild.id,
+          allow: [PermissionFlagsBits.ViewChannel]
+        }
+      ]
+    });
 
-    // Create J2C channel
+    // Create J2C channel (NOT in the category)
     const j2cChannel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildVoice,
-      parent: category,
       permissionOverwrites: [
         {
           id: guild.id,
@@ -248,11 +262,24 @@ export class J2CManager extends EventEmitter {
     });
 
     // Save to memory and config
-    this.j2cChannels.set(guild.id, j2cChannel.id);
-    this.config.set("j2c.j2cChannelId", j2cChannel.id);
+    this.j2cChannels.set(guild.id, {
+      j2cChannelId: j2cChannel.id,
+      categoryId: category.id
+    });
+    
+    this.config.set(`j2c.guilds.${guild.id}`, {
+      j2cChannelId: j2cChannel.id,
+      categoryId: category.id,
+      createdAt: new Date().toISOString()
+    });
+    
     await this.config.save();
 
-    return { success: true, channel: j2cChannel };
+    return { 
+      success: true, 
+      channel: j2cChannel,
+      category: category 
+    };
   }
 
   getChannelOwner(channelId) {
