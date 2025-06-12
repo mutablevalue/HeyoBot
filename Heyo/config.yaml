@@ -26,9 +26,9 @@ rateLimit:
     whitelisted: 15
     moderator: 20
   customRoles:
-    "1234567890123456789": 30
-    "9876543210987654321": 25
-  message: You're sending commands too quickly! Please wait {time} seconds.
+    "": 0
+    "": 0
+  message: Please wait {time} till sending another command.
   permissionRoles:
     antiNukeAdmin: []
     administrator: []
@@ -43,8 +43,8 @@ moderation:
         - "1162730217895379025"
         - "825436754680348683"
       roles:
-        - "1235002473698299956"
-        - "1380398417079046205"
+        - ""
+        - ""
       commands:
         - ban
         - unban
@@ -70,9 +70,9 @@ moderation:
         - message
     moderator:
       users:
-        - "345678901234567890"
+        - ""
       roles:
-        - "456789012345678901"
+        - ""
       commands:
         - lockchannel
         - unlockchannel
@@ -102,24 +102,24 @@ moderation:
   logChannel: "1380422918017650719"
   cooldowns:
     default: 3
-    nuke: 30
-    setupperms: 60
-    forcenickname: 5
-    unforcenickname: 5
+    nuke: 60
+    setupperms: 1000
+    forcenickname: 10
+    unforcenickname: 10
     mute: 5
     unmute: 5
     purge: 10
-    createchannel: 10
-    deletechannel: 15
-    restoreroles: 10
-    ban: 5
-    kick: 5
-    timeout: 5
-    role: 3
-    setupskullboard: 30
-    setupgenderverify: 60
-    verifyuser: 10
-    verifylist: 5
+    createchannel: 5
+    deletechannel: 10
+    restoreroles: 5
+    ban: 15
+    kick: 10
+    timeout: 8
+    role: 5
+    setupskullboard: 1000
+    setupgenderverify: 1000
+    verifyuser: 5
+    verifylist: 10
   forcedNicknames:
     dataFile: forced_nicknames.json
     checkInterval: 5000
@@ -131,7 +131,7 @@ moderation:
   multiUserCommands:
     ban:
       enabled: true
-      requiresPermissionLevel: 2
+      requiresPermissionLevel: 3
       maxUsers: 10
       cooldownMultiplier: 2
     kick:
@@ -183,7 +183,7 @@ linkProtection:
     - "1234567890123456789"
   logChannel: "1380422905191731210"
   deleteMessage: true
-  warningMessage: You do not have permission to send links in this channel.
+  warningMessage: Stop posting links.
   ephemeralWarning: true
 vanity:
   enabled: true
