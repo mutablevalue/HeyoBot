@@ -1,6 +1,5 @@
 // src/systems/banAppealSystem.js
 import { 
-  EmbedBuilder, 
   ActionRowBuilder, 
   ButtonBuilder, 
   ButtonStyle,
@@ -24,85 +23,39 @@ export class BanAppealSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = null; // Set by index.js
     
     // Load ban appeal config
     const appealConfig = this.configLoader.get('banAppeal') || {};
     this.config = {
-      enabled: appealConfig.enabled ?? true,
-      dataFile: appealConfig.dataFile || 'ban_appeals.json',
+      enabled: appealConfig.enabled,
+      dataFile: appealConfig.dataFile,
       
       // Appeal settings
-      appealChannel: appealConfig.appealChannel || null, // Channel to send appeals to
-      dmMessage: appealConfig.dmMessage || {
-        enabled: true,
-        delay: appealConfig.dmMessage?.delay || 5000, // 5 seconds delay after ban
-        content: appealConfig.dmMessage?.content || 'You have been banned from **{server}**. If you believe this was a mistake, you can submit an appeal.',
-        embedTitle: appealConfig.dmMessage?.embedTitle || 'Ban Appeal',
-        embedDescription: appealConfig.dmMessage?.embedDescription || 'Click the button below to submit a ban appeal. Please be honest and provide as much detail as possible.',
-        embedColor: appealConfig.dmMessage?.embedColor || 0xff0000,
-        buttonLabel: appealConfig.dmMessage?.buttonLabel || 'Submit Appeal',
-        buttonEmoji: appealConfig.dmMessage?.buttonEmoji || '📝'
-      },
+      appealChannel: appealConfig.appealChannel,
+      dmMessage: appealConfig.dmMessage,
       
       // Appeal form fields
-      appealForm: appealConfig.appealForm || {
-        reasonField: {
-          label: 'Why were you banned?',
-          placeholder: 'Please explain what led to your ban',
-          style: 'paragraph',
-          minLength: 20,
-          maxLength: 500,
-          required: true
-        },
-        explanationField: {
-          label: 'Why should you be unbanned?',
-          placeholder: 'Explain why you deserve a second chance',
-          style: 'paragraph',
-          minLength: 50,
-          maxLength: 1000,
-          required: true
-        },
-        changesField: {
-          label: 'What will you do differently?',
-          placeholder: 'How will you ensure this doesn\'t happen again?',
-          style: 'paragraph',
-          minLength: 30,
-          maxLength: 500,
-          required: true
-        },
-        additionalField: {
-          label: 'Additional information',
-          placeholder: 'Any other information you\'d like to add (optional)',
-          style: 'paragraph',
-          minLength: 0,
-          maxLength: 500,
-          required: false
-        }
-      },
+      appealForm: appealConfig.appealForm,
       
       // Cooldowns
-      appealCooldown: appealConfig.appealCooldown || 604800000, // 7 days in ms
-      maxAppeals: appealConfig.maxAppeals || 3, // Max appeals per user
+      appealCooldown: appealConfig.appealCooldown,
+      maxAppeals: appealConfig.maxAppeals,
       
       // Notifications
-      notifyRole: appealConfig.notifyRole || null, // Role to ping for new appeals
+      notifyRole: appealConfig.notifyRole,
       
       // Auto responses
-      autoResponses: {
-        submitted: appealConfig.autoResponses?.submitted || 'Your appeal has been submitted successfully. You will be notified when a decision is made.',
-        cooldown: appealConfig.autoResponses?.cooldown || 'You must wait {time} before submitting another appeal.',
-        maxReached: appealConfig.autoResponses?.maxReached || 'You have reached the maximum number of appeals allowed.',
-        error: appealConfig.autoResponses?.error || 'An error occurred while submitting your appeal. Please try again later.'
-      },
+      autoResponses: appealConfig.autoResponses,
       
       // Logging
-      logChannel: appealConfig.logChannel || null,
-      enableLogging: appealConfig.enableLogging ?? true
+      logChannel: appealConfig.logChannel,
+      enableLogging: appealConfig.enableLogging
     };
 
     // Appeal tracking
-    this.appeals = new Map(); // userId -> appeal data
-    this.pendingAppeals = new Map(); // messageId -> appeal data
+    this.appeals = new Map();
+    this.pendingAppeals = new Map();
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -170,20 +123,16 @@ export class BanAppealSystem {
    */
   async sendBanAppealDM(ban) {
     try {
-      const embed = new EmbedBuilder()
-        .setTitle(this.config.dmMessage.embedTitle)
-        .setDescription(
-          this.config.dmMessage.content.replace('{server}', ban.guild.name) + '\n\n' +
+      const embed = this.embedLoader.createEmbed({
+        description: this.config.dmMessage.content.replace('{server}', ban.guild.name) + '\n\n' +
           this.config.dmMessage.embedDescription
-        )
-        .setColor(this.config.dmMessage.embedColor)
-        .setFooter({ text: ban.guild.name, iconURL: ban.guild.iconURL() })
-        .setTimestamp();
+      });
+
+      embed.setFooter({ text: ban.guild.name, iconURL: ban.guild.iconURL() });
 
       const button = new ButtonBuilder()
         .setCustomId(`appeal_start_${ban.guild.id}_${ban.user.id}`)
         .setLabel(this.config.dmMessage.buttonLabel)
-        .setEmoji(this.config.dmMessage.buttonEmoji)
         .setStyle(ButtonStyle.Primary);
 
       const row = new ActionRowBuilder().addComponents(button);
@@ -431,19 +380,19 @@ export class BanAppealSystem {
       }
 
       // Create appeal embed
-      const embed = new EmbedBuilder()
-        .setTitle('📝 New Ban Appeal')
-        .setDescription(`Appeal from **${appealData.userTag}** (${appealData.userId})`)
-        .setColor(0x0099ff)
-        .addFields(
+      const embed = this.embedLoader.createEmbed({
+        title: 'Ban Appeal',
+        description: `Appeal from **${appealData.userTag}** (${appealData.userId})`,
+        formatDescription: false,
+        fields: [
           { name: 'Why were you banned?', value: appealData.reason, inline: false },
           { name: 'Why should you be unbanned?', value: appealData.explanation, inline: false },
           { name: 'What will you do differently?', value: appealData.changes, inline: false },
           { name: 'Additional Information', value: appealData.additional, inline: false },
           { name: 'Submitted', value: `<t:${Math.floor(new Date(appealData.submittedAt).getTime() / 1000)}:F>`, inline: true },
           { name: 'Appeal #', value: `${guildAppeals.length}/${this.config.maxAppeals}`, inline: true }
-        )
-        .setTimestamp();
+        ]
+      });
 
       // Add decision buttons
       const buttons = new ActionRowBuilder()
@@ -451,12 +400,10 @@ export class BanAppealSystem {
           new ButtonBuilder()
             .setCustomId(`appeal_approve_${appealData.userId}_${Date.now()}`)
             .setLabel('Approve')
-            .setEmoji('✅')
             .setStyle(ButtonStyle.Success),
           new ButtonBuilder()
             .setCustomId(`appeal_deny_${appealData.userId}_${Date.now()}`)
             .setLabel('Deny')
-            .setEmoji('❌')
             .setStyle(ButtonStyle.Danger)
         );
 
@@ -497,7 +444,7 @@ export class BanAppealSystem {
     // Check permissions
     if (!interaction.member.permissions.has('BanMembers')) {
       return interaction.reply({
-        content: '❌ You need Ban Members permission to review appeals.',
+        content: 'You need Ban Members permission to review appeals.',
         ephemeral: true
       });
     }
@@ -508,7 +455,7 @@ export class BanAppealSystem {
       const appealData = this.pendingAppeals.get(interaction.message.id);
       if (!appealData) {
         return interaction.followUp({
-          content: '❌ Appeal data not found.',
+          content: 'Appeal data not found.',
           ephemeral: true
         });
       }
@@ -525,18 +472,27 @@ export class BanAppealSystem {
         this.saveAppealData();
       }
 
-      // Update embed
-      const embed = EmbedBuilder.from(interaction.message.embeds[0])
-        .setColor(decision === 'approved' ? 0x00ff00 : 0xff0000)
-        .addFields(
-          { name: 'Status', value: decision === 'approved' ? '✅ Approved' : '❌ Denied', inline: true },
+      // Update embed to show status
+      const embed = this.embedLoader.createEmbed({
+        title: 'Ban Appeal',
+        description: `Appeal from **${appealData.userTag}** (${appealData.userId})`,
+        formatDescription: false,
+        fields: [
+          { name: 'Why were you banned?', value: appealData.reason, inline: false },
+          { name: 'Why should you be unbanned?', value: appealData.explanation, inline: false },
+          { name: 'What will you do differently?', value: appealData.changes, inline: false },
+          { name: 'Additional Information', value: appealData.additional, inline: false },
+          { name: 'Submitted', value: `<t:${Math.floor(new Date(appealData.submittedAt).getTime() / 1000)}:F>`, inline: true },
+          { name: 'Appeal #', value: `${guildAppeals.length}/${this.config.maxAppeals}`, inline: true },
+          { name: 'Status', value: decision === 'approved' ? 'Approved' : 'Denied', inline: true },
           { name: 'Reviewed By', value: `${interaction.user.tag}`, inline: true },
           { name: 'Reviewed At', value: `<t:${Math.floor(Date.now() / 1000)}:F>`, inline: true }
-        );
+        ]
+      });
 
       await interaction.message.edit({
         embeds: [embed],
-        components: [] // Remove buttons
+        components: []
       });
 
       // Handle approval
@@ -548,21 +504,16 @@ export class BanAppealSystem {
           // Notify user
           try {
             const user = await this.client.users.fetch(userId);
-            await user.send({
-              embeds: [
-                new EmbedBuilder()
-                  .setTitle('✅ Appeal Approved')
-                  .setDescription(`Your ban appeal for **${guild.name}** has been approved! You can now rejoin the server.`)
-                  .setColor(0x00ff00)
-                  .setTimestamp()
-              ]
-            });
+            const notifyEmbed = this.embedLoader.success(
+              `Your ban appeal for **${guild.name}** has been approved! You can now rejoin the server.`
+            );
+            await user.send({ embeds: [notifyEmbed] });
           } catch (error) {
             console.error('[BanAppealSystem] Could not DM user about approval:', error);
           }
         } catch (error) {
           await interaction.followUp({
-            content: `⚠️ Appeal marked as approved but could not unban user: ${error.message}`,
+            content: `Appeal marked as approved but could not unban user: ${error.message}`,
             ephemeral: true
           });
         }
@@ -570,15 +521,10 @@ export class BanAppealSystem {
         // Notify user of denial
         try {
           const user = await this.client.users.fetch(userId);
-          await user.send({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle('❌ Appeal Denied')
-                .setDescription(`Your ban appeal for **${interaction.guild.name}** has been denied. You may submit another appeal after the cooldown period.`)
-                .setColor(0xff0000)
-                .setTimestamp()
-            ]
-          });
+          const notifyEmbed = this.embedLoader.error(
+            `Your ban appeal for **${interaction.guild.name}** has been denied. You may submit another appeal after the cooldown period.`
+          );
+          await user.send({ embeds: [notifyEmbed] });
         } catch (error) {
           console.error('[BanAppealSystem] Could not DM user about denial:', error);
         }
@@ -598,7 +544,7 @@ export class BanAppealSystem {
     } catch (error) {
       console.error('[BanAppealSystem] Error handling appeal decision:', error);
       await interaction.followUp({
-        content: '❌ An error occurred while processing the appeal.',
+        content: 'An error occurred while processing the appeal.',
         ephemeral: true
       });
     }
@@ -615,19 +561,16 @@ export class BanAppealSystem {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Ban Appeal System: ${data.action}`)
-      .setColor(data.action.includes('Approved') ? 0x00ff00 : data.action.includes('Denied') ? 0xff0000 : 0x0099ff)
-      .setTimestamp();
+    const fields = [];
 
     if (data.user) {
-      embed.addFields({
+      fields.push({
         name: 'User',
         value: `${data.user.tag} (${data.user.id})`,
         inline: true
       });
     } else if (data.userId) {
-      embed.addFields({
+      fields.push({
         name: 'User ID',
         value: data.userId,
         inline: true
@@ -635,7 +578,7 @@ export class BanAppealSystem {
     }
 
     if (data.moderator) {
-      embed.addFields({
+      fields.push({
         name: 'Moderator',
         value: `${data.moderator.tag} (${data.moderator.id})`,
         inline: true
@@ -643,7 +586,7 @@ export class BanAppealSystem {
     }
 
     if (data.reason) {
-      embed.addFields({
+      fields.push({
         name: 'Ban Reason',
         value: data.reason,
         inline: false
@@ -651,7 +594,7 @@ export class BanAppealSystem {
     }
 
     if (data.appealNumber) {
-      embed.addFields({
+      fields.push({
         name: 'Appeal Number',
         value: `${data.appealNumber}`,
         inline: true
@@ -659,12 +602,14 @@ export class BanAppealSystem {
     }
 
     if (data.error) {
-      embed.addFields({
+      fields.push({
         name: 'Error',
         value: data.error,
         inline: false
       });
     }
+
+    const embed = this.embedLoader.system('Ban Appeal System', data.action, { fields });
 
     try {
       await channel.send({ embeds: [embed] });

@@ -1,5 +1,4 @@
 // src/systems/afkManager.js
-import { EmbedBuilder } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,17 +11,17 @@ export class AfkManager {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = null; // Set by index.js
     
     // Load AFK config
     const afkConfig = this.configLoader.get('afk') || {};
     this.config = {
-      enabled: afkConfig.enabled ?? true,
-      dataFile: afkConfig.dataFile || 'afk_data.json',
-      embedColor: afkConfig.embedColor || 0x808080,
-      removeOnMessage: afkConfig.removeOnMessage ?? true,
+      enabled: afkConfig.enabled,
+      dataFile: afkConfig.dataFile,
+      removeOnMessage: afkConfig.removeOnMessage,
       mentionResponse: {
-        showTimestamp: afkConfig.mentionResponse?.showTimestamp ?? true,
-        showReason: afkConfig.mentionResponse?.showReason ?? true
+        showTimestamp: afkConfig.mentionResponse?.showTimestamp,
+        showReason: afkConfig.mentionResponse?.showReason
       }
     };
 
@@ -141,9 +140,9 @@ export class AfkManager {
         const afkData = this.removeAfk(message.author.id);
         const duration = Date.now() - afkData.timestamp;
 
-        const embed = new EmbedBuilder()
-          .setColor(this.config.embedColor)
-          .setDescription(`Welcome back <@${message.author.id}>! You were away for **${this.formatDuration(duration)}**.`);
+        const embed = this.embedLoader.createEmbed({
+          description: `Welcome back <@${message.author.id}>! You were away for **${this.formatDuration(duration)}**.`
+        });
 
         try {
           await message.reply({ embeds: [embed] });
@@ -156,9 +155,6 @@ export class AfkManager {
       for (const user of message.mentions.users.values()) {
         const afkData = this.getAfk(user.id);
         if (afkData) {
-          const embed = new EmbedBuilder()
-            .setColor(this.config.embedColor);
-
           let description = `<@${user.id}> is currently AFK`;
           
           if (this.config.mentionResponse.showReason) {
@@ -167,10 +163,10 @@ export class AfkManager {
 
           if (this.config.mentionResponse.showTimestamp) {
             const duration = Date.now() - afkData.timestamp;
-            description += `\n⏰ Away for: ${this.formatDuration(duration)}`;
+            description += `\nAway for: ${this.formatDuration(duration)}`;
           }
 
-          embed.setDescription(description);
+          const embed = this.embedLoader.createEmbed({ description });
 
           try {
             await message.reply({ embeds: [embed] });

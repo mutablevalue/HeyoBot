@@ -1,14 +1,18 @@
 // src/commands/banappeal.js
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
+  PermissionFlagsBits
 } from 'discord.js';
 
 let banAppealSystem = null;
+let embedLoader = null;
 
 export function setBanAppealSystem(system) {
   banAppealSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const appealData = new SlashCommandBuilder()
@@ -82,7 +86,7 @@ export const banMessageData = new SlashCommandBuilder()
 
 async function executeAppeal(interaction) {
   if (!banAppealSystem) {
-    return interaction.reply({ content: '❌ Ban appeal system not loaded.', ephemeral: true });
+    return interaction.reply({ content: 'Ban appeal system not loaded.', ephemeral: true });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -99,7 +103,7 @@ async function executeAppeal(interaction) {
 
 async function executeBanMessage(interaction) {
   if (!banAppealSystem) {
-    return interaction.reply({ content: '❌ Ban appeal system not loaded.', ephemeral: true });
+    return interaction.reply({ content: 'Ban appeal system not loaded.', ephemeral: true });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -127,17 +131,13 @@ async function executeView(interaction) {
     });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(`Ban Appeals for User ${userId}`)
-    .setColor(0x0099ff)
-    .setTimestamp();
-
+  const fields = [];
   for (const [index, appeal] of appeals.entries()) {
-    const status = appeal.status === 'pending' ? '⏳ Pending' : 
-                   appeal.status === 'approved' ? '✅ Approved' : 
-                   '❌ Denied';
+    const status = appeal.status === 'pending' ? 'Pending' : 
+                   appeal.status === 'approved' ? 'Approved' : 
+                   'Denied';
 
-    embed.addFields({
+    fields.push({
       name: `Appeal #${index + 1} - ${status}`,
       value: [
         `**Submitted:** <t:${Math.floor(new Date(appeal.submittedAt).getTime() / 1000)}:F>`,
@@ -149,7 +149,18 @@ async function executeView(interaction) {
     });
   }
 
-  embed.setFooter({ text: `Total appeals: ${appeals.length}/${banAppealSystem.config.maxAppeals}` });
+  fields.push({
+    name: 'Total Appeals',
+    value: `${appeals.length}/${banAppealSystem.config.maxAppeals}`,
+    inline: false
+  });
+
+  const embed = embedLoader.createEmbed({
+    title: 'Ban Appeals',
+    description: `Ban Appeals for User ${userId}`,
+    formatDescription: false,
+    fields
+  });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -187,27 +198,30 @@ async function executeStats(interaction) {
     }
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Ban Appeal Statistics')
-    .setColor(0x0099ff)
-    .addFields(
-      { name: 'Total Appeals', value: `${totalAppeals}`, inline: true },
-      { name: 'This Server', value: `${guildAppeals}`, inline: true },
-      { name: 'Unique Users', value: `${appeals.size}`, inline: true },
-      { name: '⏳ Pending', value: `${pendingAppeals}`, inline: true },
-      { name: '✅ Approved', value: `${approvedAppeals}`, inline: true },
-      { name: '❌ Denied', value: `${deniedAppeals}`, inline: true }
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'Total Appeals', value: `${totalAppeals}`, inline: true },
+    { name: 'This Server', value: `${guildAppeals}`, inline: true },
+    { name: 'Unique Users', value: `${appeals.size}`, inline: true },
+    { name: 'Pending', value: `${pendingAppeals}`, inline: true },
+    { name: 'Approved', value: `${approvedAppeals}`, inline: true },
+    { name: 'Denied', value: `${deniedAppeals}`, inline: true }
+  ];
 
   if (approvedAppeals + deniedAppeals > 0) {
     const approvalRate = ((approvedAppeals / (approvedAppeals + deniedAppeals)) * 100).toFixed(1);
-    embed.addFields({
+    fields.push({
       name: 'Approval Rate',
       value: `${approvalRate}%`,
       inline: false
     });
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Ban Appeal System',
+    description: 'Ban Appeal Statistics',
+    formatDescription: false,
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -215,42 +229,38 @@ async function executeStats(interaction) {
 async function executeSettings(interaction) {
   const config = banAppealSystem.config;
 
-  const embed = new EmbedBuilder()
-    .setTitle('⚙️ Ban Appeal Settings')
-    .setColor(config.enabled ? 0x00ff00 : 0xff0000)
-    .addFields(
-      { 
-        name: 'Status', 
-        value: config.enabled ? '✅ Enabled' : '❌ Disabled', 
-        inline: true 
-      },
-      { 
-        name: 'DM on Ban', 
-        value: config.dmMessage.enabled ? '✅ Enabled' : '❌ Disabled', 
-        inline: true 
-      },
-      { 
-        name: 'Max Appeals', 
-        value: `${config.maxAppeals}`, 
-        inline: true 
-      },
-      { 
-        name: 'Appeal Cooldown', 
-        value: `${config.appealCooldown / (1000 * 60 * 60 * 24)} days`, 
-        inline: true 
-      },
-      { 
-        name: 'Appeal Channel', 
-        value: config.appealChannel ? `<#${config.appealChannel}>` : 'Not set', 
-        inline: true 
-      },
-      { 
-        name: 'Notify Role', 
-        value: config.notifyRole ? `<@&${config.notifyRole}>` : 'Not set', 
-        inline: true 
-      }
-    )
-    .setTimestamp();
+  const fields = [
+    { 
+      name: 'Status', 
+      value: config.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    },
+    { 
+      name: 'DM on Ban', 
+      value: config.dmMessage.enabled ? 'Enabled' : 'Disabled', 
+      inline: true 
+    },
+    { 
+      name: 'Max Appeals', 
+      value: `${config.maxAppeals}`, 
+      inline: true 
+    },
+    { 
+      name: 'Appeal Cooldown', 
+      value: `${config.appealCooldown / (1000 * 60 * 60 * 24)} days`, 
+      inline: true 
+    },
+    { 
+      name: 'Appeal Channel', 
+      value: config.appealChannel ? `<#${config.appealChannel}>` : 'Not set', 
+      inline: true 
+    },
+    { 
+      name: 'Notify Role', 
+      value: config.notifyRole ? `<@&${config.notifyRole}>` : 'Not set', 
+      inline: true 
+    }
+  ];
 
   // Add form field info
   const formFields = [];
@@ -258,10 +268,17 @@ async function executeSettings(interaction) {
     formFields.push(`• **${field.label}** (${field.minLength}-${field.maxLength} chars${field.required ? ', required' : ''})`);
   }
 
-  embed.addFields({
+  fields.push({
     name: 'Appeal Form Fields',
     value: formFields.join('\n'),
     inline: false
+  });
+
+  const embed = embedLoader.createEmbed({
+    title: 'Ban Appeal System',
+    description: 'Ban Appeal Settings',
+    formatDescription: false,
+    fields
   });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -270,15 +287,12 @@ async function executeSettings(interaction) {
 async function executePreview(interaction) {
   const config = banAppealSystem.config;
 
-  const embed = new EmbedBuilder()
-    .setTitle(config.dmMessage.embedTitle)
-    .setDescription(
-      config.dmMessage.content.replace('{server}', interaction.guild.name) + '\n\n' +
+  const embed = embedLoader.createEmbed({
+    description: config.dmMessage.content.replace('{server}', interaction.guild.name) + '\n\n' +
       config.dmMessage.embedDescription
-    )
-    .setColor(config.dmMessage.embedColor)
-    .setFooter({ text: interaction.guild.name, iconURL: interaction.guild.iconURL() })
-    .setTimestamp();
+  });
+
+  embed.setFooter({ text: interaction.guild.name, iconURL: interaction.guild.iconURL() });
 
   await interaction.reply({
     content: 'This is what banned users will see:',
@@ -291,11 +305,7 @@ async function executeEnable(interaction) {
   banAppealSystem.config.dmMessage.enabled = true;
   await banAppealSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Ban Messages Enabled')
-    .setDescription('Banned users will now receive appeal information via DM.')
-    .setColor(0x00ff00)
-    .setTimestamp();
+  const embed = embedLoader.success('Ban appeal messages are now enabled. Banned users will receive appeal information via DM.');
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -304,11 +314,7 @@ async function executeDisable(interaction) {
   banAppealSystem.config.dmMessage.enabled = false;
   await banAppealSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('❌ Ban Messages Disabled')
-    .setDescription('Banned users will no longer receive appeal information.')
-    .setColor(0xff0000)
-    .setTimestamp();
+  const embed = embedLoader.error('Ban appeal messages are now disabled. Banned users will no longer receive appeal information.');
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -334,12 +340,9 @@ async function executeEdit(interaction) {
 
   await banAppealSystem.saveConfig();
 
-  const embed = new EmbedBuilder()
-    .setTitle('✅ Setting Updated')
-    .setDescription(`Updated ${field} to:\n\`\`\`${value}\`\`\``)
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({ text: 'Use /banmessage preview to see the changes' });
+  const embed = embedLoader.createEmbed({
+    description: `Updated ${field} to:\n\`\`\`${value}\`\`\`\n\nUse /banmessage preview to see the changes`
+  });
 
   await interaction.reply({ embeds: [embed] });
 }

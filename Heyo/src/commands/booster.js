@@ -1,7 +1,6 @@
 // src/commands/booster.js
 import {
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -11,9 +10,14 @@ import {
 } from 'discord.js';
 
 let boosterSystem = null;
+let embedLoader = null;
 
 export function setBoosterSystem(system) {
   boosterSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const claimPerksData = new SlashCommandBuilder()
@@ -95,7 +99,7 @@ export const boosterData = new SlashCommandBuilder()
 
 export async function executeClaimPerks(interaction) {
   if (!boosterSystem) {
-    return interaction.reply({ content: '❌ Booster system not loaded.', ephemeral: true });
+    return interaction.reply({ content: 'Booster system not loaded.', ephemeral: true });
   }
 
   await interaction.deferReply({ ephemeral: true });
@@ -103,34 +107,31 @@ export async function executeClaimPerks(interaction) {
   const result = await boosterSystem.claimBoosterPerks(interaction.guild, interaction.member);
 
   if (result.success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Booster Perks Claimed!')
-      .setDescription('You have successfully claimed your booster perks!')
-      .setColor(0xff73fa)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: 'You have successfully claimed your booster perks!',
+      fields: [
         {
-          name: '🎁 Perks Granted',
+          name: 'Perks Granted',
           value: '• Voice channel permissions\n• Picture permissions\n• Link permissions',
           inline: false
         },
         {
-          name: '📝 Next Steps',
+          name: 'Next Steps',
           value: 'Use `/booster` to create your personal voice channel or role!',
           inline: false
         }
-      )
-      .setFooter({ text: 'Your perks will remain active as long as you continue boosting.' })
-      .setTimestamp();
+      ]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } else {
-    await interaction.editReply({ content: `❌ ${result.error}` });
+    await interaction.editReply({ content: result.error });
   }
 }
 
 export async function executeBooster(interaction) {
   if (!boosterSystem) {
-    return interaction.reply({ content: '❌ Booster system not loaded.', ephemeral: true });
+    return interaction.reply({ content: 'Booster system not loaded.', ephemeral: true });
   }
 
   const group = interaction.options.getSubcommandGroup();
@@ -169,47 +170,43 @@ async function executeCreateChannel(interaction) {
   const result = await boosterSystem.createBoosterVC(interaction.guild, interaction.member);
 
   if (result.success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Voice Channel Created!')
-      .setDescription(`Your personal voice channel has been created!`)
-      .setColor(0x00ff00)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: 'Your personal voice channel has been created!',
+      fields: [
         {
-          name: '🔊 Channel',
+          name: 'Channel',
           value: `${result.channel}`,
           inline: true
         },
         {
-          name: '👥 User Limit',
+          name: 'User Limit',
           value: `${result.channel.userLimit || 'No limit'}`,
           inline: true
         },
         {
-          name: '⚙️ Permissions',
+          name: 'Permissions',
           value: '• Manage Channel\n• Move Members\n• Mute Members\n• Deafen Members',
           inline: false
         },
         {
-          name: '💡 Tips',
+          name: 'Tips',
           value: '• You are the permanent owner of this channel\n• You can manage who has access\n• Use `/booster channel delete` to remove it',
           inline: false
         }
-      )
-      .setTimestamp();
+      ]
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } else {
-    await interaction.editReply({ content: `❌ ${result.error}` });
+    await interaction.editReply({ content: result.error });
   }
 }
 
 async function executeDeleteChannel(interaction) {
   // Create confirmation embed
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Channel Deletion')
-    .setDescription('Are you sure you want to delete your personal voice channel?\n\nThis action cannot be undone.')
-    .setColor(0xffa500)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: 'Are you sure you want to delete your personal voice channel?\n\nThis action cannot be undone.'
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -237,7 +234,7 @@ async function executeDeleteChannel(interaction) {
   collector.on('collect', async i => {
     if (i.customId === 'booster_cancel') {
       await i.update({ 
-        content: '✅ Deletion cancelled.', 
+        content: 'Deletion cancelled.', 
         embeds: [], 
         components: [] 
       });
@@ -252,13 +249,13 @@ async function executeDeleteChannel(interaction) {
 
       if (result.success) {
         await i.editReply({ 
-          content: '✅ Your personal voice channel has been deleted.', 
+          content: 'Your personal voice channel has been deleted.', 
           embeds: [], 
           components: [] 
         });
       } else {
         await i.editReply({ 
-          content: `❌ ${result.error}`, 
+          content: result.error, 
           embeds: [], 
           components: [] 
         });
@@ -271,7 +268,7 @@ async function executeDeleteChannel(interaction) {
   collector.on('end', async collected => {
     if (collected.size === 0) {
       await interaction.editReply({ 
-        content: '⏰ Deletion timed out.', 
+        content: 'Deletion timed out.', 
         embeds: [], 
         components: [] 
       });
@@ -294,7 +291,7 @@ async function executeCreateRole(interaction) {
     // Remove # if present and parse hex
     parsedColor = parseInt(color.replace('#', ''), 16);
     if (isNaN(parsedColor)) {
-      return interaction.editReply({ content: '❌ Invalid color format. Use hex format like #FF0000 or "Random".' });
+      return interaction.editReply({ content: 'Invalid color format. Use hex format like #FF0000 or "Random".' });
     }
   }
 
@@ -310,52 +307,51 @@ async function executeCreateRole(interaction) {
     const boostCount = boosterSystem.getUserBoostCount(interaction.member);
     const minBoostsForHoist = boosterSystem.config.minBoostsForHoist;
     
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Role Created!')
-      .setDescription(`Your personal role has been created!`)
-      .setColor(result.role.color || 0x00ff00)
-      .addFields(
-        {
-          name: '🏷️ Role',
-          value: `${result.role}`,
-          inline: true
-        },
-        {
-          name: '🎨 Color',
-          value: `#${result.role.color.toString(16).padStart(6, '0')}`,
-          inline: true
-        },
-        {
-          name: '📍 Position',
-          value: `${result.role.position}`,
-          inline: true
-        },
-        {
-          name: '⚙️ Settings',
-          value: `• Hoisted: ${result.role.hoist ? 'Yes' : 'No'}\n• Mentionable: ${result.role.mentionable ? 'Yes' : 'No'}`,
-          inline: false
-        }
-      );
+    const fields = [
+      {
+        name: 'Role',
+        value: `${result.role}`,
+        inline: true
+      },
+      {
+        name: 'Color',
+        value: `#${result.role.color.toString(16).padStart(6, '0')}`,
+        inline: true
+      },
+      {
+        name: 'Position',
+        value: `${result.role.position}`,
+        inline: true
+      },
+      {
+        name: 'Settings',
+        value: `• Hoisted: ${result.role.hoist ? 'Yes' : 'No'}\n• Mentionable: ${result.role.mentionable ? 'Yes' : 'No'}`,
+        inline: false
+      }
+    ];
 
     if (boostCount < minBoostsForHoist && hoist) {
-      embed.addFields({
-        name: '📌 Note',
+      fields.push({
+        name: 'Note',
         value: `You need ${minBoostsForHoist} boosts to make your role displayable. Currently you have ${boostCount} boost(s).`,
         inline: false
       });
     }
 
-    embed.addFields({
-      name: '💡 Tips',
+    fields.push({
+      name: 'Tips',
       value: '• Use `/booster role edit` to modify your role\n• Use `/booster role delete` to remove it',
       inline: false
     });
 
-    embed.setTimestamp();
+    const embed = embedLoader.createEmbed({
+      description: 'Your personal role has been created!',
+      fields
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } else {
-    await interaction.editReply({ content: `❌ ${result.error}` });
+    await interaction.editReply({ content: result.error });
   }
 }
 
@@ -449,32 +445,30 @@ async function executeEditRole(interaction) {
     );
 
     if (result.success) {
-      const embed = new EmbedBuilder()
-        .setTitle('✅ Role Updated!')
-        .setDescription('Your personal role has been updated successfully!')
-        .setColor(result.role.color || 0x00ff00)
-        .addFields(
+      const embed = embedLoader.createEmbed({
+        description: 'Your personal role has been updated successfully!',
+        fields: [
           {
-            name: '🏷️ Role',
+            name: 'Role',
             value: `${result.role}`,
             inline: true
           },
           {
-            name: '🎨 Color',
+            name: 'Color',
             value: `#${result.role.color.toString(16).padStart(6, '0')}`,
             inline: true
           },
           {
-            name: '⚙️ Settings',
+            name: 'Settings',
             value: `• Hoisted: ${result.role.hoist ? 'Yes' : 'No'}\n• Mentionable: ${result.role.mentionable ? 'Yes' : 'No'}`,
             inline: false
           }
-        )
-        .setTimestamp();
+        ]
+      });
 
       await modalInteraction.editReply({ embeds: [embed] });
     } else {
-      await modalInteraction.editReply({ content: `❌ ${result.error}` });
+      await modalInteraction.editReply({ content: result.error });
     }
   } catch (error) {
     // Modal timed out
@@ -484,11 +478,9 @@ async function executeEditRole(interaction) {
 
 async function executeDeleteRole(interaction) {
   // Create confirmation embed
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Role Deletion')
-    .setDescription('Are you sure you want to delete your personal role?\n\nThis action cannot be undone.')
-    .setColor(0xffa500)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: 'Are you sure you want to delete your personal role?\n\nThis action cannot be undone.'
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -516,7 +508,7 @@ async function executeDeleteRole(interaction) {
   collector.on('collect', async i => {
     if (i.customId === 'booster_cancel') {
       await i.update({ 
-        content: '✅ Deletion cancelled.', 
+        content: 'Deletion cancelled.', 
         embeds: [], 
         components: [] 
       });
@@ -531,13 +523,13 @@ async function executeDeleteRole(interaction) {
 
       if (result.success) {
         await i.editReply({ 
-          content: '✅ Your personal role has been deleted.', 
+          content: 'Your personal role has been deleted.', 
           embeds: [], 
           components: [] 
         });
       } else {
         await i.editReply({ 
-          content: `❌ ${result.error}`, 
+          content: result.error, 
           embeds: [], 
           components: [] 
         });
@@ -550,7 +542,7 @@ async function executeDeleteRole(interaction) {
   collector.on('end', async collected => {
     if (collected.size === 0) {
       await interaction.editReply({ 
-        content: '⏰ Deletion timed out.', 
+        content: 'Deletion timed out.', 
         embeds: [], 
         components: [] 
       });
@@ -562,93 +554,95 @@ async function executeView(interaction) {
   const perks = boosterSystem.getUserPerks(interaction.user.id);
   const boostCount = boosterSystem.getUserBoostCount(interaction.member);
 
-  const embed = new EmbedBuilder()
-    .setTitle(`Booster Perks for ${interaction.user.username}`)
-    .setColor(0xff73fa)
-    .setTimestamp();
-
   if (!perks) {
-    embed.setDescription('You have not claimed any booster perks yet.\n\nUse `/claimboosterperks` to get started!');
-  } else {
-    // Status
-    embed.addFields({
-      name: '📊 Status',
-      value: `Claimed: <t:${Math.floor(new Date(perks.claimed).getTime() / 1000)}:R>\nBoost Count: ${boostCount}`,
+    const embed = embedLoader.createEmbed({
+      description: 'You have not claimed any booster perks yet.\n\nUse `/claimboosterperks` to get started!'
+    });
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  const fields = [{
+    name: 'Status',
+    value: `Claimed: <t:${Math.floor(new Date(perks.claimed).getTime() / 1000)}:R>\nBoost Count: ${boostCount}`,
+    inline: false
+  }];
+
+  // Permission roles
+  if (perks.permRoles?.length > 0) {
+    fields.push({
+      name: 'Permission Roles',
+      value: perks.permRoles.map(id => `<@&${id}>`).join(', '),
       inline: false
     });
+  }
 
-    // Permission roles
-    if (perks.permRoles?.length > 0) {
-      embed.addFields({
-        name: '🎁 Permission Roles',
-        value: perks.permRoles.map(id => `<@&${id}>`).join(', '),
-        inline: false
-      });
-    }
-
-    // Voice channels
-    const channels = [];
-    for (const channelId of perks.channels || []) {
-      const channel = interaction.guild.channels.cache.get(channelId);
-      if (channel) {
-        channels.push(`• ${channel.name}`);
-      }
-    }
-
-    embed.addFields({
-      name: `🔊 Voice Channels (${channels.length})`,
-      value: channels.length > 0 ? channels.join('\n') : 'None',
-      inline: false
-    });
-
-    // Roles
-    const roles = [];
-    for (const roleId of perks.roles || []) {
-      const role = interaction.guild.roles.cache.get(roleId);
-      if (role) {
-        roles.push(`• ${role.name}`);
-      }
-    }
-
-    embed.addFields({
-      name: `🏷️ Personal Roles (${roles.length})`,
-      value: roles.length > 0 ? roles.join('\n') : 'None',
-      inline: false
-    });
-
-    // Commands
-    embed.addFields({
-      name: '📝 Available Commands',
-      value: [
-        '• `/booster channel create` - Create a voice channel',
-        '• `/booster channel delete` - Delete your voice channel',
-        '• `/booster role create` - Create a personal role',
-        '• `/booster role edit` - Edit your personal role',
-        '• `/booster role delete` - Delete your personal role',
-        '• `/booster remove` - Remove all your perks'
-      ].join('\n'),
-      inline: false
-    });
-
-    if (boostCount >= boosterSystem.config.minBoostsForHoist) {
-      embed.addFields({
-        name: '✨ Special Perks',
-        value: `You can make your role displayable separately (hoisted) with ${boostCount} boosts!`,
-        inline: false
-      });
+  // Voice channels
+  const channels = [];
+  for (const channelId of perks.channels || []) {
+    const channel = interaction.guild.channels.cache.get(channelId);
+    if (channel) {
+      channels.push(`• ${channel.name}`);
     }
   }
+
+  fields.push({
+    name: `Voice Channels (${channels.length})`,
+    value: channels.length > 0 ? channels.join('\n') : 'None',
+    inline: false
+  });
+
+  // Roles
+  const roles = [];
+  for (const roleId of perks.roles || []) {
+    const role = interaction.guild.roles.cache.get(roleId);
+    if (role) {
+      roles.push(`• ${role.name}`);
+    }
+  }
+
+  fields.push({
+    name: `Personal Roles (${roles.length})`,
+    value: roles.length > 0 ? roles.join('\n') : 'None',
+    inline: false
+  });
+
+  // Commands
+  fields.push({
+    name: 'Available Commands',
+    value: [
+      '• `/booster channel create` - Create a voice channel',
+      '• `/booster channel delete` - Delete your voice channel',
+      '• `/booster role create` - Create a personal role',
+      '• `/booster role edit` - Edit your personal role',
+      '• `/booster role delete` - Delete your personal role',
+      '• `/booster remove` - Remove all your perks'
+    ].join('\n'),
+    inline: false
+  });
+
+  if (boostCount >= boosterSystem.config.minBoostsForHoist) {
+    fields.push({
+      name: 'Special Perks',
+      value: `You can make your role displayable separately (hoisted) with ${boostCount} boosts!`,
+      inline: false
+    });
+  }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Booster Perks',
+    description: `Booster perks for ${interaction.user.username}`,
+    formatDescription: false,
+    fields
+  });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
 
 async function executeRemove(interaction) {
   // Create confirmation embed
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Perk Removal')
-    .setDescription('Are you sure you want to remove ALL your booster perks?\n\nThis will:\n• Remove all permission roles\n• Delete your personal voice channel\n• Delete your personal role\n\n**This action cannot be undone!**')
-    .setColor(0xff0000)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    description: 'Are you sure you want to remove ALL your booster perks?\n\nThis will:\n• Remove all permission roles\n• Delete your personal voice channel\n• Delete your personal role\n\n**This action cannot be undone!**'
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -676,7 +670,7 @@ async function executeRemove(interaction) {
   collector.on('collect', async i => {
     if (i.customId === 'booster_cancel') {
       await i.update({ 
-        content: '✅ Removal cancelled.', 
+        content: 'Removal cancelled.', 
         embeds: [], 
         components: [] 
       });
@@ -690,13 +684,13 @@ async function executeRemove(interaction) {
 
       if (result.success) {
         await i.editReply({ 
-          content: '✅ All your booster perks have been removed.', 
+          content: 'All your booster perks have been removed.', 
           embeds: [], 
           components: [] 
         });
       } else {
         await i.editReply({ 
-          content: `❌ ${result.error}`, 
+          content: result.error, 
           embeds: [], 
           components: [] 
         });
@@ -709,7 +703,7 @@ async function executeRemove(interaction) {
   collector.on('end', async collected => {
     if (collected.size === 0) {
       await interaction.editReply({ 
-        content: '⏰ Removal timed out.', 
+        content: 'Removal timed out.', 
         embeds: [], 
         components: [] 
       });

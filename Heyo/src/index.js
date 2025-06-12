@@ -88,8 +88,8 @@ async function main() {
   // First: EmbedLoader (needed by many systems)
   const embedLoader = new EmbedLoader(config);
   
-  // Top level: AntiNuke (no dependencies)
-  const antiNuke = new AntiNuke(client, config);
+const antiNuke = new AntiNuke(client, config);
+antiNuke.embedLoader = embedLoader; // ADD THIS LINE
   
   // Second level: ModerationSystem (depends on AntiNuke for hierarchy)
   const moderationSystem = new ModerationSystem(client, config);
@@ -100,6 +100,7 @@ async function main() {
   const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
+afkManager.embedLoader = embedLoader; // ADD THIS LINE
   const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
   friendGroupSystem.embedLoader = embedLoader;
   
@@ -112,12 +113,14 @@ async function main() {
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
   const boosterSystem = new BoosterSystem(client, config, moderationSystem);
+  boosterSystem.embedLoader = embedLoader;
   
   const filterSystem = new FilterSystem(client, config);
   filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
 filterSystem.setEmbedLoader(embedLoader); // Add this line
   
   const banAppealSystem = new BanAppealSystem(client, config);
+  banAppealSystem.embedLoader = embedLoader;
   const ticketSystem = new TicketSystem(client, config);
   const confessSystem = new ConfessSystem(client, config);
   const skullboardSystem = new SkullboardSystem(client, config, embedLoader, antiNuke);
@@ -130,6 +133,7 @@ filterSystem.setEmbedLoader(embedLoader); // Add this line
 
   // 4) Pass systems into commands that need them
    antiNukeCommand.setAntiNuke(antiNuke);
+   antiNukeCommand.setEmbedLoader(embedLoader); // ADD THIS LINE
   
   setupJ2CCommand.setJ2CManager(j2cManager);
   setupJ2CCommand.setEmbedLoader(embedLoader);
@@ -139,6 +143,7 @@ vcCommand.setEmbedLoader(embedLoader);
   moderationCommands.setEmbedLoader(embedLoader); // Add this lin
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
+afkCommand.setEmbedLoader(embedLoader); // ADD THIS LINE
   welcomeCommand.setWelcomeSystem(welcomeSystem);
   giveawayCommands.setGiveawaySystem(giveawaySystem);
   giveawayCommands.setEmbedLoader(embedLoader);
@@ -155,9 +160,11 @@ leaderboardCommands.setEmbedLoader(embedLoader);
 eventCommands.setLeaderboardSystem(leaderboardSystem);
 eventCommands.setEmbedLoader(embedLoader); // Add this line
   boosterCommands.setBoosterSystem(boosterSystem);
+boosterCommands.setEmbedLoader(embedLoader); // ADD THIS LINE
   filterCommands.setFilterSystem(filterSystem);
 filterCommands.setEmbedLoader(embedLoader); // Add this line
   banAppealCommands.setBanAppealSystem(banAppealSystem);
+banAppealCommands.setEmbedLoader(embedLoader); // ADD THIS LINE
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
 confessCommands.setEmbedLoader(embedLoader); // Add this line

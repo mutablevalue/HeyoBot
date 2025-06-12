@@ -1,10 +1,15 @@
 // src/commands/afk.js
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 
 let afkManager = null;
+let embedLoader = null;
 
 export function setAfkManager(manager) {
   afkManager = manager;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -20,7 +25,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!afkManager) {
     return interaction.reply({
-      content: '❌ AFK system is not initialized.',
+      content: 'AFK system is not initialized.',
       ephemeral: true
     });
   }
@@ -30,10 +35,7 @@ export async function execute(interaction) {
   // Set user as AFK
   afkManager.setAfk(interaction.user.id, reason);
 
-  const embed = new EmbedBuilder()
-    .setColor(0x808080)
-    .setDescription(`✅ You are now AFK: **${reason}**`)
-    .setFooter({ text: 'I\'ll notify anyone who mentions you' });
+  const embed = embedLoader.success(`You are now AFK: **${reason}**`);
 
   await interaction.reply({ embeds: [embed] });
 }

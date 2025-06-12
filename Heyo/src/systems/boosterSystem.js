@@ -18,38 +18,39 @@ export class BoosterSystem {
     this.client = client;
     this.configLoader = configLoader;
     this.moderationSystem = moderationSystem;
+    this.embedLoader = null; // Set by index.js
     
     // Load booster system config
     const boosterConfig = this.configLoader.get('boosterSystem') || {};
     this.config = {
-      enabled: boosterConfig.enabled ?? true,
-      dataFile: boosterConfig.dataFile || 'booster_data.json',
-      boostMessageChannel: boosterConfig.boostMessageChannel || null,
+      enabled: boosterConfig.enabled,
+      dataFile: boosterConfig.dataFile,
+      boostMessageChannel: boosterConfig.boostMessageChannel,
       
       // Voice Channel Settings
-      vcNameFormat: boosterConfig.vcNameFormat || "{username}'s Channel",
-      vcUserLimit: boosterConfig.vcUserLimit || 10,
-      vcBitrate: boosterConfig.vcBitrate || 64000,
-      vcCategory: boosterConfig.vcCategory || null,
+      vcNameFormat: boosterConfig.vcNameFormat,
+      vcUserLimit: boosterConfig.vcUserLimit,
+      vcBitrate: boosterConfig.vcBitrate,
+      vcCategory: boosterConfig.vcCategory,
       
       // Role Settings  
-      roleNameFormat: boosterConfig.roleNameFormat || "{username}'s Role",
-      roleColor: boosterConfig.roleColor || 'Random', // 'Random' or hex color
-      rolePosition: boosterConfig.rolePosition || null,
-      roleHoist: boosterConfig.roleHoist ?? false,
-      roleMentionable: boosterConfig.roleMentionable ?? false,
-      minBoostsForHoist: boosterConfig.minBoostsForHoist ?? 2, // Minimum boosts to choose hoist option
+      roleNameFormat: boosterConfig.roleNameFormat,
+      roleColor: boosterConfig.roleColor,
+      rolePosition: boosterConfig.rolePosition,
+      roleHoist: boosterConfig.roleHoist,
+      roleMentionable: boosterConfig.roleMentionable,
+      minBoostsForHoist: boosterConfig.minBoostsForHoist,
       
       // Cleanup
-      checkInterval: boosterConfig.checkInterval || 86400000, // 24 hours in ms
+      checkInterval: boosterConfig.checkInterval,
       
       // Logging
-      logChannel: boosterConfig.logChannel || null,
-      enableLogging: boosterConfig.enableLogging ?? true
+      logChannel: boosterConfig.logChannel,
+      enableLogging: boosterConfig.enableLogging
     };
 
     // Booster perks tracking
-    this.boosterPerks = new Map(); // userId -> { claimed: Date, roles: [], channels: [], permRoles: [], boostCount: number }
+    this.boosterPerks = new Map();
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -99,16 +100,11 @@ export class BoosterSystem {
    * @returns {number}
    */
   getUserBoostCount(member) {
-    // Count how many times the user has boosted (Discord shows this in member.premiumSinceTimestamp)
-    // For now, we'll check if they're boosting and estimate based on boost level
     if (!member.premiumSince) return 0;
     
-    // Check guild boost level and member's boost status
-    // This is a simplified approach - in reality, you'd need to track individual boost counts
     const guild = member.guild;
     const boostLevel = guild.premiumTier;
     
-    // For now, return 1 if they're boosting, 2 if guild is level 2+
     if (boostLevel >= 2) return 2;
     return 1;
   }
@@ -187,12 +183,10 @@ export class BoosterSystem {
    * @param {import("discord.js").Message} message
    */
   async handleBoostMessage(message) {
-    const embed = {
-      title: '🎉 Thank you for boosting!',
-      description: `Thank you ${message.author} for boosting the server!\n\nUse \`/claimboosterperks\` to claim your perks!`,
-      color: 0xff73fa,
-      timestamp: new Date().toISOString()
-    };
+    const embed = this.embedLoader.createEmbed({
+      title: 'Boost System',
+      description: `Thank you ${message.author} for boosting the server!\n\nUse \`/claimboosterperks\` to claim your perks!`
+    });
 
     await message.reply({ embeds: [embed] });
   }
@@ -316,11 +310,11 @@ export class BoosterSystem {
         permissionOverwrites: [
           {
             id: guild.id,
-            deny: [PermissionFlagsBits.Connect], // Deny @everyone
+            deny: [PermissionFlagsBits.Connect],
           },
           {
             id: accessRole.id,
-            allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel] // Allow access role
+            allow: [PermissionFlagsBits.Connect, PermissionFlagsBits.ViewChannel]
           },
           {
             id: member.id,
@@ -331,7 +325,7 @@ export class BoosterSystem {
               PermissionFlagsBits.MoveMembers,
               PermissionFlagsBits.MuteMembers,
               PermissionFlagsBits.DeafenMembers
-            ] // Owner permissions
+            ]
           }
         ]
       };
@@ -395,7 +389,7 @@ export class BoosterSystem {
       // Determine color
       let color = options.color || this.config.roleColor;
       if (color === 'Random') {
-        color = Math.floor(Math.random() * 16777215); // Random color
+        color = Math.floor(Math.random() * 16777215);
       }
 
       // Check if user can set hoist
@@ -681,21 +675,16 @@ export class BoosterSystem {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = {
-      title: `Booster System: ${data.action}`,
-      color: data.action.includes('Created') || data.action.includes('Claimed') || data.action.includes('Edited') ? 0x00ff00 : 0xff0000,
-      fields: [],
-      timestamp: new Date().toISOString()
-    };
+    const fields = [];
 
     if (data.user) {
-      embed.fields.push({
+      fields.push({
         name: 'User',
         value: `${data.user.tag} (${data.user.id})`,
         inline: true
       });
     } else if (data.userId) {
-      embed.fields.push({
+      fields.push({
         name: 'User ID',
         value: data.userId,
         inline: true
@@ -703,7 +692,7 @@ export class BoosterSystem {
     }
 
     if (data.channel) {
-      embed.fields.push({
+      fields.push({
         name: 'Channel',
         value: `${data.channel.name} (${data.channel.id})`,
         inline: true
@@ -711,7 +700,7 @@ export class BoosterSystem {
     }
 
     if (data.role) {
-      embed.fields.push({
+      fields.push({
         name: 'Role',
         value: `${data.role.name} (${data.role.id})`,
         inline: true
@@ -719,7 +708,7 @@ export class BoosterSystem {
     }
 
     if (data.accessRole) {
-      embed.fields.push({
+      fields.push({
         name: 'Access Role',
         value: `${data.accessRole.name} (${data.accessRole.id})`,
         inline: true
@@ -727,7 +716,7 @@ export class BoosterSystem {
     }
 
     if (data.roles) {
-      embed.fields.push({
+      fields.push({
         name: 'Permission Roles',
         value: data.roles,
         inline: false
@@ -735,7 +724,7 @@ export class BoosterSystem {
     }
 
     if (data.reason) {
-      embed.fields.push({
+      fields.push({
         name: 'Reason',
         value: data.reason,
         inline: false
@@ -743,7 +732,7 @@ export class BoosterSystem {
     }
 
     if (data.type) {
-      embed.fields.push({
+      fields.push({
         name: 'Type',
         value: data.type,
         inline: true
@@ -751,12 +740,14 @@ export class BoosterSystem {
     }
 
     if (data.changes) {
-      embed.fields.push({
+      fields.push({
         name: 'Changes',
         value: data.changes,
         inline: true
       });
     }
+
+    const embed = this.embedLoader.system('Booster System', data.action, { fields });
 
     try {
       await channel.send({ embeds: [embed] });

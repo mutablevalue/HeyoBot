@@ -138,7 +138,6 @@ moderation:
 afk:
   enabled: true
   dataFile: afk_data.json
-  embedColor: 8421504
   removeOnMessage: true
   mentionResponse:
     showTimestamp: true
@@ -353,7 +352,6 @@ ticketSystem:
     color: 39423
     footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
-    buttonEmoji: 🎫
   autoDelete:
     enabled: true
     timeout: 300000
