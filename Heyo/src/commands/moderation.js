@@ -2,19 +2,24 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType
 } from 'discord.js';
 
 let moderationSystem = null;
 let antiNukeInstance = null;
+let embedLoader = null;
 
+// Export setters
 export function setModerationSystem(system) {
   moderationSystem = system;
 }
 
 export function setAntiNukeInstance(instance) {
   antiNukeInstance = instance;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 // Helper function to check if user is owner with bypass enabled
@@ -24,37 +29,21 @@ function isOwnerWithBypass(member) {
 
 // Helper function to parse multiple users from input
 function parseMultipleUsers(input) {
-  // Handle null or undefined input
-  if (!input) {
-    return [];
-  }
-  
-  // Convert to string if needed
+  if (!input) return [];
   input = String(input);
-  
-  // Match user IDs and mentions
   const userPattern = /<@!?(\d+)>|(\d{17,19})/g;
   const matches = [...input.matchAll(userPattern)];
   const userIds = matches.map(match => match[1] || match[2]);
-  
-  // Remove duplicates
   return [...new Set(userIds)];
 }
 
 // Helper function to check if user can use multi-user feature
 function canUseMultiUser(interaction, commandName) {
   const multiUserConfig = moderationSystem.config.multiUserCommands?.[commandName];
-  
-  // If no config or not enabled, multi-user is not allowed
   if (!multiUserConfig?.enabled) return false;
-  
-  // If requiresAntiNukeWhitelist is true, check if user is whitelisted
-  // This only matters when targeting multiple users (2+)
   if (multiUserConfig.requiresAntiNukeWhitelist && antiNukeInstance) {
     return antiNukeInstance.isWhitelisted(interaction.user.id);
   }
-  
-  // Otherwise, allow based on normal permissions
   return true;
 }
 
@@ -62,7 +51,6 @@ function canUseMultiUser(interaction, commandName) {
 export const data = new SlashCommandBuilder()
   .setName('mod')
   .setDescription('Moderation commands')
-  // Ban subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('ban')
@@ -80,7 +68,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // Kick subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('kick')
@@ -98,7 +85,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // Timeout subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('timeout')
@@ -122,7 +108,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // Mute subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('mute')
@@ -140,7 +125,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // Unmute subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('unmute')
@@ -152,19 +136,16 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Lock channel subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('lockchannel')
       .setDescription('Lock the current channel (disable sending messages)')
   )
-  // Unlock channel subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('unlockchannel')
       .setDescription('Unlock the current channel (restore sending messages)')
   )
-  // Nuke subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('nuke')
@@ -176,7 +157,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Unban subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('unban')
@@ -188,7 +168,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Purge subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('purge')
@@ -208,7 +187,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // Role subcommand with multi-user support
   .addSubcommand(subcommand =>
     subcommand
       .setName('role')
@@ -236,7 +214,6 @@ export const data = new SlashCommandBuilder()
           )
       )
   )
-  // Force nickname subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('forcenickname')
@@ -254,7 +231,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Unforce nickname subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('unforcenickname')
@@ -266,7 +242,6 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Setup permissions subcommand
   .addSubcommand(subcommand =>
     subcommand
       .setName('setupperms')
@@ -275,26 +250,27 @@ export const data = new SlashCommandBuilder()
 
 // Main execute function for compound command
 export async function execute(interaction) {
-  if (!moderationSystem) {
-    return interaction.reply({ content: '❌ Moderation system not loaded.', ephemeral: true });
-  }
-
-  const subcommand = interaction.options.getSubcommand();
-  
-  // Check permissions for the specific subcommand
-  const permCheck = moderationSystem.checkPermission(interaction.member, subcommand);
-  if (!permCheck.allowed) {
+  if (!moderationSystem || !embedLoader) {
     return interaction.reply({ 
-      content: `❌ ${permCheck.reason}`, 
+      content: embedLoader.format('Moderation system not loaded.', 'message'), 
       ephemeral: true 
     });
   }
 
-  // Check cooldown
+  const subcommand = interaction.options.getSubcommand();
+  
+  const permCheck = moderationSystem.checkPermission(interaction.member, subcommand);
+  if (!permCheck.allowed) {
+    return interaction.reply({ 
+      content: embedLoader.format(permCheck.reason, 'message'), 
+      ephemeral: true 
+    });
+  }
+
   const cooldownCheck = moderationSystem.checkCooldown(interaction.user.id, subcommand);
   if (cooldownCheck.onCooldown) {
     return interaction.reply({
-      content: `⏰ Please wait ${cooldownCheck.timeLeft} seconds before using this command again.`,
+      content: embedLoader.format(`Please wait ${cooldownCheck.timeLeft} seconds before using this command again.`, 'message'),
       ephemeral: true
     });
   }
@@ -336,10 +312,9 @@ export async function executeBan(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to ban.', 
+      content: embedLoader.format('Please provide at least one user to ban.', 'message'), 
       ephemeral: true 
     });
   }
@@ -348,17 +323,15 @@ export async function executeBan(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
-  // AntiNuke whitelist is only required for multi-user operations (2+ users)
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'ban')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to ban multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to ban multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
@@ -377,13 +350,11 @@ export async function executeBan(interaction) {
       const member = await interaction.guild.members.fetch(userId).catch(() => null);
       
       if (member) {
-        // Check if target is bannable
         if (!member.bannable) {
           results.failed.push({ user: user.tag, reason: 'Cannot ban (higher permissions)' });
           continue;
         }
         
-        // Check role hierarchy (skip for owners with bypass)
         if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
           results.failed.push({ user: user.tag, reason: 'Higher or equal role' });
           continue;
@@ -393,40 +364,34 @@ export async function executeBan(interaction) {
       await interaction.guild.members.ban(userId, { reason: `${reason} - Banned by ${interaction.user.tag}` });
       results.success.push(user.tag);
       
-      // Log each ban
       await moderationSystem.logAction(interaction.guild, {
         action: 'Ban',
         moderator: interaction.user,
         target: `${user.tag} (${user.id})`,
-        reason: reason,
-        color: 0xff0000
+        reason: reason
       });
     } catch (error) {
       results.failed.push({ user: userId, reason: error.message });
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle('🔨 Ban Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully Banned (${results.success.length})`,
+    fields.push({
+      name: `Successfully Banned (${results.success.length})`,
       value: results.success.join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed to Ban (${results.failed.length})`,
+    fields.push({
+      name: `Failed to Ban (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Moderator',
     value: interaction.user.tag,
     inline: true
@@ -434,6 +399,12 @@ export async function executeBan(interaction) {
     name: 'Reason',
     value: reason,
     inline: true
+  });
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Ban action completed',
+    fields: fields
   });
   
   await interaction.editReply({ embeds: [embed] });
@@ -444,10 +415,9 @@ export async function executeKick(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to kick.', 
+      content: embedLoader.format('Please provide at least one user to kick.', 'message'), 
       ephemeral: true 
     });
   }
@@ -456,16 +426,15 @@ export async function executeKick(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'kick')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to kick multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to kick multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
@@ -482,13 +451,11 @@ export async function executeKick(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check if target is kickable
       if (!member.kickable) {
         results.failed.push({ user: member.user.tag, reason: 'Cannot kick (higher permissions)' });
         continue;
       }
       
-      // Check role hierarchy (skip for owners with bypass)
       if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
@@ -497,40 +464,34 @@ export async function executeKick(interaction) {
       await member.kick(`${reason} - Kicked by ${interaction.user.tag}`);
       results.success.push(member.user.tag);
       
-      // Log each kick
       await moderationSystem.logAction(interaction.guild, {
         action: 'Kick',
         moderator: interaction.user,
         target: `${member.user.tag} (${member.user.id})`,
-        reason: reason,
-        color: 0xffa500
+        reason: reason
       });
     } catch (error) {
       results.failed.push({ user: userId, reason: error.message });
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle('👢 Kick Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully Kicked (${results.success.length})`,
+    fields.push({
+      name: `Successfully Kicked (${results.success.length})`,
       value: results.success.join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed to Kick (${results.failed.length})`,
+    fields.push({
+      name: `Failed to Kick (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Moderator',
     value: interaction.user.tag,
     inline: true
@@ -538,6 +499,12 @@ export async function executeKick(interaction) {
     name: 'Reason',
     value: reason,
     inline: true
+  });
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Kick action completed',
+    fields: fields
   });
   
   await interaction.editReply({ embeds: [embed] });
@@ -549,10 +516,9 @@ export async function executeTimeout(interaction) {
   const duration = interaction.options.getString('duration');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to timeout.', 
+      content: embedLoader.format('Please provide at least one user to timeout.', 'message'), 
       ephemeral: true 
     });
   }
@@ -561,33 +527,30 @@ export async function executeTimeout(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Parse duration
   const durationMs = parseDuration(duration);
   if (!durationMs) {
     return interaction.reply({ 
-      content: '❌ Invalid duration format. Use formats like: 5m, 1h, 1d', 
+      content: embedLoader.format('Invalid duration format. Use formats like: 5m, 1h, 1d', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if duration is within Discord's limits
   if (durationMs > 28 * 24 * 60 * 60 * 1000) {
     return interaction.reply({ 
-      content: '❌ Timeout duration cannot exceed 28 days.', 
+      content: embedLoader.format('Timeout duration cannot exceed 28 days.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'timeout')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to timeout multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to timeout multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
@@ -604,13 +567,11 @@ export async function executeTimeout(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check role hierarchy (skip for owners with bypass)
       if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
       }
       
-      // Check if bot can timeout the member
       if (!member.moderatable) {
         results.failed.push({ user: member.user.tag, reason: 'Cannot timeout (higher permissions)' });
         continue;
@@ -619,41 +580,35 @@ export async function executeTimeout(interaction) {
       await member.timeout(durationMs, `${reason} - Timed out by ${interaction.user.tag}`);
       results.success.push(member.user.tag);
       
-      // Log each timeout
       await moderationSystem.logAction(interaction.guild, {
         action: 'Timeout',
         moderator: interaction.user,
         target: `${member.user.tag} (${member.user.id})`,
         reason: reason,
-        additional: `Duration: ${duration}`,
-        color: 0xffff00
+        additional: `Duration: ${duration}`
       });
     } catch (error) {
       results.failed.push({ user: userId, reason: error.message });
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle('⏰ Timeout Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully Timed Out (${results.success.length})`,
+    fields.push({
+      name: `Successfully Timed Out (${results.success.length})`,
       value: results.success.join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed to Timeout (${results.failed.length})`,
+    fields.push({
+      name: `Failed to Timeout (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Duration',
     value: duration,
     inline: true
@@ -667,6 +622,12 @@ export async function executeTimeout(interaction) {
     inline: false
   });
   
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Timeout action completed',
+    fields: fields
+  });
+  
   await interaction.editReply({ embeds: [embed] });
 }
 
@@ -675,10 +636,9 @@ export async function executeMute(interaction) {
   const usersInput = interaction.options.getString('users');
   const reason = interaction.options.getString('reason') || 'No reason provided';
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to mute.', 
+      content: embedLoader.format('Please provide at least one user to mute.', 'message'), 
       ephemeral: true 
     });
   }
@@ -687,16 +647,15 @@ export async function executeMute(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'mute')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to mute multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to mute multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
@@ -709,20 +668,17 @@ export async function executeMute(interaction) {
     failed: []
   };
   
-  const { cfg } = locateMuteConfig();
-  const muteRole = await ensureMuteRole(interaction);
+  const muteRole = await moderationSystem.getOrCreateMuteRole(interaction.guild);
   
   for (const userId of userIds) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check role hierarchy (skip for owners with bypass)
       if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
         results.failed.push({ user: member.user.tag, reason: 'Higher or equal role' });
         continue;
       }
       
-      // Check if already muted
       if (member.roles.cache.has(muteRole.id)) {
         results.failed.push({ user: member.user.tag, reason: 'Already muted' });
         continue;
@@ -731,40 +687,34 @@ export async function executeMute(interaction) {
       await member.roles.add(muteRole, `Muted by ${interaction.user.tag}: ${reason}`);
       results.success.push(member.user.tag);
       
-      // Log each mute
       await moderationSystem.logAction(interaction.guild, {
         action: 'Mute',
         moderator: interaction.user,
         target: `${member.user.tag} (${member.user.id})`,
-        reason: reason,
-        color: cfg.defaultColor
+        reason: reason
       });
     } catch (error) {
       results.failed.push({ user: userId, reason: error.message });
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle('🔇 Mute Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully Muted (${results.success.length})`,
+    fields.push({
+      name: `Successfully Muted (${results.success.length})`,
       value: results.success.join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed to Mute (${results.failed.length})`,
+    fields.push({
+      name: `Failed to Mute (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Moderator',
     value: interaction.user.tag,
     inline: true
@@ -774,6 +724,12 @@ export async function executeMute(interaction) {
     inline: true
   });
   
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Mute action completed',
+    fields: fields
+  });
+  
   await interaction.editReply({ embeds: [embed] });
 }
 
@@ -781,10 +737,9 @@ export async function executeMute(interaction) {
 export async function executeUnmute(interaction) {
   const usersInput = interaction.options.getString('users');
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to unmute.', 
+      content: embedLoader.format('Please provide at least one user to unmute.', 'message'), 
       ephemeral: true 
     });
   }
@@ -793,16 +748,15 @@ export async function executeUnmute(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'unmute')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to unmute multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to unmute multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
@@ -815,12 +769,12 @@ export async function executeUnmute(interaction) {
     failed: []
   };
   
-  const { cfg } = locateMuteConfig();
-  const muteRole = cfg.roleId && interaction.guild.roles.cache.get(cfg.roleId);
+  const muteRoleId = moderationSystem.muteRoles.get(interaction.guild.id);
+  const muteRole = muteRoleId && interaction.guild.roles.cache.get(muteRoleId);
   
   if (!muteRole) {
     return interaction.editReply({ 
-      content: '❌ No "Muted" role found in this server.', 
+      content: embedLoader.format('No mute role found in this server.', 'message'), 
       ephemeral: true 
     });
   }
@@ -829,7 +783,6 @@ export async function executeUnmute(interaction) {
     try {
       const member = await interaction.guild.members.fetch(userId);
       
-      // Check if user is muted
       if (!member.roles.cache.has(muteRole.id)) {
         results.failed.push({ user: member.user.tag, reason: 'Not muted' });
         continue;
@@ -838,42 +791,42 @@ export async function executeUnmute(interaction) {
       await member.roles.remove(muteRole, `Unmuted by ${interaction.user.tag}`);
       results.success.push(member.user.tag);
       
-      // Log each unmute
       await moderationSystem.logAction(interaction.guild, {
         action: 'Unmute',
         moderator: interaction.user,
-        target: `${member.user.tag} (${member.user.id})`,
-        color: 0x00ff00
+        target: `${member.user.tag} (${member.user.id})`
       });
     } catch (error) {
       results.failed.push({ user: userId, reason: error.message });
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle('🔊 Unmute Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully Unmuted (${results.success.length})`,
+    fields.push({
+      name: `Successfully Unmuted (${results.success.length})`,
       value: results.success.join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed to Unmute (${results.failed.length})`,
+    fields.push({
+      name: `Failed to Unmute (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Moderator',
     value: interaction.user.tag,
     inline: true
+  });
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Unmute action completed',
+    fields: fields
   });
   
   await interaction.editReply({ embeds: [embed] });
@@ -885,10 +838,9 @@ export async function executeRole(interaction) {
   const role = interaction.options.getRole('role');
   const action = interaction.options.getString('action');
   
-  // Safety check for null input
   if (!usersInput) {
     return interaction.reply({ 
-      content: '❌ Please provide at least one user to manage roles for.', 
+      content: embedLoader.format('Please provide at least one user to manage roles for.', 'message'), 
       ephemeral: true 
     });
   }
@@ -897,34 +849,31 @@ export async function executeRole(interaction) {
   
   if (userIds.length === 0) {
     return interaction.reply({ 
-      content: '❌ No valid users found in input.', 
+      content: embedLoader.format('No valid users found in input.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if multiple users and if allowed
   if (userIds.length > 1) {
     if (!canUseMultiUser(interaction, 'role')) {
       return interaction.reply({ 
-        content: '❌ You are not authorized to manage roles for multiple users at once. You must be whitelisted in the AntiNuke system.', 
+        content: embedLoader.format('You are not authorized to manage roles for multiple users at once. You must be whitelisted in the AntiNuke system.', 'message'), 
         ephemeral: true 
       });
     }
   }
   
-  // Check if invoker's highest role is above the target role (skip for owners with bypass)
   if (!isOwnerWithBypass(interaction.member) && role.position >= interaction.member.roles.highest.position) {
     return interaction.reply({ 
-      content: '❌ You can only manage roles below your highest role.', 
+      content: embedLoader.format('You can only manage roles below your highest role.', 'message'), 
       ephemeral: true 
     });
   }
   
-  // Check if bot can manage the role
   const botMember = await interaction.guild.members.fetch(interaction.client.user.id);
   if (role.position >= botMember.roles.highest.position) {
     return interaction.reply({ 
-      content: '❌ I cannot manage this role. It\'s higher than my highest role.', 
+      content: embedLoader.format('I cannot manage this role. It\'s higher than my highest role.', 'message'), 
       ephemeral: true 
     });
   }
@@ -953,8 +902,7 @@ export async function executeRole(interaction) {
           action: 'Role Add',
           moderator: interaction.user,
           target: `${member.user.tag} (${member.user.id})`,
-          additional: `Role: ${role.name}`,
-          color: 0x00ff00
+          additional: `Role: ${role.name}`
         });
       } else {
         if (!member.roles.cache.has(role.id)) {
@@ -969,8 +917,7 @@ export async function executeRole(interaction) {
           action: 'Role Remove',
           moderator: interaction.user,
           target: `${member.user.tag} (${member.user.id})`,
-          additional: `Role: ${role.name}`,
-          color: 0xff0000
+          additional: `Role: ${role.name}`
         });
       }
     } catch (error) {
@@ -978,27 +925,23 @@ export async function executeRole(interaction) {
     }
   }
   
-  // Build response embed
-  const embed = new EmbedBuilder()
-    .setTitle(action === 'give' ? '✅ Role Add Results' : '✅ Role Remove Results')
-    .setColor(results.failed.length === 0 ? 0x00ff00 : 0xffff00)
-    .setTimestamp();
+  const fields = [];
   
   if (results.success.length > 0) {
-    embed.addFields({
-      name: `✅ Successfully ${action === 'give' ? 'Added' : 'Removed'} (${results.success.length})`,
+    fields.push({
+      name: `Successfully ${action === 'give' ? 'Added' : 'Removed'} (${results.success.length})`,
       value: results.success.map(s => s.user).join('\n').slice(0, 1024) || 'None'
     });
   }
   
   if (results.failed.length > 0) {
-    embed.addFields({
-      name: `❌ Failed (${results.failed.length})`,
+    fields.push({
+      name: `Failed (${results.failed.length})`,
       value: results.failed.map(f => `${f.user}: ${f.reason}`).join('\n').slice(0, 1024)
     });
   }
   
-  embed.addFields({
+  fields.push({
     name: 'Role',
     value: role.toString(),
     inline: true
@@ -1010,6 +953,12 @@ export async function executeRole(interaction) {
     name: 'Moderator',
     value: interaction.user.tag,
     inline: true
+  });
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Moderation System',
+    description: 'Role action completed',
+    fields: fields
   });
   
   await interaction.editReply({ embeds: [embed] });
@@ -1024,25 +973,21 @@ export async function executeLockChannel(interaction) {
       SendMessages: false
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('🔒 Channel Locked')
-      .setDescription(`${channel} has been locked.`)
-      .setColor(0xff0000)
-      .setFooter({ text: `Locked by ${interaction.user.tag}` })
-      .setTimestamp();
+    const embed = embedLoader.createEmbed({
+      description: `${channel} has been locked by ${interaction.user.tag}`
+    });
 
     await interaction.reply({ embeds: [embed] });
 
     await moderationSystem.logAction(interaction.guild, {
       action: 'Channel Lock',
       moderator: interaction.user,
-      target: `${channel} (${channel.id})`,
-      color: 0xff0000
+      target: `${channel} (${channel.id})`
     });
   } catch (error) {
     console.error('Error locking channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to lock the channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to lock the channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1056,25 +1001,21 @@ export async function executeUnlockChannel(interaction) {
       SendMessages: null
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('🔓 Channel Unlocked')
-      .setDescription(`${channel} has been unlocked.`)
-      .setColor(0x00ff00)
-      .setFooter({ text: `Unlocked by ${interaction.user.tag}` })
-      .setTimestamp();
+    const embed = embedLoader.createEmbed({
+      description: `${channel} has been unlocked by ${interaction.user.tag}`
+    });
 
     await interaction.reply({ embeds: [embed] });
 
     await moderationSystem.logAction(interaction.guild, {
       action: 'Channel Unlock',
       moderator: interaction.user,
-      target: `${channel} (${channel.id})`,
-      color: 0x00ff00
+      target: `${channel} (${channel.id})`
     });
   } catch (error) {
     console.error('Error unlocking channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to unlock the channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to unlock the channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1085,7 +1026,7 @@ export async function executeNuke(interaction) {
   
   if (!confirm) {
     return interaction.reply({ 
-      content: '❌ Channel nuke cancelled. Set confirm to true to proceed.', 
+      content: embedLoader.format('Channel nuke cancelled. Set confirm to true to proceed.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1104,27 +1045,23 @@ export async function executeNuke(interaction) {
       reason: `Channel nuked by ${interaction.user.tag}`
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('💥 Channel Nuked')
-      .setDescription('This channel has been nuked and recreated.')
-      .setColor(0xffa500)
-      .setFooter({ text: `Nuked by ${interaction.user.tag}` })
-      .setTimestamp();
+    const embed = embedLoader.createEmbed({
+      description: `This channel has been nuked and recreated by ${interaction.user.tag}`
+    });
 
     await newChannel.send({ embeds: [embed] });
 
     await moderationSystem.logAction(interaction.guild, {
       action: 'Channel Nuke',
       moderator: interaction.user,
-      target: `#${channel.name} (${channel.id})`,
-      color: 0xffa500
+      target: `#${channel.name} (${channel.id})`
     });
 
     await channel.delete(`Nuked by ${interaction.user.tag}`);
   } catch (error) {
     console.error('Error nuking channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to nuke the channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to nuke the channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1142,7 +1079,7 @@ export async function executeUnban(interaction) {
       
       if (!bannedUser) {
         return interaction.reply({ 
-          content: '❌ User not found in ban list.', 
+          content: embedLoader.format('User not found in ban list.', 'message'), 
           ephemeral: true 
         });
       }
@@ -1152,28 +1089,25 @@ export async function executeUnban(interaction) {
 
     await interaction.guild.members.unban(userId, `Unbanned by ${interaction.user.tag}`);
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ User Unbanned')
-      .setDescription(`User has been unbanned from the server.`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: 'User has been unbanned from the server',
+      fields: [
         { name: 'User ID', value: userId, inline: true },
         { name: 'Moderator', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+      ]
+    });
 
     await interaction.reply({ embeds: [embed] });
 
     await moderationSystem.logAction(interaction.guild, {
       action: 'Unban',
       moderator: interaction.user,
-      target: `User ID: ${userId}`,
-      color: 0x00ff00
+      target: `User ID: ${userId}`
     });
   } catch (error) {
     console.error('Error unbanning user:', error);
     await interaction.reply({ 
-      content: '❌ Failed to unban the user. Make sure the user ID is correct and they are banned.', 
+      content: embedLoader.format('Failed to unban the user. Make sure the user ID is correct and they are banned.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1200,26 +1134,26 @@ export async function executePurge(interaction) {
 
     if (messagesToDelete.length === 0) {
       return interaction.editReply({ 
-        content: '❌ No messages found to delete.', 
+        content: embedLoader.format('No messages found to delete.', 'message'), 
         ephemeral: true 
       });
     }
 
     const deleted = await interaction.channel.bulkDelete(messagesToDelete, true);
 
-    const embed = new EmbedBuilder()
-      .setTitle('🧹 Messages Purged')
-      .setDescription(`Successfully deleted ${deleted.size} messages.`)
-      .addFields(
-        { name: 'Channel', value: `${interaction.channel}`, inline: true },
-        { name: 'Moderator', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+    const fields = [
+      { name: 'Channel', value: `${interaction.channel}`, inline: true },
+      { name: 'Moderator', value: interaction.user.tag, inline: true }
+    ];
 
     if (targetUser) {
-      embed.addFields({ name: 'Target User', value: `${targetUser.tag}`, inline: true });
+      fields.push({ name: 'Target User', value: `${targetUser.tag}`, inline: true });
     }
+
+    const embed = embedLoader.createEmbed({
+      description: `Successfully deleted ${deleted.size} messages`,
+      fields: fields
+    });
 
     await interaction.editReply({ embeds: [embed], ephemeral: true });
 
@@ -1227,13 +1161,12 @@ export async function executePurge(interaction) {
       action: 'Purge',
       moderator: interaction.user,
       target: `${interaction.channel} (${interaction.channel.id})`,
-      additional: `Deleted ${deleted.size} messages${targetUser ? ` from ${targetUser.tag}` : ''}`,
-      color: 0x00ff00
+      additional: `Deleted ${deleted.size} messages${targetUser ? ` from ${targetUser.tag}` : ''}`
     });
   } catch (error) {
     console.error('Error purging messages:', error);
     await interaction.editReply({ 
-      content: '❌ Failed to purge messages. Messages older than 14 days cannot be bulk deleted.', 
+      content: embedLoader.format('Failed to purge messages. Messages older than 14 days cannot be bulk deleted.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1245,7 +1178,7 @@ export async function executeForceNickname(interaction) {
 
   if (nickname.length > 32) {
     return interaction.reply({ 
-      content: '❌ Nickname must be 32 characters or less.', 
+      content: embedLoader.format('Nickname must be 32 characters or less.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1255,15 +1188,14 @@ export async function executeForceNickname(interaction) {
     
     if (!member.manageable) {
       return interaction.reply({ 
-        content: '❌ I cannot manage this user\'s nickname. They may have higher permissions than me.', 
+        content: embedLoader.format('I cannot manage this user\'s nickname. They may have higher permissions than me.', 'message'), 
         ephemeral: true 
       });
     }
 
-    // Check role hierarchy (skip for owners with bypass)
     if (!isOwnerWithBypass(interaction.member) && member.roles.highest.position >= interaction.member.roles.highest.position) {
       return interaction.reply({ 
-        content: '❌ You cannot force a nickname on someone with an equal or higher role.', 
+        content: embedLoader.format('You cannot force a nickname on someone with an equal or higher role.', 'message'), 
         ephemeral: true 
       });
     }
@@ -1272,22 +1204,20 @@ export async function executeForceNickname(interaction) {
 
     if (!success) {
       return interaction.reply({ 
-        content: '❌ Failed to force nickname.', 
+        content: embedLoader.format('Failed to force nickname.', 'message'), 
         ephemeral: true 
       });
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle('📝 Nickname Forced')
-      .setDescription(`Forced nickname on ${user.tag}`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: `Forced nickname on ${user.tag}`,
+      fields: [
         { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
         { name: 'Forced Nickname', value: nickname, inline: true },
         { name: 'Moderator', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0x9b59b6)
-      .setFooter({ text: 'User cannot change this nickname' })
-      .setTimestamp();
+      ],
+      footer: 'User cannot change this nickname'
+    });
 
     await interaction.reply({ embeds: [embed] });
 
@@ -1295,13 +1225,12 @@ export async function executeForceNickname(interaction) {
       action: 'Force Nickname',
       moderator: interaction.user,
       target: `${user.tag} (${user.id})`,
-      additional: `Nickname: ${nickname}`,
-      color: 0x9b59b6
+      additional: `Nickname: ${nickname}`
     });
   } catch (error) {
     console.error('Error forcing nickname:', error);
     await interaction.reply({ 
-      content: '❌ Failed to force nickname.', 
+      content: embedLoader.format('Failed to force nickname.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1314,7 +1243,7 @@ export async function executeUnforceNickname(interaction) {
     const forcedNickname = moderationSystem.getForcedNickname(user.id);
     if (!forcedNickname) {
       return interaction.reply({ 
-        content: '❌ This user does not have a forced nickname.', 
+        content: embedLoader.format('This user does not have a forced nickname.', 'message'), 
         ephemeral: true 
       });
     }
@@ -1323,22 +1252,20 @@ export async function executeUnforceNickname(interaction) {
 
     if (!success) {
       return interaction.reply({ 
-        content: '❌ Failed to remove forced nickname.', 
+        content: embedLoader.format('Failed to remove forced nickname.', 'message'), 
         ephemeral: true 
       });
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Forced Nickname Removed')
-      .setDescription(`Removed forced nickname from ${user.tag}`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: `Removed forced nickname from ${user.tag}`,
+      fields: [
         { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
         { name: 'Previous Forced Nickname', value: forcedNickname, inline: true },
         { name: 'Moderator', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setFooter({ text: 'User can now change their nickname freely' })
-      .setTimestamp();
+      ],
+      footer: 'User can now change their nickname freely'
+    });
 
     await interaction.reply({ embeds: [embed] });
 
@@ -1346,13 +1273,12 @@ export async function executeUnforceNickname(interaction) {
       action: 'Unforce Nickname',
       moderator: interaction.user,
       target: `${user.tag} (${user.id})`,
-      additional: `Previous nickname: ${forcedNickname}`,
-      color: 0x00ff00
+      additional: `Previous nickname: ${forcedNickname}`
     });
   } catch (error) {
     console.error('Error removing forced nickname:', error);
     await interaction.reply({ 
-      content: '❌ Failed to remove forced nickname.', 
+      content: embedLoader.format('Failed to remove forced nickname.', 'message'), 
       ephemeral: true 
     });
   }
@@ -1367,7 +1293,7 @@ export async function executeSetupPerms(interaction) {
 
     const vcRole = await guild.roles.create({
       name: 'VC Perms',
-      color: 0x3498db,
+      color: 0x000000,
       permissions: [
         PermissionFlagsBits.MuteMembers,
         PermissionFlagsBits.DeafenMembers,
@@ -1379,7 +1305,7 @@ export async function executeSetupPerms(interaction) {
 
     const picRole = await guild.roles.create({
       name: 'Pic Perms',
-      color: 0xe74c3c,
+      color: 0x000000,
       permissions: [
         PermissionFlagsBits.AttachFiles,
         PermissionFlagsBits.EmbedLinks
@@ -1390,7 +1316,7 @@ export async function executeSetupPerms(interaction) {
 
     const linkRole = await guild.roles.create({
       name: 'Link Perms',
-      color: 0x2ecc71,
+      color: 0x000000,
       permissions: [
         PermissionFlagsBits.EmbedLinks
       ],
@@ -1404,10 +1330,10 @@ export async function executeSetupPerms(interaction) {
       link: linkRole.id
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Permission Roles Created')
-      .setDescription('Successfully created moderation permission roles.')
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      title: 'Moderation System',
+      description: 'Successfully created moderation permission roles',
+      fields: [
         { 
           name: 'VC Perms', 
           value: `${vcRole}\nMute, Deafen, Move Members`, 
@@ -1423,10 +1349,9 @@ export async function executeSetupPerms(interaction) {
           value: `${linkRole}\nSend Links`, 
           inline: true 
         }
-      )
-      .setColor(0x00ff00)
-      .setFooter({ text: 'Assign these roles to users who need the permissions' })
-      .setTimestamp();
+      ],
+      footer: 'Assign these roles to users who need the permissions'
+    });
 
     await interaction.editReply({ embeds: [embed] });
 
@@ -1434,13 +1359,12 @@ export async function executeSetupPerms(interaction) {
       action: 'Setup Permissions',
       moderator: interaction.user,
       target: 'Created permission roles',
-      additional: `VC: ${vcRole.id}, Pic: ${picRole.id}, Link: ${linkRole.id}`,
-      color: 0x00ff00
+      additional: `VC: ${vcRole.id}, Pic: ${picRole.id}, Link: ${linkRole.id}`
     });
   } catch (error) {
     console.error('Error setting up permission roles:', error);
     await interaction.editReply({ 
-      content: '❌ Failed to create permission roles. Make sure I have the necessary permissions.' 
+      content: embedLoader.format('Failed to create permission roles. Make sure I have the necessary permissions.', 'message')
     });
   }
 }
@@ -1465,58 +1389,6 @@ function parseDuration(duration) {
   return value * multipliers[unit];
 }
 
-function locateMuteConfig() {
-  const top    = moderationSystem.config;
-  const nested = moderationSystem.config.moderation;
-
-  if (top.permMuteRole) {
-    return { cfg: top.permMuteRole, updateKey: 'permMuteRole.roleId' };
-  }
-  if (nested && nested.permMuteRole) {
-    return {
-      cfg: nested.permMuteRole,
-      updateKey: 'moderation.permMuteRole.roleId'
-    };
-  }
-
-  console.error('❌ Could not find permMuteRole in config:', moderationSystem.config);
-  throw new Error('Configuration error: missing permMuteRole');
-}
-
-async function ensureMuteRole(interaction) {
-  const { roleId, defaultName, defaultColor } = moderationSystem.config.permMuteRole;
-
-  let role = roleId && interaction.guild.roles.cache.get(roleId);
-  if (!role) {
-    role = await interaction.guild.roles.create({
-      name: defaultName,
-      color: defaultColor,
-      permissions: []
-    });
-
-    moderationSystem.config.permMuteRole.roleId = role.id;
-    await moderationSystem.saveConfig();
-
-    for (const channel of interaction.guild.channels.cache.values()) {
-      if (channel.isTextBased && channel.isTextBased()) {
-        await channel.permissionOverwrites.edit(role, {
-          SendMessages:  false,
-          AddReactions:  false,
-          ViewChannel:   true
-        });
-      }
-      else if (channel.isVoiceBased && channel.isVoiceBased()) {
-        await channel.permissionOverwrites.edit(role, {
-          Connect: false,
-          Speak:   false
-        });
-      }
-    }
-  }
-
-  return role;
-}
-
 // Export all standalone commands
 export const lockChannelData = new SlashCommandBuilder()
   .setName('lockchannel')
@@ -1536,7 +1408,6 @@ export const nukeData = new SlashCommandBuilder()
       .setRequired(true)
   );
 
-// Multi-user standalone commands
 export const banData = new SlashCommandBuilder()
   .setName('ban')
   .setDescription('Ban user(s) from the server')

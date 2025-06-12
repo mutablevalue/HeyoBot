@@ -7,6 +7,9 @@ export class LinkProtection {
     // Reference to moderation system (will be set by index.js)
     this.moderationSystem = null;
     
+    // Reference to embed loader (will be set by index.js)
+    this.embedLoader = null;
+    
     const linkConfig = this.configLoader.get('linkProtection') || {};
     this.config = {
       enabled: linkConfig.enabled ?? true,
@@ -23,7 +26,7 @@ export class LinkProtection {
       exemptChannels: linkConfig.exemptChannels || [],
       logChannel: linkConfig.logChannel || null,
       deleteMessage: linkConfig.deleteMessage ?? true,
-      warningMessage: linkConfig.warningMessage || '❌ You do not have permission to send links in this channel.',
+      warningMessage: linkConfig.warningMessage || 'You do not have permission to send links in this channel.',
       ephemeralWarning: linkConfig.ephemeralWarning ?? true
     };
 
@@ -37,6 +40,13 @@ export class LinkProtection {
    */
   setModerationSystem(moderationSystem) {
     this.moderationSystem = moderationSystem;
+  }
+
+  /**
+   * Set embed loader reference
+   */
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
   }
 
   /**
@@ -102,16 +112,24 @@ export class LinkProtection {
     const logChannel = message.guild.channels.cache.get(this.config.logChannel);
     if (!logChannel?.isTextBased()) return;
 
-    const embed = {
-      title: '🔗 Link Deleted',
-      color: 0xff0000,
-      fields: [
-        { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
-        { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-        { name: 'Content', value: message.content.substring(0, 1024) || 'No content', inline: false }
-      ],
-      timestamp: new Date().toISOString()
-    };
+    const fields = [
+      { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
+      { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
+      { name: 'Content', value: message.content.substring(0, 1024) || 'No content', inline: false }
+    ];
+
+    const embed = this.embedLoader ? 
+      this.embedLoader.createEmbed({
+        title: 'Link Protection',
+        description: 'Link deleted',
+        fields: fields
+      }) :
+      {
+        title: 'Link Protection',
+        description: 'Link deleted',
+        color: 0x800000,
+        fields: fields
+      };
 
     try {
       await logChannel.send({ embeds: [embed] });
@@ -142,7 +160,11 @@ export class LinkProtection {
 
       if (this.config.warningMessage) {
         try {
-          const warning = await message.channel.send(this.config.warningMessage);
+          const formattedWarning = this.embedLoader ? 
+            this.embedLoader.format(this.config.warningMessage, 'message') : 
+            this.config.warningMessage;
+          
+          const warning = await message.channel.send(formattedWarning);
           setTimeout(() => warning.delete().catch(() => {}), 5000);
         } catch (error) {
           console.error('[LinkProtection] Failed to send warning:', error);

@@ -157,7 +157,7 @@ linkProtection:
     - "1234567890123456789"
   logChannel: "1380422905191731210"
   deleteMessage: true
-  warningMessage: You do not have permission to send links in this channel.
+  warningMessage: You do not have permission to send links in this channel.  # No emoji
   ephemeralWarning: true
 vanity:
   enabled: true
@@ -442,7 +442,7 @@ embed:
       prefix: ""
       suffix: ""
     message:
-      prefix: "⩤ "
+      prefix: "𖤐 "
       suffix: ""
   defaults:
     showFooter: true

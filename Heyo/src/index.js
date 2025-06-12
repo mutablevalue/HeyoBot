@@ -92,6 +92,7 @@ async function main() {
   // Second level: ModerationSystem (depends on AntiNuke for hierarchy)
   const moderationSystem = new ModerationSystem(client, config);
   moderationSystem.setAntiNuke(antiNuke); // Set AntiNuke reference for hierarchy checking
+  moderationSystem.setEmbedLoader(embedLoader); //Set AntiNuke reference for hierarchy checking
   
   // Third level: All other systems (depend on ModerationSystem for permissions and EmbedLoader for visuals)
   const j2cManager = new J2CManager(client, config);
@@ -99,8 +100,9 @@ async function main() {
   const afkManager = new AfkManager(client, config);
   const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
   
-  const linkProtection = new LinkProtection(client, config);
+ const linkProtection = new LinkProtection(client, config);
   linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
+  linkProtection.setEmbedLoader(embedLoader); // Ad
   
   const welcomeSystem = new WelcomeSystem(client, config);
   const roleTracker = new RoleTracker(client, config, embedLoader);
@@ -121,11 +123,12 @@ async function main() {
   const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
 
   // 4) Pass systems into commands that need them
-  antiNukeCommand.setAntiNuke(antiNuke);
+   antiNukeCommand.setAntiNuke(antiNuke);
   
   setupJ2CCommand.setJ2CManager(j2cManager);
   vcCommand.setJ2CManager(j2cManager);
   moderationCommands.setModerationSystem(moderationSystem);
+  moderationCommands.setEmbedLoader(embedLoader); // Add this lin
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
   welcomeCommand.setWelcomeSystem(welcomeSystem);

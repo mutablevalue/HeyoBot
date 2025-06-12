@@ -34,6 +34,9 @@ export class ModerationSystem {
     // Reference to AntiNuke system (will be set by index.js)
     this.antiNuke = null;
     
+    // Reference to EmbedLoader (will be set by index.js)
+    this.embedLoader = null;
+    
     this.setupNicknameMonitoring();
   }
 
@@ -42,6 +45,13 @@ export class ModerationSystem {
    */
   setAntiNuke(antiNuke) {
     this.antiNuke = antiNuke;
+  }
+
+  /**
+   * Set EmbedLoader reference for consistent embeds
+   */
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
   }
 
   /**
@@ -180,8 +190,7 @@ export class ModerationSystem {
             action: 'Forced Nickname Revert',
             moderator: this.client.user,
             target: `${newMember.user.tag} (${newMember.id})`,
-            additional: `Attempted to change from "${forcedData.nickname}" to "${newMember.nickname}"`,
-            color: 0xffa500
+            additional: `Attempted to change from "${forcedData.nickname}" to "${newMember.nickname}"`
           });
         } catch (error) {
           console.error('[ModerationSystem] Failed to revert nickname:', error);
@@ -220,7 +229,7 @@ export class ModerationSystem {
     try {
       const role = await guild.roles.create({
         name: 'Forced Nickname',
-        color: 0x808080,
+        color: 0x000000,
         permissions: [],
         reason: 'Role for users with forced nicknames'
       });
@@ -254,7 +263,7 @@ export class ModerationSystem {
     try {
       const muteRole = await guild.roles.create({
         name: this.config.permMuteRole?.defaultName || 'Muted',
-        color: this.config.permMuteRole?.defaultColor || 0x808080,
+        color: this.config.permMuteRole?.defaultColor || 0x000000,
         permissions: [],
         reason: 'Mute role for moderation'
       });
@@ -443,20 +452,28 @@ export class ModerationSystem {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = {
-      title: `Moderation Action: ${data.action}`,
-      color: data.color || 0x0099ff,
-      fields: [
-        { name: 'Moderator', value: `${data.moderator.tag} (${data.moderator.id})`, inline: true },
-        { name: 'Target', value: data.target || 'N/A', inline: true },
-        { name: 'Reason', value: data.reason || 'No reason provided', inline: false }
-      ],
-      timestamp: new Date().toISOString()
-    };
+    const fields = [
+      { name: 'Moderator', value: `${data.moderator.tag} (${data.moderator.id})`, inline: true },
+      { name: 'Target', value: data.target || 'N/A', inline: true },
+      { name: 'Reason', value: data.reason || 'No reason provided', inline: false }
+    ];
 
     if (data.additional) {
-      embed.fields.push({ name: 'Additional Info', value: data.additional, inline: false });
+      fields.push({ name: 'Additional Info', value: data.additional, inline: false });
     }
+
+    const embed = this.embedLoader ? 
+      this.embedLoader.createEmbed({
+        title: 'Moderation System',
+        description: `Action: ${data.action}`,
+        fields: fields
+      }) : 
+      {
+        title: 'Moderation System',
+        description: `Action: ${data.action}`,
+        color: 0x800000,
+        fields: fields
+      };
 
     try {
       await channel.send({ embeds: [embed] });
