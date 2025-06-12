@@ -5,34 +5,49 @@ export class EmbedLoader {
   constructor(configLoader) {
     this.configLoader = configLoader;
     
-    // Load embed config with defaults
-    const embedConfig = this.configLoader.get('embed') || {};
+    // Load embed config - no defaults
+    const embedConfig = this.configLoader.get('embed');
+    if (!embedConfig) {
+      throw new Error('[EmbedLoader] No embed configuration found in config');
+    }
+    
     this.config = {
-      color: embedConfig.color || 0x800000, // Maroon color
+      color: embedConfig.color,
       formatters: {
-        header: embedConfig.formatters?.header || {
-          prefix: '[',
-          suffix: ']'
-        },
-        footer: embedConfig.formatters?.footer || {
-          prefix: '',
-          suffix: ''
-        },
-        field: embedConfig.formatters?.field || {
-          prefix: '',
-          suffix: ''
-        },
-        message: embedConfig.formatters?.message || {
-          prefix: '[',
-          suffix: ']'
-        }
+        header: embedConfig.formatters?.header,
+        footer: embedConfig.formatters?.footer,
+        field: embedConfig.formatters?.field,
+        message: embedConfig.formatters?.message
       },
       defaults: {
-        showFooter: embedConfig.defaults?.showFooter ?? false,
-        footerText: embedConfig.defaults?.footerText || '',
-        inline: embedConfig.defaults?.inline ?? true
+        showFooter: embedConfig.defaults?.showFooter,
+        footerText: embedConfig.defaults?.footerText,
+        inline: embedConfig.defaults?.inline
       }
     };
+    
+    // Validate required config
+    this.validateConfig();
+  }
+
+  /**
+   * Validate configuration
+   */
+  validateConfig() {
+    if (!this.config.color) {
+      throw new Error('[EmbedLoader] Missing required config: embed.color');
+    }
+    
+    const requiredFormatters = ['header', 'footer', 'field', 'message'];
+    for (const formatter of requiredFormatters) {
+      if (!this.config.formatters[formatter]) {
+        throw new Error(`[EmbedLoader] Missing required config: embed.formatters.${formatter}`);
+      }
+      if (!this.config.formatters[formatter].hasOwnProperty('prefix') || 
+          !this.config.formatters[formatter].hasOwnProperty('suffix')) {
+        throw new Error(`[EmbedLoader] Missing prefix/suffix for embed.formatters.${formatter}`);
+      }
+    }
   }
 
   /**
@@ -41,10 +56,12 @@ export class EmbedLoader {
    * @param {'header'|'footer'|'field'|'message'} type 
    * @returns {string}
    */
-  format(text, type = 'message') {
+  format(text, type) {
     if (!text) return text;
     const formatter = this.config.formatters[type];
-    if (!formatter) return text;
+    if (!formatter) {
+      throw new Error(`[EmbedLoader] Unknown formatter type: ${type}`);
+    }
     return `${formatter.prefix}${text}${formatter.suffix}`;
   }
 
@@ -81,7 +98,7 @@ export class EmbedLoader {
       const formattedFields = options.fields.map(field => ({
         name: this.format(field.name, 'field'),
         value: field.value,
-        inline: field.inline ?? this.config.defaults.inline
+        inline: field.inline !== undefined ? field.inline : this.config.defaults.inline
       }));
       embed.addFields(formattedFields);
     }
@@ -180,5 +197,8 @@ export class EmbedLoader {
         ...newConfig.defaults
       }
     };
+    
+    // Revalidate after update
+    this.validateConfig();
   }
 }
