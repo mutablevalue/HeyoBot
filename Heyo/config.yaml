@@ -27,7 +27,6 @@ rateLimit:
     moderator: 20
   customRoles:
     "": 0
-    "": 0
   message: Please wait {time} till sending another command.
   permissionRoles:
     antiNukeAdmin: []
