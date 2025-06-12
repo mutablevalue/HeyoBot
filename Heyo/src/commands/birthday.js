@@ -124,14 +124,14 @@ async function handleSetBirthday(interaction) {
     
     const daysUntil = result.isToday ? 0 : Math.ceil((thisYearBirthday - today) / (1000 * 60 * 60 * 24));
     
-    let message = `${interaction.user} set their birthday to **${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}**\n`;
+    let message = `${interaction.user} set your birthday to **${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}**\n`;
     
     if (result.isToday) {
       message += '\n🎉 **Happy Birthday!** 🎂';
     } else if (daysUntil === 1) {
-      message += `\nTheir next birthday is **tomorrow!**`;
+      message += `\nYour next birthday is **tomorrow!**`;
     } else {
-      message += `\nTheir next birthday is in **${daysUntil} days**`;
+      message += `\nYour next birthday is in **${daysUntil} days**`;
     }
     
     const embed = embedLoader.success(message);
@@ -149,7 +149,7 @@ async function handleViewBirthday(interaction) {
   if (!birthdayData) {
     const message = user.id === interaction.user.id 
       ? 'You haven\'t set your birthday yet'
-      : 'This user hasn\'t set their birthday';
+      : 'This user hasn\'t set your birthday';
     
     const embed = embedLoader.info(message);
     return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -170,9 +170,9 @@ async function handleViewBirthday(interaction) {
   let description = `**Birthday:** ${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
   
   if (daysUntil === 0) {
-    description += '\n\n🎉 **It\'s their birthday today!** 🎂';
+    description += '\n\n🎉 **It\'s your birthday today!** 🎂';
   } else if (daysUntil === 1) {
-    description += '\n\n**Their birthday is tomorrow!**';
+    description += '\n\n**Your birthday is tomorrow!**';
   } else {
     description += `\n\n**${daysUntil} days** until your birthday`;
   }
@@ -190,7 +190,7 @@ async function handleRemoveBirthday(interaction) {
   const removed = birthdaySystem.removeBirthday(interaction.user.id);
   
   if (removed) {
-    const embed = embedLoader.success(`${interaction.user} removed their birthday`);
+    const embed = embedLoader.success(`${interaction.user} removed your birthday`);
     await interaction.reply({ embeds: [embed] });
   } else {
     const embed = embedLoader.info('You haven\'t set a birthday yet');
