@@ -4,17 +4,16 @@ import {
   PermissionFlagsBits,
   ChannelType
 } from 'discord.js';
-import { EmbedLoader } from '../utils/embedLoader.js';
 
 let confessSystem = null;
 let embedLoader = null;
 
 export function setConfessSystem(system) {
   confessSystem = system;
-  // Initialize embedLoader using the confessSystem's configLoader
-  if (system && system.configLoader) {
-    embedLoader = new EmbedLoader(system.configLoader);
-  }
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 // Setup confess command
@@ -69,11 +68,14 @@ export async function executeSetupConfess(interaction) {
   const success = await confessSystem.setupConfessChannel(interaction.guild, channel.id);
   
   if (success) {
-    const embed = embedLoader.success(`Confessions will now be sent to ${channel}`);
-    embed.addFields(
-      { name: 'Channel', value: `${channel}`, inline: true },
-      { name: 'Set By', value: `${interaction.user.tag}`, inline: true }
-    );
+    const embed = embedLoader.createEmbed({
+      title: 'Confession System',
+      description: `Confessions will now be sent to ${channel}`,
+      fields: [
+        { name: 'Channel', value: `${channel}`, inline: true },
+        { name: 'Set By', value: `${interaction.user.tag}`, inline: true }
+      ]
+    });
     
     await interaction.editReply({ embeds: [embed] });
   } else {
@@ -104,7 +106,9 @@ export async function executeConfessStats(interaction) {
   
   const stats = confessSystem.getStats(interaction.guild.id);
   
-  const embed = embedLoader.system('Confession Statistics', '', {
+  const embed = embedLoader.createEmbed({
+    title: 'Confession System',
+    description: 'Statistics',
     fields: [
       { name: 'Total Confessions', value: stats.total.toString(), inline: true },
       { name: 'Guild Confessions', value: stats.guildTotal.toString(), inline: true },
@@ -144,11 +148,14 @@ export async function executeDeleteConfession(interaction) {
   const deleted = await confessSystem.deleteConfession(confessionId, interaction.user.id);
   
   if (deleted) {
-    const embed = embedLoader.success(`Confession ${confessionId} has been marked as deleted.`);
-    embed.addFields(
-      { name: 'Deleted By', value: interaction.user.tag, inline: true },
-      { name: 'Original Author', value: `||<@${confession.userId}>||`, inline: true }
-    );
+    const embed = embedLoader.createEmbed({
+      title: 'Confession System',
+      description: `Confession ${confessionId} has been marked as deleted.`,
+      fields: [
+        { name: 'Deleted By', value: interaction.user.tag, inline: true },
+        { name: 'Original Author', value: `||<@${confession.userId}>||`, inline: true }
+      ]
+    });
     
     await interaction.reply({ embeds: [embed], ephemeral: true });
     
@@ -157,6 +164,7 @@ export async function executeDeleteConfession(interaction) {
       const logChannel = interaction.guild.channels.cache.get(confessSystem.config.logChannel);
       if (logChannel?.isTextBased()) {
         const logEmbed = embedLoader.createEmbed({
+          title: 'Confession System',
           description: `${confessionId} was deleted by ${interaction.user.tag}`,
           fields: [
             { name: 'Content', value: confession.content.slice(0, 1024), inline: false }

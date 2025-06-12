@@ -2,7 +2,6 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType,
   ActionRowBuilder,
   ButtonBuilder,
@@ -10,9 +9,14 @@ import {
 } from 'discord.js';
 
 let entranceSystem = null;
+let embedLoader = null;
 
 export function setEntranceSystem(system) {
   entranceSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const setupEntranceData = new SlashCommandBuilder()
@@ -32,7 +36,7 @@ export const setupEntranceData = new SlashCommandBuilder()
       .addStringOption(option =>
         option
           .setName('emoji')
-          .setDescription('Emoji to react with (default: ✅)')
+          .setDescription('Emoji to react with')
           .setRequired(false)
       )
       .addRoleOption(option =>
@@ -57,13 +61,13 @@ export const setupEntranceData = new SlashCommandBuilder()
       .addBooleanOption(option =>
         option
           .setName('dm_welcome')
-          .setDescription('Send welcome message via DM (default: true)')
+          .setDescription('Send welcome message via DM')
           .setRequired(false)
       )
       .addBooleanOption(option =>
         option
           .setName('allow_unverify')
-          .setDescription('Allow users to unverify by removing reaction (default: false)')
+          .setDescription('Allow users to unverify by removing reaction')
           .setRequired(false)
       )
   )
@@ -134,7 +138,7 @@ export const setupEntranceData = new SlashCommandBuilder()
       .addBooleanOption(option =>
         option
           .setName('reset_permissions')
-          .setDescription('Reset all channel permissions (default: false)')
+          .setDescription('Reset all channel permissions')
           .setRequired(false)
       )
   )
@@ -155,8 +159,8 @@ export const setupEntranceData = new SlashCommandBuilder()
   );
 
 export async function execute(interaction) {
-  if (!entranceSystem) {
-    return interaction.reply({ content: '❌ Entrance system not loaded.', ephemeral: true });
+  if (!entranceSystem || !embedLoader) {
+    return interaction.reply({ content: 'Entrance system not loaded.', ephemeral: true });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -195,7 +199,7 @@ async function executeInstance(interaction) {
     const existing = entranceSystem.instances.get(interaction.guild.id);
     if (existing) {
       return interaction.editReply({
-        content: '❌ An entrance instance already exists. Use `/setupentrance remove` first.'
+        content: 'An entrance instance already exists. Use `/setupentrance remove` first.'
       });
     }
 
@@ -215,26 +219,27 @@ async function executeInstance(interaction) {
     entranceSystem.config.enabled = true;
     await entranceSystem.saveConfig();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Entrance Instance Created')
-      .setDescription('Successfully set up entrance verification!')
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'Message', value: `[Jump to Message](https://discord.com/channels/${interaction.guild.id}/${result.channel.id}/${messageId})`, inline: true },
-        { name: 'Emoji', value: emoji, inline: true },
-        { name: 'Role', value: role ? `${role}` : 'Not set (use `/setupentrance role`)', inline: true },
-        { name: 'Log Channel', value: logChannel ? `${logChannel}` : 'Not set', inline: true },
-        { name: 'DM Welcome', value: dmWelcome ? 'Yes' : 'No', inline: true },
-        { name: 'Allow Unverify', value: allowUnverify ? 'Yes' : 'No', inline: true }
-      )
-      .setFooter({ text: role ? 'Ready to use!' : 'Use /setupentrance role to complete setup' })
-      .setTimestamp();
+    const fields = [
+      { name: 'Message', value: `[Jump to Message](https://discord.com/channels/${interaction.guild.id}/${result.channel.id}/${messageId})`, inline: true },
+      { name: 'Emoji', value: emoji, inline: true },
+      { name: 'Role', value: role ? `${role}` : 'Not set (use `/setupentrance role`)', inline: true },
+      { name: 'Log Channel', value: logChannel ? `${logChannel}` : 'Not set', inline: true },
+      { name: 'DM Welcome', value: dmWelcome ? 'Yes' : 'No', inline: true },
+      { name: 'Allow Unverify', value: allowUnverify ? 'Yes' : 'No', inline: true }
+    ];
+
+    const embed = embedLoader.createEmbed({
+      title: 'Entrance System',
+      description: 'Instance created successfully',
+      fields,
+      footer: role ? 'Ready to use!' : 'Use /setupentrance role to complete setup'
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[SetupEntrance] Error creating instance:', error);
     await interaction.editReply({
-      content: `❌ Failed to create instance: ${error.message}`
+      content: `Failed to create instance: ${error.message}`
     });
   }
 }
@@ -242,7 +247,7 @@ async function executeInstance(interaction) {
 async function executeRole(interaction) {
   const role = interaction.options.getRole('role');
   const verifyChannel = interaction.options.getChannel('verify_channel');
-  const roleName = interaction.options.getString('role_name') || 'Verified';
+  const roleName = interaction.options.getString('role_name') || entranceSystem.config.defaultRoleName;
   const roleColor = interaction.options.getString('role_color');
   const hoist = interaction.options.getBoolean('hoist') ?? false;
 
@@ -271,37 +276,33 @@ async function executeRole(interaction) {
 
     const result = await entranceSystem.setupRole(interaction.guild, options);
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Entrance Role Configured')
-      .setDescription('Successfully configured entrance role and permissions!')
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'Role', value: `${result.role}`, inline: true },
-        { name: 'Verify Channel', value: `${verifyChannel}`, inline: true },
-        { name: 'Hidden Channels', value: `${result.changes.hiddenChannels}`, inline: true },
-        { name: 'Exempt Channels', value: `${result.changes.exemptedChannels}`, inline: true }
-      )
-      .setTimestamp();
+    const fields = [
+      { name: 'Role', value: `${result.role}`, inline: true },
+      { name: 'Verify Channel', value: `${verifyChannel}`, inline: true },
+      { name: 'Hidden Channels', value: `${result.changes.hiddenChannels}`, inline: true },
+      { name: 'Exempt Channels', value: `${result.changes.exemptedChannels}`, inline: true }
+    ];
 
     if (result.changes.errors.length > 0) {
-      embed.addFields({
-        name: '⚠️ Errors',
+      fields.push({
+        name: 'Errors',
         value: result.changes.errors.slice(0, 5).join('\n'),
         inline: false
       });
     }
 
-    if (!instance) {
-      embed.setFooter({ text: 'Use /setupentrance instance to complete setup' });
-    } else {
-      embed.setFooter({ text: 'Entrance system is ready!' });
-    }
+    const embed = embedLoader.createEmbed({
+      title: 'Entrance System',
+      description: 'Role configured successfully',
+      fields,
+      footer: !instance ? 'Use /setupentrance instance to complete setup' : 'Entrance system is ready!'
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[SetupEntrance] Error configuring role:', error);
     await interaction.editReply({
-      content: `❌ Failed to configure role: ${error.message}`
+      content: `Failed to configure role: ${error.message}`
     });
   }
 }
@@ -313,7 +314,7 @@ async function executeExempt(interaction) {
 
   if (!role && !channel) {
     return interaction.reply({
-      content: '❌ Please specify either a role or channel to exempt.',
+      content: 'Please specify either a role or channel to exempt.',
       ephemeral: true
     });
   }
@@ -321,7 +322,7 @@ async function executeExempt(interaction) {
   const instance = entranceSystem.instances.get(interaction.guild.id);
   if (!instance) {
     return interaction.reply({
-      content: '❌ No entrance instance found. Use `/setupentrance instance` first.',
+      content: 'No entrance instance found. Use `/setupentrance instance` first.',
       ephemeral: true
     });
   }
@@ -367,27 +368,28 @@ async function executeExempt(interaction) {
 
     if (changes.length === 0) {
       return interaction.editReply({
-        content: '❌ No changes made. Item may already be in the list.'
+        content: 'No changes made. Item may already be in the list.'
       });
     }
 
     entranceSystem.saveEntranceData();
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Exemptions Updated')
-      .setDescription(changes.join('\n'))
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'Exempt Roles', value: instance.exemptRoles.length > 0 ? instance.exemptRoles.map(id => `<@&${id}>`).join(', ') : 'None', inline: false },
-        { name: 'Exempt Channels', value: instance.exemptChannels.length > 0 ? instance.exemptChannels.map(id => `<#${id}>`).join(', ') : 'None', inline: false }
-      )
-      .setTimestamp();
+    const fields = [
+      { name: 'Exempt Roles', value: instance.exemptRoles.length > 0 ? instance.exemptRoles.map(id => `<@&${id}>`).join(', ') : 'None', inline: false },
+      { name: 'Exempt Channels', value: instance.exemptChannels.length > 0 ? instance.exemptChannels.map(id => `<#${id}>`).join(', ') : 'None', inline: false }
+    ];
+
+    const embed = embedLoader.createEmbed({
+      title: 'Entrance System',
+      description: 'Exemptions updated\n' + changes.join('\n'),
+      fields
+    });
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
     console.error('[SetupEntrance] Error updating exemptions:', error);
     await interaction.editReply({
-      content: `❌ Failed to update exemptions: ${error.message}`
+      content: `Failed to update exemptions: ${error.message}`
     });
   }
 }
@@ -398,20 +400,20 @@ async function executeRemove(interaction) {
   const instance = entranceSystem.instances.get(interaction.guild.id);
   if (!instance) {
     return interaction.reply({
-      content: '❌ No entrance instance found.',
+      content: 'No entrance instance found.',
       ephemeral: true
     });
   }
 
   // Confirm deletion
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Removal')
-    .setDescription('Are you sure you want to remove the entrance system?')
-    .setColor(0xffff00)
-    .addFields(
+  const embed = embedLoader.createEmbed({
+    title: 'Entrance System',
+    description: 'Confirm removal\nAre you sure you want to remove the entrance system?',
+    fields: [
       { name: 'Reset Permissions', value: resetPermissions ? 'Yes' : 'No', inline: true },
       { name: 'Verified Users', value: `${instance.verifiedUsers.length}`, inline: true }
-    );
+    ]
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -448,19 +450,20 @@ async function executeRemove(interaction) {
         resetResult = await entranceSystem.resetPermissions(interaction.guild);
       }
 
-      const resultEmbed = new EmbedBuilder()
-        .setTitle('✅ Entrance System Removed')
-        .setDescription('Successfully removed entrance system.')
-        .setColor(0x00ff00)
-        .setTimestamp();
-
+      const fields = [];
       if (resetResult) {
-        resultEmbed.addFields({
+        fields.push({
           name: 'Permissions Reset',
           value: `Reset ${resetResult.resetChannels} channels`,
           inline: false
         });
       }
+
+      const resultEmbed = embedLoader.createEmbed({
+        title: 'Entrance System',
+        description: 'System removed successfully',
+        fields
+      });
 
       await i.editReply({ embeds: [resultEmbed], components: [] });
     } else {
@@ -487,10 +490,10 @@ async function executeRemove(interaction) {
 
 async function executeReset(interaction) {
   // Confirm reset
-  const embed = new EmbedBuilder()
-    .setTitle('⚠️ Confirm Permission Reset')
-    .setDescription('This will reset ALL channel permissions to default. Are you sure?')
-    .setColor(0xff0000);
+  const embed = embedLoader.createEmbed({
+    title: 'Entrance System',
+    description: 'Confirm permission reset\nThis will reset ALL channel permissions to default. Are you sure?'
+  });
 
   const row = new ActionRowBuilder()
     .addComponents(
@@ -522,19 +525,20 @@ async function executeReset(interaction) {
 
       const result = await entranceSystem.resetPermissions(interaction.guild);
 
-      const resultEmbed = new EmbedBuilder()
-        .setTitle('✅ Permissions Reset')
-        .setDescription(`Successfully reset permissions for ${result.resetChannels} channels.`)
-        .setColor(0x00ff00)
-        .setTimestamp();
-
+      const fields = [];
       if (result.errors.length > 0) {
-        resultEmbed.addFields({
-          name: '⚠️ Errors',
+        fields.push({
+          name: 'Errors',
           value: result.errors.slice(0, 5).join('\n'),
           inline: false
         });
       }
+
+      const resultEmbed = embedLoader.createEmbed({
+        title: 'Entrance System',
+        description: `Permissions reset successfully\nReset permissions for ${result.resetChannels} channels.`,
+        fields
+      });
 
       await i.editReply({ embeds: [resultEmbed], components: [] });
     } else {
@@ -552,24 +556,26 @@ async function executeReset(interaction) {
 async function executeStats(interaction) {
   const stats = entranceSystem.getStats(interaction.guild.id);
 
-  const embed = new EmbedBuilder()
-    .setTitle('📊 Entrance System Statistics')
-    .setColor(0x0099ff)
-    .addFields(
-      { name: 'System Status', value: stats.enabled ? '✅ Enabled' : '❌ Disabled', inline: true },
-      { name: 'Instance Status', value: stats.hasInstance ? '✅ Active' : '❌ Not Setup', inline: true },
-      { name: 'Total Verified', value: `${stats.stats.totalVerified}`, inline: true },
-      { name: 'Total Unverified', value: `${stats.stats.totalUnverified}`, inline: true }
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'System Status', value: stats.enabled ? 'Enabled' : 'Disabled', inline: true },
+    { name: 'Instance Status', value: stats.hasInstance ? 'Active' : 'Not Setup', inline: true },
+    { name: 'Total Verified', value: `${stats.stats.totalVerified}`, inline: true },
+    { name: 'Total Unverified', value: `${stats.stats.totalUnverified}`, inline: true }
+  ];
 
   if (stats.instanceStats) {
-    embed.addFields(
+    fields.push(
       { name: 'Current Verified Users', value: `${stats.instanceStats.verifiedUsers}`, inline: true },
       { name: 'Verification Role', value: stats.instanceStats.roleId ? `<@&${stats.instanceStats.roleId}>` : 'Not set', inline: true },
       { name: 'Created', value: `<t:${Math.floor(new Date(stats.instanceStats.createdAt).getTime() / 1000)}:R>`, inline: true }
     );
   }
+
+  const embed = embedLoader.createEmbed({
+    title: 'Entrance System',
+    description: 'Statistics',
+    fields
+  });
 
   await interaction.reply({ embeds: [embed] });
 }
@@ -578,33 +584,31 @@ async function executeTest(interaction) {
   const instance = entranceSystem.instances.get(interaction.guild.id);
   if (!instance) {
     return interaction.reply({
-      content: '❌ No entrance instance found. Use `/setupentrance instance` first.',
+      content: 'No entrance instance found. Use `/setupentrance instance` first.',
       ephemeral: true
     });
   }
 
   if (!instance.roleId) {
     return interaction.reply({
-      content: '❌ No role configured. Use `/setupentrance role` first.',
+      content: 'No role configured. Use `/setupentrance role` first.',
       ephemeral: true
     });
   }
 
   const hasRole = interaction.member.roles.cache.has(instance.roleId);
 
-  const embed = new EmbedBuilder()
-    .setTitle('🧪 Entrance System Test')
-    .setDescription('Testing your current verification status...')
-    .setColor(hasRole ? 0x00ff00 : 0xff0000)
-    .addFields(
-      { name: 'Verified', value: hasRole ? '✅ Yes' : '❌ No', inline: true },
-      { name: 'Has Role', value: hasRole ? `<@&${instance.roleId}>` : 'No', inline: true }
-    )
-    .setTimestamp();
+  const fields = [
+    { name: 'Verified', value: hasRole ? 'Yes' : 'No', inline: true },
+    { name: 'Has Role', value: hasRole ? `<@&${instance.roleId}>` : 'No', inline: true }
+  ];
 
-  if (!hasRole) {
-    embed.setFooter({ text: 'React to the verification message to get verified!' });
-  }
+  const embed = embedLoader.createEmbed({
+    title: 'Entrance System',
+    description: 'Testing your current verification status...',
+    fields,
+    footer: !hasRole ? 'React to the verification message to get verified!' : null
+  });
 
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }

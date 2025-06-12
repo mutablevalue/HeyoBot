@@ -1,6 +1,5 @@
 // src/systems/entranceSystem.js
 import { 
-  EmbedBuilder, 
   PermissionFlagsBits,
   ChannelType
 } from 'discord.js';
@@ -20,18 +19,29 @@ export class EntranceSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = null;
     
     // Get entrance config from config loader
-    this.config = this.configLoader.get('entrance') || {};
-    
-    // Initialize default config
-    this.initializeDefaultConfig();
+    const entranceConfig = this.configLoader.get('entrance') || {};
+    this.config = {
+      enabled: entranceConfig.enabled ?? true,
+      dataFile: entranceConfig.dataFile || 'entrance.json',
+      defaultRoleName: entranceConfig.defaultRoleName || 'Verified',
+      welcomeMessage: entranceConfig.welcomeMessage || 'Welcome to the server! \n\nYou now have access to all channels. Please make sure to read the rules and enjoy your stay!',
+      dmWelcome: entranceConfig.dmWelcome ?? false,
+      removeReactionAfterVerify: entranceConfig.removeReactionAfterVerify ?? false,
+      logVerifications: entranceConfig.logVerifications ?? true,
+      stats: entranceConfig.stats || {
+        totalVerified: 0,
+        totalUnverified: 0
+      }
+    };
     
     // Active entrance instances
     this.instances = new Map(); // guildId -> instance data
     
     // Load data
-    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'entrance.json');
+    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
     this.loadEntranceData();
 
     // Setup event listeners
@@ -41,25 +51,10 @@ export class EntranceSystem {
   }
 
   /**
-   * Initialize default configuration
+   * Set embed loader reference
    */
-  initializeDefaultConfig() {
-    const defaults = {
-      enabled: false,
-      dataFile: 'entrance.json',
-      defaultRoleName: 'Verified',
-      defaultEmoji: '✅',
-      defaultWelcomeMessage: 'Welcome to the server! You now have access to all channels.',
-      dmWelcome: true,
-      removeReactionAfterVerify: true,
-      logVerifications: true,
-      stats: {
-        totalVerified: 0,
-        totalUnverified: 0
-      }
-    };
-
-    this.config = { ...defaults, ...this.config };
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
   }
 
   /**
@@ -193,7 +188,7 @@ export class EntranceSystem {
         emoji: emoji,
         roleId: options.roleId,
         logChannel: options.logChannel,
-        welcomeMessage: options.welcomeMessage || this.config.defaultWelcomeMessage,
+        welcomeMessage: options.welcomeMessage || this.config.welcomeMessage,
         dmWelcome: options.dmWelcome ?? this.config.dmWelcome,
         removeReaction: options.removeReaction ?? this.config.removeReactionAfterVerify,
         exemptRoles: options.exemptRoles || [],
@@ -229,7 +224,7 @@ export class EntranceSystem {
         // Create new role
         role = await guild.roles.create({
           name: options.roleName || this.config.defaultRoleName,
-          color: options.roleColor || 0x00ff00,
+          color: options.roleColor || null,
           hoist: options.roleHoist || false,
           mentionable: false,
           reason: 'Entrance system verification role'
@@ -319,18 +314,15 @@ export class EntranceSystem {
     
     const instance = this.instances.get(reaction.message.guild.id);
     if (!instance) {
-      //console.log(`[EntranceSystem] No instance found for guild ${reaction.message.guild.id}`);
       return;
     }
 
     // Check if it's the correct message and emoji
     if (reaction.message.id !== instance.messageId) {
-      //console.log(`[EntranceSystem] Wrong message ID. Expected: ${instance.messageId}, Got: ${reaction.message.id}`);
       return;
     }
     
     if (reaction.emoji.toString() !== instance.emoji) {
-      //console.log(`[EntranceSystem] Wrong emoji. Expected: ${instance.emoji}, Got: ${reaction.emoji.toString()}`);
       return;
     }
 
@@ -371,13 +363,10 @@ export class EntranceSystem {
       this.saveEntranceData();
 
       // Send welcome message
-      if (instance.dmWelcome) {
+      if (instance.dmWelcome && this.embedLoader) {
         try {
-          const embed = new EmbedBuilder()
-            .setTitle('✅ Verified!')
-            .setDescription(instance.welcomeMessage)
-            .setColor(0x00ff00)
-            .setTimestamp();
+          const embed = this.embedLoader.success(instance.welcomeMessage);
+          embed.setTitle(this.embedLoader.format('Verified!', 'header'));
 
           await user.send({ embeds: [embed] });
         } catch (error) {
@@ -528,26 +517,31 @@ export class EntranceSystem {
    * @param {Object} data
    */
   async logAction(guild, data) {
+    if (!this.embedLoader) return;
+    
     const channel = guild.channels.cache.get(data.channelId);
     if (!channel?.isTextBased()) return;
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Entrance System: ${data.action}`)
-      .setColor(data.action.includes('Verified') && !data.action.includes('Un') ? 0x00ff00 : 0xff0000)
-      .addFields(
-        { name: 'User', value: `${data.user} (${data.user.id})`, inline: true },
-        { name: 'Account Created', value: `<t:${Math.floor(data.user.createdTimestamp / 1000)}:R>`, inline: true }
-      )
-      .setThumbnail(data.user.displayAvatarURL())
-      .setTimestamp();
+    const fields = [
+      { name: 'User', value: `${data.user} (${data.user.id})`, inline: true },
+      { name: 'Account Created', value: `<t:${Math.floor(data.user.createdTimestamp / 1000)}:R>`, inline: true }
+    ];
 
     if (data.member) {
-      embed.addFields({
+      fields.push({
         name: 'Joined Server',
         value: `<t:${Math.floor(data.member.joinedTimestamp / 1000)}:R>`,
         inline: true
       });
     }
+
+    const embed = this.embedLoader.createEmbed({
+      title: 'Entrance System',
+      description: data.action,
+      fields
+    });
+    
+    embed.setThumbnail(data.user.displayAvatarURL());
 
     try {
       await channel.send({ embeds: [embed] });

@@ -26,8 +26,7 @@ export function setEmbedLoader(loader) {
 export const data = new SlashCommandBuilder()
   .setName('event')
   .setDescription('Manage server events')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
-  // Create event
+  // Create event - anyone can create
   .addSubcommand(subcommand =>
     subcommand
       .setName('create')
@@ -57,13 +56,13 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // List events
+  // List events - shows only your events or all if you have perms
   .addSubcommand(subcommand =>
     subcommand
       .setName('list')
-      .setDescription('List all active events')
+      .setDescription('List active events')
   )
-  // View event
+  // View event - only creator or admins
   .addSubcommand(subcommand =>
     subcommand
       .setName('view')
@@ -75,7 +74,7 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
       )
   )
-  // Cancel event
+  // Cancel event - only creator or admins
   .addSubcommand(subcommand =>
     subcommand
       .setName('cancel')
@@ -93,7 +92,7 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // End event
+  // End event - only creator or admins
   .addSubcommand(subcommand =>
     subcommand
       .setName('end')
@@ -111,7 +110,7 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
       )
   )
-  // History
+  // History - admins only
   .addSubcommand(subcommand =>
     subcommand
       .setName('history')
@@ -126,54 +125,7 @@ export const data = new SlashCommandBuilder()
       )
   );
 
-// Quick event commands
-export const lastToLeaveData = new SlashCommandBuilder()
-  .setName('lasttoleave')
-  .setDescription('Start a "Last to Leave VC" event')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
-  .addStringOption(option =>
-    option
-      .setName('rewards')
-      .setDescription('Rewards for the winner')
-      .setRequired(true)
-  )
-  .addIntegerOption(option =>
-    option
-      .setName('countdown_minutes')
-      .setDescription('Minutes before channel closes')
-      .setRequired(false)
-      .setMinValue(1)
-      .setMaxValue(60)
-  )
-  .addIntegerOption(option =>
-    option
-      .setName('duration_minutes')
-      .setDescription('Minutes the event runs after closing')
-      .setRequired(false)
-      .setMinValue(5)
-      .setMaxValue(1440)
-  )
-  .addIntegerOption(option =>
-    option
-      .setName('start_delay_minutes')
-      .setDescription('Minutes until event starts')
-      .setRequired(false)
-      .setMinValue(0)
-      .setMaxValue(1440)
-  )
-  .addIntegerOption(option =>
-    option
-      .setName('min_messages')
-      .setDescription('Minimum messages required to participate')
-      .setRequired(false)
-      .setMinValue(0)
-  )
-  .addBooleanOption(option =>
-    option
-      .setName('booster_only')
-      .setDescription('Only boosters can participate')
-      .setRequired(false)
-  );
+// No separate lasttoleave command - it's part of event create
 
 export async function execute(interaction) {
   if (!eventHostingSystem || !embedLoader) {
@@ -298,18 +250,109 @@ async function executeCreate(interaction) {
       // Type-specific configuration
       switch (eventData.type) {
         case 'last_to_leave_vc':
-          // For last to leave, we create the channel automatically
-          eventData.data = {
-            duration: eventHostingSystem.config.lastToLeave.defaultDurationMinutes * 60,
-            countdownDuration: eventHostingSystem.config.lastToLeave.defaultCountdownMinutes * 60
-          };
-          
+          // For last to leave, add configuration options
+          const ltlMenu = new StringSelectMenuBuilder()
+            .setCustomId('ltl_config')
+            .setPlaceholder('Configure Last to Leave settings')
+            .setMinValues(0)
+            .setMaxValues(3)
+            .addOptions([
+              {
+                label: '5 Minute Countdown',
+                description: 'Channel closes after 5 minutes',
+                value: 'countdown_5',
+                default: true
+              },
+              {
+                label: '10 Minute Countdown',
+                description: 'Channel closes after 10 minutes',
+                value: 'countdown_10'
+              },
+              {
+                label: '30 Minute Countdown',
+                description: 'Channel closes after 30 minutes',
+                value: 'countdown_30'
+              },
+              {
+                label: '1 Hour Duration',
+                description: 'Event runs for 1 hour after closing',
+                value: 'duration_60',
+                default: true
+              },
+              {
+                label: '2 Hour Duration',
+                description: 'Event runs for 2 hours after closing',
+                value: 'duration_120'
+              },
+              {
+                label: 'Start in 30 Minutes',
+                description: 'Delay event start by 30 minutes',
+                value: 'delay_30'
+              }
+            ]);
+
           await i.update({
-            embeds: [embedLoader.info('Creating Last to Leave Event...\nYour event is being created with a dedicated voice channel.')],
-            components: []
+            embeds: [
+              embedLoader.createEmbed({
+                title: 'Event System',
+                description: 'Configure Last to Leave Event settings'
+              })
+            ],
+            components: [new ActionRowBuilder().addComponents(ltlMenu)]
           });
           
-          await createEvent(interaction, eventData);
+          // Set up collector for LTL config
+          const ltlCollector = interaction.channel.createMessageComponentCollector({
+            filter: i2 => i2.user.id === interaction.user.id && i2.customId === 'ltl_config',
+            time: 60000
+          });
+
+          ltlCollector.on('collect', async i2 => {
+            // Parse LTL settings
+            let countdown = eventHostingSystem.config.lastToLeave.defaultCountdownMinutes;
+            let duration = eventHostingSystem.config.lastToLeave.defaultDurationMinutes;
+            let delay = 0;
+
+            for (const value of i2.values) {
+              if (value.startsWith('countdown_')) {
+                countdown = parseInt(value.split('_')[1]);
+              } else if (value.startsWith('duration_')) {
+                duration = parseInt(value.split('_')[1]);
+              } else if (value.startsWith('delay_')) {
+                delay = parseInt(value.split('_')[1]);
+              }
+            }
+
+            eventData.data = {
+              duration: duration * 60,
+              countdownDuration: countdown * 60
+            };
+
+            if (delay > 0) {
+              eventData.startTime = new Date(Date.now() + (delay * 60000)).toISOString();
+            }
+            
+            await i2.update({
+              embeds: [
+                embedLoader.info('Creating Last to Leave Event...\nYour event is being created with a dedicated voice channel.')
+              ],
+              components: []
+            });
+            
+            await createEvent(interaction, eventData);
+            ltlCollector.stop();
+          });
+
+          ltlCollector.on('end', collected => {
+            if (collected.size === 0) {
+              // Use defaults if no selection made
+              eventData.data = {
+                duration: eventHostingSystem.config.lastToLeave.defaultDurationMinutes * 60,
+                countdownDuration: eventHostingSystem.config.lastToLeave.defaultCountdownMinutes * 60
+              };
+              createEvent(interaction, eventData);
+            }
+          });
           break;
 
         case 'message_milestone':
@@ -381,11 +424,16 @@ async function createEvent(interaction, eventData) {
 
 async function executeList(interaction) {
   const activeEvents = eventHostingSystem.getActiveEvents()
-    .filter(event => event.guildId === interaction.guild.id);
+    .filter(event => event.guildId === interaction.guild.id)
+    .filter(event => {
+      // Only show events if user is creator or has ManageEvents permission
+      return event.createdBy === interaction.user.id || 
+             interaction.member.permissions.has(PermissionFlagsBits.ManageEvents);
+    });
 
   if (activeEvents.length === 0) {
     return interaction.reply({ 
-      content: 'No active events at the moment.', 
+      content: 'No active events visible to you.', 
       ephemeral: true 
     });
   }
@@ -428,6 +476,15 @@ async function executeView(interaction) {
   if (!event || event.guildId !== interaction.guild.id) {
     return interaction.reply({ 
       content: 'Event not found.', 
+      ephemeral: true 
+    });
+  }
+
+  // Check permissions - only creator or those with ManageEvents can view
+  if (event.createdBy !== interaction.user.id && 
+      !interaction.member.permissions.has(PermissionFlagsBits.ManageEvents)) {
+    return interaction.reply({ 
+      content: 'You do not have permission to view this event.', 
       ephemeral: true 
     });
   }
@@ -497,6 +554,15 @@ async function executeCancel(interaction) {
     });
   }
 
+  // Check permissions - only creator or those with ManageEvents can cancel
+  if (event.createdBy !== interaction.user.id && 
+      !interaction.member.permissions.has(PermissionFlagsBits.ManageEvents)) {
+    return interaction.reply({ 
+      content: 'You do not have permission to cancel this event.', 
+      ephemeral: true 
+    });
+  }
+
   if (event.status !== 'active' && event.status !== 'pending') {
     return interaction.reply({ 
       content: 'Only active or pending events can be cancelled.', 
@@ -530,6 +596,15 @@ async function executeEnd(interaction) {
     });
   }
 
+  // Check permissions - only creator or those with ManageEvents can end
+  if (event.createdBy !== interaction.user.id && 
+      !interaction.member.permissions.has(PermissionFlagsBits.ManageEvents)) {
+    return interaction.reply({ 
+      content: 'You do not have permission to end this event.', 
+      ephemeral: true 
+    });
+  }
+
   if (event.status !== 'active') {
     return interaction.reply({ 
       content: 'Only active events can be ended.', 
@@ -558,6 +633,14 @@ async function executeEnd(interaction) {
 }
 
 async function executeHistory(interaction) {
+  // Only those with ManageEvents can view history
+  if (!interaction.member.permissions.has(PermissionFlagsBits.ManageEvents)) {
+    return interaction.reply({ 
+      content: 'You do not have permission to view event history.', 
+      ephemeral: true 
+    });
+  }
+
   const limit = interaction.options.getInteger('limit') || 10;
   const history = eventHostingSystem.eventHistory
     .filter(event => event.guildId === interaction.guild.id)
@@ -601,98 +684,6 @@ async function executeHistory(interaction) {
   await interaction.reply({ embeds: [embed] });
 }
 
-async function executeLastToLeave(interaction) {
-  const rewards = interaction.options.getString('rewards').split(',').map(r => r.trim());
-  const countdownMinutes = interaction.options.getInteger('countdown_minutes') || eventHostingSystem.config.lastToLeave.defaultCountdownMinutes;
-  const durationMinutes = interaction.options.getInteger('duration_minutes') || eventHostingSystem.config.lastToLeave.defaultDurationMinutes;
-  const startDelayMinutes = interaction.options.getInteger('start_delay_minutes') || 0;
-  const minMessages = interaction.options.getInteger('min_messages');
-  const boosterOnly = interaction.options.getBoolean('booster_only');
-
-  const requirements = {};
-  if (minMessages) requirements.minMessages = minMessages;
-  if (boosterOnly) requirements.mustBeBooster = true;
-
-  const eventData = {
-    type: 'last_to_leave_vc',
-    name: `Last to Leave VC`,
-    description: `Be the last person to leave the voice channel to win!`,
-    guildId: interaction.guild.id,
-    createdBy: interaction.user.id,
-    requirements,
-    rewards,
-    data: {
-      countdownDuration: countdownMinutes * 60,
-      duration: durationMinutes * 60
-    }
-  };
-
-  // Add start time if delayed
-  if (startDelayMinutes > 0) {
-    eventData.startTime = new Date(Date.now() + (startDelayMinutes * 60000)).toISOString();
-  }
-
-  try {
-    const eventId = await eventHostingSystem.createEvent(eventData);
-    const event = eventHostingSystem.getEvent(eventId);
-
-    const fields = [
-      { name: 'Event ID', value: eventId, inline: true },
-      { name: 'Channel', value: `<#${event.channelId}>`, inline: true },
-      { name: 'Status', value: startDelayMinutes > 0 ? 'Pending' : 'Active', inline: true }
-    ];
-
-    // Add timing info
-    if (startDelayMinutes > 0) {
-      fields.push({
-        name: 'Event Timeline',
-        value: [
-          `Opens: <t:${Math.floor(new Date(eventData.startTime).getTime() / 1000)}:R>`,
-          `Closes: ${countdownMinutes} minutes after opening`,
-          `Duration: ${durationMinutes} minutes after closing`
-        ].join('\n')
-      });
-    } else {
-      fields.push({
-        name: 'Event Timeline',
-        value: [
-          `Opens: Now!`,
-          `Closes: In ${countdownMinutes} minutes`,
-          `Duration: ${durationMinutes} minutes after closing`
-        ].join('\n')
-      });
-    }
-
-    if (Object.keys(requirements).length > 0) {
-      const reqText = [];
-      if (requirements.minMessages) reqText.push(`${requirements.minMessages}+ messages`);
-      if (requirements.mustBeBooster) reqText.push('Must be a server booster');
-      
-      fields.push({ name: 'Requirements', value: reqText.join('\n') });
-    }
-
-    fields.push({ 
-      name: 'Rewards', 
-      value: rewards.map((r, i) => `${i + 1}. ${r}`).join('\n') 
-    });
-
-    const embed = embedLoader.createEmbed({
-      title: 'Event System',
-      description: 'Last to Leave Event Created!\nA voice channel has been created for the event.',
-      fields
-    });
-
-    await interaction.reply({ embeds: [embed] });
-  } catch (error) {
-    console.error('[LastToLeave Command] Error creating event:', error);
-    await interaction.reply({ 
-      content: `Failed to create event: ${error.message}`, 
-      ephemeral: true 
-    });
-  }
-}
-
 export const commands = [
-  { data, execute },
-  { data: lastToLeaveData, execute: executeLastToLeave }
+  { data, execute }
 ];

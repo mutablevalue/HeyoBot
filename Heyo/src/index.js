@@ -147,6 +147,7 @@ vcCommand.setEmbedLoader(embedLoader);
   channelCommands.setModerationSystem(moderationSystem);
   channelCommands.setRoleTracker(roleTracker);
   channelCommands.setEmbedLoader(embedLoader);
+  entranceSystem.setEmbedLoader(embedLoader); // Add this line
   
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
 leaderboardCommands.setEmbedLoader(embedLoader);
@@ -159,11 +160,13 @@ filterCommands.setEmbedLoader(embedLoader); // Add this line
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
+confessCommands.setEmbedLoader(embedLoader); // Add this line
   
   // Skullboard commands need all three systems
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   skullboardCommands.setModerationSystem(moderationSystem);
   skullboardCommands.setEmbedLoader(embedLoader);
+  confessSystem.setEmbedLoader(embedLoader); // Add this line
   
   
   // Snipe commands need both SnipeSystem and EmbedLoader
@@ -172,6 +175,7 @@ filterCommands.setEmbedLoader(embedLoader); // Add this line
   
   socialCommands.setSocialLookupSystem(socialLookupSystem);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
+setupEntranceCommand.setEmbedLoader(embedLoader); // Add this line
   emojiCommand.setModerationSystem(moderationSystem);
   genderVerifyCommands.setGenderVerifySystem(genderVerifySystem);
   genderVerifyCommands.setModerationSystem(moderationSystem);
@@ -179,6 +183,7 @@ filterCommands.setEmbedLoader(embedLoader); // Add this line
   messageCommand.setAntiNuke(antiNuke);
   friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
   friendGroupCommands.setModerationSystem(moderationSystem);
+  
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
