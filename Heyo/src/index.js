@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Complete file with all systems integrated including Gender Verification
+// Complete file with all systems integrated including Ghost Ping, Birthday, and Enhanced AntiNuke
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -32,6 +32,7 @@ import { EntranceSystem } from "./systems/entranceSystem.js";
 import { GenderVerifySystem } from "./systems/genderVerifySystem.js";
 import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
 import { GiveawaySystem } from "./systems/giveawaySystem.js";
+import { BirthdaySystem } from "./systems/birthdaySystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -59,6 +60,7 @@ import * as genderVerifyCommands from "./commands/genderverify.js";
 import * as messageCommand from "./commands/message.js";
 import * as friendGroupCommands from "./commands/friendgroup.js";
 import * as giveawayCommands from "./commands/giveaway.js";
+import * as birthdayCommands from "./commands/birthday.js";
 import * as rateLimitCommand from "./commands/ratelimit.js";
 import * as pingCommand from "./commands/ping.js";
 import * as rootCommand from "./commands/root.js";
@@ -140,6 +142,8 @@ async function main() {
   const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
   genderVerifySystem.embedLoader = embedLoader;
   const giveawaySystem = new GiveawaySystem(client, config, embedLoader);
+  const birthdaySystem = new BirthdaySystem(client, config);
+  birthdaySystem.embedLoader = embedLoader;
 
   // 4) Pass systems into commands that need them
   antiNukeCommand.setAntiNuke(antiNuke);
@@ -200,6 +204,8 @@ async function main() {
   messageCommand.setEmbedLoader(embedLoader);
   friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
   friendGroupCommands.setModerationSystem(moderationSystem);
+  birthdayCommands.setBirthdaySystem(birthdaySystem);
+  birthdayCommands.setEmbedLoader(embedLoader);
   
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -241,7 +247,7 @@ async function main() {
       'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
       'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
       'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
-      'genderverify.js', 'friendgroup.js', 'giveaway.js'
+      'genderverify.js', 'friendgroup.js', 'giveaway.js', 'birthday.js'
     ];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
@@ -373,7 +379,7 @@ async function main() {
     console.log('---');
     console.log('EmbedLoader: Active (Unified Visual System)');
     console.log(`Rate Limiter: Active (Window: ${rateLimiterConfig.windowMs}ms, Default limit: ${rateLimiterConfig.limits.default}/min)`);
-    console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
+    console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : '') + (antiNuke.multiUserConfig?.enabled ? ' + Multi-User Detection' : ''));
     console.log('Moderation System: Active (Centralized Permissions)');
     console.log('J2C Manager: Active');
     console.log(`Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
@@ -389,12 +395,13 @@ async function main() {
     console.log(`Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Confess System: ${confessSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Skullboard System: ${skullboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
-    console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Snipe System: ${snipeSystem.config.enabled ? 'Active' : 'Disabled'}` + (snipeSystem.ghostPingConfig?.enabled ? ' + Ghost Ping Detection' : ''));
     console.log(`Social Lookup System: ${socialLookupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Entrance System: ${entranceSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Gender Verify System: ${genderVerifySystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Friend Group System: ${friendGroupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`Giveaway System: ${giveawaySystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`Birthday System: ${birthdaySystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log('Fun Commands: Active');
     console.log('====================\n');
   });
@@ -455,6 +462,8 @@ async function main() {
         // Snipe pagination buttons are handled within the command
       } else if (interaction.customId.startsWith('rs_')) {
         // Reaction snipe pagination buttons are handled within the command
+      } else if (interaction.customId.startsWith('gp_')) {
+        // Ghost ping pagination buttons are handled within the command
       } else if (interaction.customId.startsWith('entrance_')) {
         // Entrance system buttons are handled within the command
       }

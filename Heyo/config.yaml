@@ -257,6 +257,22 @@ antiNuke:
   reactionExemptRoles:
     - "1235002473698299956"
     - "456789012345678901"
+  multiUserDetection:
+    enabled: true
+    coordinationWindow: 10000  # 10 seconds
+    patternWindow: 30000  # 30 seconds
+    minUsersForRaid: 3
+    similarActionThreshold: 5
+    actionWeights:
+      bans: 10
+      kicks: 8
+      channelDelete: 9
+      roleDelete: 9
+      channelCreate: 6
+      roleCreate: 6
+      messages: 3
+      reactions: 2
+      massMention: 7
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
@@ -556,7 +572,7 @@ snipe:
   enabled: true
   maxSnipesPerChannel: 5
   messageExpiry: 3600
-  trackEdits: true
+  trackEdits: false
   trackReactions: true
   includeBots: false
   excludedChannels: []
@@ -566,6 +582,14 @@ snipe:
   moderatorRoles: []
   logDeleted: false
   logChannel: null
+  ghostPing:
+    enabled: true
+    dataFile: ghost_pings.json
+    maxPingsPerUser: 50
+    pingExpiry: 604800000  # 7 days
+    ignoreBots: true
+    logChannel: null
+    notifyOnGhostPing: true
 socialLookup:
   enabled: true
   cacheExpiry: 3600
@@ -729,3 +753,22 @@ giveaway:
     totalGiveaways: 0
     totalWinners: 0
     totalParticipants: 0
+birthday:
+  enabled: true
+  dataFile: birthdays.json
+  announcementChannel: null
+  birthdayRole: null
+  removeRoleAfterDay: true
+  dmUser: true
+  allowPastBirthdays: false
+  minimumAge: 13
+  maximumAge: 100
+  timezone: UTC
+  checkTime: "00:00"
+  messages:
+    announcement: "🎉 Happy Birthday {user}! 🎂"
+    dm: "Happy Birthday! 🎉 Hope you have an amazing day!"
+    firstMessage: "🎂 It's {user}'s birthday today! 🎉"
+  stats:
+    totalBirthdays: 0
+    birthdaysToday: 0

@@ -1,5 +1,12 @@
 // src/systems/snipeSystem.js
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, Events } from 'discord.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export class SnipeSystem {
   constructor(client, configLoader, embedLoader) {
@@ -12,13 +19,65 @@ export class SnipeSystem {
     this.snipes = new Map();
     this.reactionSnipes = new Map();
     
+    // Ghost ping storage: userId -> array of ghost pings
+    this.ghostPings = new Map();
+    
+    // Configure ghost ping settings
+    this.ghostPingConfig = {
+      enabled: this.config.ghostPing?.enabled ?? true,
+      dataFile: this.config.ghostPing?.dataFile || 'ghost_pings.json',
+      maxPingsPerUser: this.config.ghostPing?.maxPingsPerUser || 50,
+      pingExpiry: this.config.ghostPing?.pingExpiry || 7 * 24 * 60 * 60 * 1000, // 7 days
+      ignoreBots: this.config.ghostPing?.ignoreBots ?? true,
+      logChannel: this.config.ghostPing?.logChannel || this.config.logChannel || null,
+      notifyOnGhostPing: this.config.ghostPing?.notifyOnGhostPing ?? true
+    };
+    
+    this.dataPath = path.join(__dirname, '..', '..', 'data', this.ghostPingConfig.dataFile);
+    
     // Setup event listeners
     if (this.config.enabled) {
       this.setupEventListeners();
+      if (this.ghostPingConfig.enabled) {
+        this.loadGhostPingData();
+      }
     }
     
     // Cleanup interval
     setInterval(() => this.cleanup(), 60000); // Every minute
+  }
+  
+  async loadGhostPingData() {
+    try {
+      const data = await fs.readFile(this.dataPath, 'utf8');
+      const parsed = JSON.parse(data);
+      
+      // Convert to Map structure
+      for (const [userId, pings] of Object.entries(parsed)) {
+        this.ghostPings.set(userId, pings);
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('[SnipeSystem] Error loading ghost ping data:', error);
+      }
+    }
+  }
+  
+  async saveGhostPingData() {
+    try {
+      const dataDir = path.dirname(this.dataPath);
+      await fs.mkdir(dataDir, { recursive: true });
+      
+      // Convert Map to object for JSON
+      const data = {};
+      for (const [userId, pings] of this.ghostPings) {
+        data[userId] = pings;
+      }
+      
+      await fs.writeFile(this.dataPath, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error('[SnipeSystem] Error saving ghost ping data:', error);
+    }
   }
   
   setupEventListeners() {
@@ -28,15 +87,6 @@ export class SnipeSystem {
         await this.handleMessageDelete(message);
       }
     });
-    
-    // Track edited messages if enabled
-    if (this.config.trackEdits) {
-      this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-        if (!oldMessage.partial && oldMessage.guild && oldMessage.content !== newMessage.content) {
-          await this.handleMessageEdit(oldMessage, newMessage);
-        }
-      });
-    }
     
     // Track removed reactions if enabled
     if (this.config.trackReactions) {
@@ -55,6 +105,37 @@ export class SnipeSystem {
         }
       });
     }
+    
+    // Track bulk deletions for ghost pings
+    if (this.ghostPingConfig.enabled) {
+      this.client.on(Events.MessageBulkDelete, async (messages) => {
+        for (const message of messages.values()) {
+          if (!message.guild) continue;
+          if (this.ghostPingConfig.ignoreBots && message.author?.bot) continue;
+          
+          const mentions = this.extractMentions(message);
+          if (mentions.length === 0) continue;
+          
+          const timestamp = Date.now();
+          for (const userId of mentions) {
+            if (userId === message.author?.id) continue;
+            
+            await this.addGhostPing(userId, {
+              authorId: message.author?.id || 'Unknown',
+              authorTag: message.author?.tag || 'Unknown User',
+              content: message.content || '[No content]',
+              channelId: message.channel.id,
+              channelName: message.channel.name,
+              guildId: message.guild.id,
+              guildName: message.guild.name,
+              timestamp,
+              messageId: message.id,
+              bulkDeleted: true
+            });
+          }
+        }
+      });
+    }
   }
   
   async handleMessageDelete(message) {
@@ -63,6 +144,29 @@ export class SnipeSystem {
     
     // Skip bots if configured
     if (message.author.bot && !this.config.includeBots) return;
+    
+    // Check for ghost pings
+    if (this.ghostPingConfig.enabled && !message.author?.bot) {
+      const mentions = this.extractMentions(message);
+      if (mentions.length > 0) {
+        const timestamp = Date.now();
+        for (const userId of mentions) {
+          if (userId === message.author?.id) continue;
+          
+          await this.addGhostPing(userId, {
+            authorId: message.author?.id || 'Unknown',
+            authorTag: message.author?.tag || 'Unknown User',
+            content: message.content || '[No content]',
+            channelId: message.channel.id,
+            channelName: message.channel.name,
+            guildId: message.guild.id,
+            guildName: message.guild.name,
+            timestamp,
+            messageId: message.id
+          });
+        }
+      }
+    }
     
     // Create snipe object
     const snipe = {
@@ -89,36 +193,6 @@ export class SnipeSystem {
     if (this.config.logDeleted && this.config.logChannel) {
       await this.logSnipe(message.guild, snipe, 'Message Deleted');
     }
-  }
-  
-  async handleMessageEdit(oldMessage, newMessage) {
-    // Skip if in excluded channel
-    if (this.config.excludedChannels.includes(oldMessage.channel.id)) return;
-    
-    // Skip bots if configured
-    if (oldMessage.author.bot && !this.config.includeBots) return;
-    
-    // Create edit snipe
-    const snipe = {
-      author: {
-        id: oldMessage.author.id,
-        tag: oldMessage.author.tag,
-        avatar: oldMessage.author.displayAvatarURL()
-      },
-      content: newMessage.content,
-      oldContent: oldMessage.content,
-      attachments: newMessage.attachments.map(att => ({
-        name: att.name,
-        url: att.url
-      })),
-      channelId: oldMessage.channel.id,
-      guildId: oldMessage.guild.id,
-      deletedAt: Date.now(),
-      type: 'edit'
-    };
-    
-    // Add to snipes
-    this.addSnipe(oldMessage.channel.id, snipe);
   }
   
   async handleReactionRemove(reaction, user) {
@@ -167,6 +241,128 @@ export class SnipeSystem {
     if (this.config.logDeleted && this.config.logChannel) {
       await this.logReactionSnipe(message.guild, reactionSnipe);
     }
+  }
+  
+  extractMentions(message) {
+    const mentions = new Set();
+    
+    // User mentions
+    message.mentions.users.forEach(user => mentions.add(user.id));
+    
+    // Role mentions (get all users with the role)
+    message.mentions.roles.forEach(role => {
+      role.members.forEach(member => mentions.add(member.id));
+    });
+    
+    // @everyone and @here
+    if (message.mentions.everyone) {
+      message.guild.members.cache.forEach(member => {
+        if (!member.user.bot || !this.ghostPingConfig.ignoreBots) {
+          mentions.add(member.id);
+        }
+      });
+    }
+    
+    return Array.from(mentions);
+  }
+  
+  async addGhostPing(userId, pingData) {
+    const userPings = this.ghostPings.get(userId) || [];
+    
+    // Add new ping
+    userPings.push(pingData);
+    
+    // Limit stored pings per user
+    if (userPings.length > this.ghostPingConfig.maxPingsPerUser) {
+      userPings.shift(); // Remove oldest
+    }
+    
+    this.ghostPings.set(userId, userPings);
+    await this.saveGhostPingData();
+    
+    // Log if configured
+    if (this.ghostPingConfig.logChannel) {
+      await this.logGhostPing(userId, pingData);
+    }
+    
+    // Notify user if enabled
+    if (this.ghostPingConfig.notifyOnGhostPing) {
+      await this.notifyUserOfGhostPing(userId, pingData);
+    }
+  }
+  
+  async logGhostPing(userId, pingData) {
+    const channel = this.client.channels.cache.get(this.ghostPingConfig.logChannel);
+    if (!channel?.isTextBased()) return;
+    
+    const embed = this.embedLoader.createEmbed({
+      title: 'Ghost Ping Detected',
+      formatDescription: false,
+      fields: [
+        { name: 'Author', value: `<@${pingData.authorId}> (${pingData.authorTag})`, inline: true },
+        { name: 'Mentioned', value: `<@${userId}>`, inline: true },
+        { name: 'Channel', value: `<#${pingData.channelId}>`, inline: true },
+        { name: 'Content', value: pingData.content.slice(0, 1024) },
+        { name: 'Time', value: `<t:${Math.floor(pingData.timestamp / 1000)}:F>` }
+      ]
+    });
+    
+    try {
+      await channel.send({ embeds: [embed] });
+    } catch (error) {
+      console.error('[SnipeSystem] Error logging ghost ping:', error);
+    }
+  }
+  
+  async notifyUserOfGhostPing(userId, pingData) {
+    try {
+      const channel = this.client.channels.cache.get(pingData.channelId);
+      if (!channel?.isTextBased()) return;
+      
+      const embed = this.embedLoader.createEmbed({
+        description: `<@${userId}> You were ghost pinged!`,
+        fields: [
+          { name: 'By', value: `<@${pingData.authorId}> (${pingData.authorTag})`, inline: true },
+          { name: 'When', value: `<t:${Math.floor(pingData.timestamp / 1000)}:R>`, inline: true },
+          { name: 'Message', value: pingData.content.slice(0, 1024) || '[No content]' }
+        ]
+      });
+      
+      await channel.send({ content: `<@${userId}>`, embeds: [embed] });
+    } catch (error) {
+      console.error('[SnipeSystem] Error notifying user of ghost ping:', error);
+    }
+  }
+  
+  getUserGhostPings(userId, guildId = null) {
+    const allPings = this.ghostPings.get(userId) || [];
+    
+    // Filter by guild if specified
+    let pings = guildId 
+      ? allPings.filter(ping => ping.guildId === guildId)
+      : allPings;
+    
+    // Sort by timestamp (newest first)
+    pings.sort((a, b) => b.timestamp - a.timestamp);
+    
+    return pings;
+  }
+  
+  clearUserGhostPings(userId, guildId = null) {
+    if (guildId) {
+      const allPings = this.ghostPings.get(userId) || [];
+      const filteredPings = allPings.filter(ping => ping.guildId !== guildId);
+      
+      if (filteredPings.length > 0) {
+        this.ghostPings.set(userId, filteredPings);
+      } else {
+        this.ghostPings.delete(userId);
+      }
+    } else {
+      this.ghostPings.delete(userId);
+    }
+    
+    this.saveGhostPingData();
   }
   
   addSnipe(channelId, snipe) {
@@ -256,6 +452,32 @@ export class SnipeSystem {
         this.reactionSnipes.delete(channelId);
       } else {
         this.reactionSnipes.set(channelId, filtered);
+      }
+    }
+    
+    // Cleanup ghost pings
+    if (this.ghostPingConfig.enabled) {
+      let cleaned = 0;
+      
+      for (const [userId, pings] of this.ghostPings) {
+        const validPings = pings.filter(ping => 
+          now - ping.timestamp < this.ghostPingConfig.pingExpiry
+        );
+        
+        if (validPings.length !== pings.length) {
+          cleaned += pings.length - validPings.length;
+          
+          if (validPings.length > 0) {
+            this.ghostPings.set(userId, validPings);
+          } else {
+            this.ghostPings.delete(userId);
+          }
+        }
+      }
+      
+      if (cleaned > 0) {
+        this.saveGhostPingData();
+        console.log(`[SnipeSystem] Cleaned up ${cleaned} expired ghost pings`);
       }
     }
   }
@@ -397,14 +619,6 @@ export class SnipeSystem {
       });
     }
     
-    // Add edit info if this is an edited message
-    if (snipe.type === 'edit' && snipe.oldContent) {
-      fields.push({
-        name: 'Original Content',
-        value: snipe.oldContent.slice(0, 1024)
-      });
-    }
-    
     // Add channel info
     fields.push({
       name: 'Channel',
@@ -520,5 +734,24 @@ export class SnipeSystem {
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
+  }
+  
+  getStats() {
+    let totalPings = 0;
+    let totalUsers = this.ghostPings.size;
+    
+    for (const pings of this.ghostPings.values()) {
+      totalPings += pings.length;
+    }
+    
+    return {
+      messageSnipes: this.getTotalSnipeCount(),
+      reactionSnipes: this.getTotalReactionSnipeCount(),
+      ghostPings: {
+        totalUsers,
+        totalPings,
+        enabled: this.ghostPingConfig.enabled
+      }
+    };
   }
 }

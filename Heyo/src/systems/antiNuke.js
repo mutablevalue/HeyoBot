@@ -14,6 +14,24 @@ export default class AntiNuke {
     this.highAlert = false;
     this.originalLimits = null;
     
+    // Enhanced raid detection
+    this.raidTracking = {
+      // Track actions across all users in short time windows
+      globalActions: new Map(), // actionType -> [{userId, timestamp, details}]
+      
+      // Track patterns
+      patterns: {
+        coordinated: new Map(), // pattern -> [{userId, timestamp, action}]
+        similarity: new Map(), // Track similar actions
+      },
+      
+      // Raid detection state
+      activeRaids: new Map(), // guildId -> raid details
+      
+      // User relationships (possible alt accounts)
+      userRelations: new Map() // userId -> Set of related userIds
+    };
+    
     // Content moderation tracking
     this.contentTracking = {
       messageHistory: new Map(),
@@ -28,12 +46,43 @@ export default class AntiNuke {
     };
     
     // Enhanced stats
-    this.contentStats = {
-      massMentions: 0,
-      massEmojis: 0,
-      capsSpam: 0,
-      duplicates: 0,
-      raidsDetected: 0
+    this.stats = {
+      actionsBlocked: 0,
+      raidsDetected: 0,
+      coordinatedAttacksDetected: 0,
+      contentViolations: {
+        massMentions: 0,
+        massEmojis: 0,
+        capsSpam: 0,
+        duplicates: 0
+      }
+    };
+    
+    // Multi-user raid detection config
+    this.multiUserConfig = {
+      enabled: this.config.multiUserDetection?.enabled ?? true,
+      
+      // Time windows for pattern detection
+      coordinationWindow: this.config.multiUserDetection?.coordinationWindow || 10000, // 10 seconds
+      patternWindow: this.config.multiUserDetection?.patternWindow || 30000, // 30 seconds
+      
+      // Thresholds
+      minUsersForRaid: this.config.multiUserDetection?.minUsersForRaid || 3,
+      similarActionThreshold: this.config.multiUserDetection?.similarActionThreshold || 5,
+      
+      // Action weights for severity calculation
+      actionWeights: {
+        bans: 10,
+        kicks: 8,
+        channelDelete: 9,
+        roleDelete: 9,
+        channelCreate: 6,
+        roleCreate: 6,
+        messages: 3,
+        reactions: 2,
+        massMention: 7,
+        ...this.config.multiUserDetection?.actionWeights
+      }
     };
     
     this.setupEventListeners();
@@ -42,13 +91,22 @@ export default class AntiNuke {
     if (this.config.contentModeration?.enabled) {
       this.setupContentMonitoring();
     }
+    
+    // Start pattern analysis interval
+    setInterval(() => this.analyzePatterns(), 5000); // Every 5 seconds
   }
 
   setupEventListeners() {
-    // Ban tracking
+    // Ban tracking with multi-user detection
     this.client.on('guildBanAdd', async (ban) => {
       const executor = await this.getExecutor(ban.guild, AuditLogEvent.MemberBanAdd);
       if (!executor) return;
+      
+      // Track globally for pattern detection
+      this.trackGlobalAction('bans', executor.id, ban.guild.id, {
+        targetId: ban.user.id,
+        targetTag: ban.user.tag
+      });
       
       const violation = this.track(executor.id, 'bans', {
         targetId: ban.user.id,
@@ -61,10 +119,16 @@ export default class AntiNuke {
       }
     });
 
-    // Kick tracking
+    // Kick tracking with multi-user detection
     this.client.on('guildMemberRemove', async (member) => {
       const executor = await this.getExecutor(member.guild, AuditLogEvent.MemberKick);
       if (!executor) return;
+      
+      // Track globally for pattern detection
+      this.trackGlobalAction('kicks', executor.id, member.guild.id, {
+        targetId: member.id,
+        targetTag: member.user.tag
+      });
       
       const violation = this.track(executor.id, 'kicks', {
         targetId: member.id,
@@ -77,10 +141,15 @@ export default class AntiNuke {
       }
     });
 
-    // Channel creation/deletion
+    // Channel creation/deletion with multi-user detection
     this.client.on('channelCreate', async (channel) => {
       const executor = await this.getExecutor(channel.guild, AuditLogEvent.ChannelCreate);
       if (!executor) return;
+      
+      this.trackGlobalAction('channelCreate', executor.id, channel.guild.id, {
+        channelId: channel.id,
+        channelName: channel.name
+      });
       
       const violation = this.track(executor.id, 'channelCreate', {
         channelId: channel.id,
@@ -97,6 +166,10 @@ export default class AntiNuke {
       const executor = await this.getExecutor(channel.guild, AuditLogEvent.ChannelDelete);
       if (!executor) return;
       
+      this.trackGlobalAction('channelDelete', executor.id, channel.guild.id, {
+        channelName: channel.name
+      });
+      
       const violation = this.track(executor.id, 'channelDelete', {
         channelName: channel.name,
         guildId: channel.guild.id
@@ -107,10 +180,15 @@ export default class AntiNuke {
       }
     });
 
-    // Role creation/deletion
+    // Role creation/deletion with multi-user detection
     this.client.on('roleCreate', async (role) => {
       const executor = await this.getExecutor(role.guild, AuditLogEvent.RoleCreate);
       if (!executor) return;
+      
+      this.trackGlobalAction('roleCreate', executor.id, role.guild.id, {
+        roleId: role.id,
+        roleName: role.name
+      });
       
       const violation = this.track(executor.id, 'roleCreate', {
         roleId: role.id,
@@ -126,6 +204,10 @@ export default class AntiNuke {
     this.client.on('roleDelete', async (role) => {
       const executor = await this.getExecutor(role.guild, AuditLogEvent.RoleDelete);
       if (!executor) return;
+      
+      this.trackGlobalAction('roleDelete', executor.id, role.guild.id, {
+        roleName: role.name
+      });
       
       const violation = this.track(executor.id, 'roleDelete', {
         roleName: role.name,
@@ -155,8 +237,345 @@ export default class AntiNuke {
     });
   }
 
+  trackGlobalAction(actionType, userId, guildId, details) {
+    if (!this.multiUserConfig.enabled) return;
+    
+    const timestamp = Date.now();
+    
+    // Initialize action tracking
+    if (!this.raidTracking.globalActions.has(actionType)) {
+      this.raidTracking.globalActions.set(actionType, []);
+    }
+    
+    const actions = this.raidTracking.globalActions.get(actionType);
+    actions.push({
+      userId,
+      guildId,
+      timestamp,
+      details
+    });
+    
+    // Clean old entries
+    const cutoff = timestamp - this.multiUserConfig.patternWindow;
+    const filtered = actions.filter(a => a.timestamp > cutoff);
+    this.raidTracking.globalActions.set(actionType, filtered);
+    
+    // Check for coordinated attacks
+    this.checkCoordinatedAttack(guildId);
+  }
+
+  checkCoordinatedAttack(guildId) {
+    const now = Date.now();
+    const coordWindow = this.multiUserConfig.coordinationWindow;
+    const patternWindow = this.multiUserConfig.patternWindow;
+    
+    // Collect all recent actions for this guild
+    const guildActions = [];
+    for (const [actionType, actions] of this.raidTracking.globalActions) {
+      const recentActions = actions.filter(a => 
+        a.guildId === guildId && 
+        a.timestamp > now - patternWindow
+      );
+      
+      recentActions.forEach(action => {
+        guildActions.push({
+          ...action,
+          type: actionType,
+          weight: this.multiUserConfig.actionWeights[actionType] || 1
+        });
+      });
+    }
+    
+    // Group actions by time windows
+    const timeWindows = new Map();
+    guildActions.forEach(action => {
+      const window = Math.floor(action.timestamp / coordWindow);
+      if (!timeWindows.has(window)) {
+        timeWindows.set(window, []);
+      }
+      timeWindows.get(window).push(action);
+    });
+    
+    // Check each time window for suspicious activity
+    for (const [window, actions] of timeWindows) {
+      const uniqueUsers = new Set(actions.map(a => a.userId));
+      const totalWeight = actions.reduce((sum, a) => sum + a.weight, 0);
+      
+      // Detect coordinated attack patterns
+      if (uniqueUsers.size >= this.multiUserConfig.minUsersForRaid) {
+        // Multiple users acting in coordination
+        this.handleCoordinatedRaid(guildId, Array.from(uniqueUsers), actions);
+      } else if (totalWeight >= 20) {
+        // High severity actions even with fewer users
+        this.handleHighSeverityRaid(guildId, Array.from(uniqueUsers), actions);
+      }
+      
+      // Check for similar action patterns (possible alts)
+      this.detectSimilarPatterns(actions);
+    }
+  }
+
+  detectSimilarPatterns(actions) {
+    // Group actions by type and details
+    const patterns = new Map();
+    
+    actions.forEach(action => {
+      const patternKey = `${action.type}:${JSON.stringify(action.details)}`;
+      if (!patterns.has(patternKey)) {
+        patterns.set(patternKey, []);
+      }
+      patterns.get(patternKey).push(action);
+    });
+    
+    // Check for similar patterns from different users
+    for (const [pattern, similarActions] of patterns) {
+      const users = new Set(similarActions.map(a => a.userId));
+      
+      if (users.size >= 2) {
+        // Multiple users performing identical actions
+        this.trackUserRelation(Array.from(users));
+      }
+    }
+  }
+
+  trackUserRelation(userIds) {
+    // Track potential relationships between users (alts, coordinated accounts)
+    userIds.forEach(userId => {
+      if (!this.raidTracking.userRelations.has(userId)) {
+        this.raidTracking.userRelations.set(userId, new Set());
+      }
+      
+      const relations = this.raidTracking.userRelations.get(userId);
+      userIds.forEach(relatedId => {
+        if (relatedId !== userId) {
+          relations.add(relatedId);
+        }
+      });
+    });
+  }
+
+  async handleCoordinatedRaid(guildId, userIds, actions) {
+    console.log(`[AntiNuke] COORDINATED RAID DETECTED in guild ${guildId}`);
+    console.log(`[AntiNuke] Involved users: ${userIds.join(', ')}`);
+    
+    this.stats.coordinatedAttacksDetected++;
+    
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+    
+    // Immediately trigger raid mode
+    await this.triggerRaidMode(guild, `Coordinated attack by ${userIds.length} users`);
+    
+    // Process each attacker
+    for (const userId of userIds) {
+      const member = await guild.members.fetch(userId).catch(() => null);
+      if (!member) continue;
+      
+      // Skip if whitelisted
+      if (this.isWhitelisted(userId)) continue;
+      
+      try {
+        // Ban all coordinated attackers
+        if (member.bannable) {
+          await member.ban({ 
+            reason: `AntiNuke: Coordinated raid participant` 
+          });
+          console.log(`[AntiNuke] Banned raid participant: ${userId}`);
+        } else {
+          // If can't ban, remove all roles
+          const rolesToRemove = member.roles.cache.filter(role => role.id !== guild.id);
+          if (rolesToRemove.size > 0) {
+            await member.roles.remove(rolesToRemove, 'AntiNuke: Coordinated raid participant');
+          }
+        }
+      } catch (error) {
+        console.error(`[AntiNuke] Failed to punish raid participant ${userId}:`, error);
+      }
+    }
+    
+    // Log the coordinated attack
+    await this.logCoordinatedAttack(guild, userIds, actions);
+  }
+
+  async handleHighSeverityRaid(guildId, userIds, actions) {
+    console.log(`[AntiNuke] HIGH SEVERITY RAID in guild ${guildId}`);
+    
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) return;
+    
+    // Set high alert mode
+    this.setHighAlert(true);
+    
+    // Process high severity users
+    for (const userId of userIds) {
+      this.trackSuspiciousUser(userId, {
+        reason: 'High severity actions',
+        severity: 'critical',
+        actions: actions.filter(a => a.userId === userId)
+      });
+    }
+    
+    // If severity is extreme, trigger raid mode
+    const totalWeight = actions.reduce((sum, a) => sum + a.weight, 0);
+    if (totalWeight >= 30) {
+      await this.triggerRaidMode(guild, 'High severity attack detected');
+    }
+  }
+
+  async logCoordinatedAttack(guild, userIds, actions) {
+    const actionSummary = {};
+    actions.forEach(action => {
+      actionSummary[action.type] = (actionSummary[action.type] || 0) + 1;
+    });
+    
+    const fields = [
+      { 
+        name: 'Attackers', 
+        value: userIds.map(id => `<@${id}>`).join('\n').slice(0, 1024),
+        inline: false
+      },
+      {
+        name: 'Actions Summary',
+        value: Object.entries(actionSummary)
+          .map(([type, count]) => `**${type}**: ${count}`)
+          .join('\n'),
+        inline: false
+      },
+      {
+        name: 'Total Actions',
+        value: `${actions.length}`,
+        inline: true
+      },
+      {
+        name: 'Unique Attackers',
+        value: `${userIds.length}`,
+        inline: true
+      }
+    ];
+    
+    await this.logToAdminChannel({
+      title: '🚨 COORDINATED RAID DETECTED',
+      description: 'Multiple users are attacking the server in coordination',
+      fields
+    });
+  }
+
+  analyzePatterns() {
+    // Clean old tracking data
+    const now = Date.now();
+    const patternWindow = this.multiUserConfig.patternWindow;
+    
+    // Clean global actions
+    for (const [actionType, actions] of this.raidTracking.globalActions) {
+      const filtered = actions.filter(a => a.timestamp > now - patternWindow);
+      if (filtered.length === 0) {
+        this.raidTracking.globalActions.delete(actionType);
+      } else {
+        this.raidTracking.globalActions.set(actionType, filtered);
+      }
+    }
+    
+    // Analyze ongoing raids
+    for (const [guildId, raid] of this.raidTracking.activeRaids) {
+      if (now - raid.startTime > 600000) { // 10 minutes
+        this.raidTracking.activeRaids.delete(guildId);
+      }
+    }
+  }
+
+  async getExecutor(guild, auditType) {
+    try {
+      const auditLogs = await guild.fetchAuditLogs({
+        limit: 1,
+        type: auditType
+      });
+      
+      const auditEntry = auditLogs.entries.first();
+      if (!auditEntry || Date.now() - auditEntry.createdTimestamp > 5000) return null;
+      
+      // Skip bot actions if it's our bot
+      if (auditEntry.executor.id === this.client.user.id) return null;
+      
+      return auditEntry.executor;
+    } catch (error) {
+      console.error('[AntiNuke] Error fetching audit logs:', error);
+      return null;
+    }
+  }
+
+  track(userId, action, metadata = {}) {
+    // Skip if user is whitelisted
+    if (this.isWhitelisted(userId)) return null;
+    
+    // Check if user is suspicious and apply stricter limits
+    let limit = this.config.limits[action];
+    if (this.isSuspicious(userId) && limit?.maxActions) {
+      limit = {
+        ...limit,
+        maxActions: Math.max(1, Math.floor(limit.maxActions / 2))
+      };
+    }
+    
+    // Apply even stricter limits if in high alert or raid mode
+    if ((this.highAlert || this.raidMode.enabled) && limit?.maxActions) {
+      limit = {
+        ...limit,
+        maxActions: Math.max(1, Math.floor(limit.maxActions / 3))
+      };
+    }
+    
+    if (!limit) return null;
+    
+    const now = Date.now();
+    
+    // Initialize user tracking
+    if (!this.tracker.has(userId)) {
+      this.tracker.set(userId, {});
+    }
+    
+    const userTracker = this.tracker.get(userId);
+    
+    if (!userTracker[action]) {
+      userTracker[action] = {
+        count: 0,
+        firstAction: now,
+        lastAction: now,
+        metadata: []
+      };
+    }
+    
+    const actionTracker = userTracker[action];
+    
+    // Check if time window has passed
+    if (now - actionTracker.firstAction > limit.timeWindowSeconds * 1000) {
+      // Reset tracking
+      actionTracker.count = 0;
+      actionTracker.firstAction = now;
+      actionTracker.metadata = [];
+    }
+    
+    actionTracker.count++;
+    actionTracker.lastAction = now;
+    actionTracker.metadata.push({ ...metadata, timestamp: now });
+    
+    // Check for violation
+    if (actionTracker.count > limit.maxActions) {
+      this.stats.actionsBlocked++;
+      return {
+        userId,
+        action,
+        count: actionTracker.count,
+        limit: limit.maxActions,
+        timeWindow: limit.timeWindowSeconds,
+        metadata: actionTracker.metadata
+      };
+    }
+    
+    return null;
+  }
+
   setupContentMonitoring() {
-    // Message content monitoring
+    // Message content monitoring with multi-user tracking
     this.client.on('messageCreate', async (message) => {
       if (!this.config.contentModeration?.enabled) return;
       if (message.author.bot) return;
@@ -173,7 +592,7 @@ export default class AntiNuke {
       await this.checkMessageContent(message);
     });
     
-    // Anti-raid join monitoring
+    // Anti-raid join monitoring with pattern detection
     if (this.config.contentModeration?.antiRaid?.enabled) {
       this.client.on('guildMemberAdd', async (member) => {
         await this.checkJoinRate(member);
@@ -194,7 +613,13 @@ export default class AntiNuke {
           severity: 'high',
           details: `${mentions} mentions`
         });
-        this.contentStats.massMentions++;
+        this.stats.contentViolations.massMentions++;
+        
+        // Track for coordinated spam
+        this.trackGlobalAction('massMention', message.author.id, message.guild.id, {
+          mentions,
+          channelId: message.channel.id
+        });
       }
     }
     
@@ -207,7 +632,7 @@ export default class AntiNuke {
           severity: 'low',
           details: `${emojiCount} emojis`
         });
-        this.contentStats.massEmojis++;
+        this.stats.contentViolations.massEmojis++;
       }
     }
     
@@ -223,21 +648,24 @@ export default class AntiNuke {
             severity: 'low',
             details: `${Math.round(capsPercentage)}% caps`
           });
-          this.contentStats.capsSpam++;
+          this.stats.contentViolations.capsSpam++;
         }
       }
     }
     
-    // Duplicate message check
+    // Duplicate message check with multi-user tracking
     if (config.duplicateMessages?.enabled) {
-      const isDuplicate = this.checkDuplicateMessage(message);
+      const isDuplicate = await this.checkDuplicateMessage(message);
       if (isDuplicate) {
         violations.push({
           type: 'duplicate',
           severity: 'medium',
           details: 'Duplicate message'
         });
-        this.contentStats.duplicates++;
+        this.stats.contentViolations.duplicates++;
+        
+        // Check if multiple users are spamming same content
+        await this.checkCoordinatedSpam(message);
       }
     }
     
@@ -248,6 +676,47 @@ export default class AntiNuke {
     
     // Update message history
     this.updateMessageHistory(message);
+  }
+
+  async checkCoordinatedSpam(message) {
+    const recentMessages = [];
+    const now = Date.now();
+    const checkWindow = 30000; // 30 seconds
+    
+    // Collect recent messages from all users
+    for (const [userId, history] of this.contentTracking.messageHistory) {
+      const recent = history.filter(msg => 
+        now - msg.timestamp < checkWindow &&
+        msg.content === message.content
+      );
+      
+      recent.forEach(msg => {
+        recentMessages.push({
+          userId,
+          ...msg
+        });
+      });
+    }
+    
+    // Check if multiple users are sending same message
+    const uniqueUsers = new Set(recentMessages.map(msg => msg.userId));
+    if (uniqueUsers.size >= 3) {
+      // Coordinated spam detected
+      console.log(`[AntiNuke] Coordinated spam detected: ${uniqueUsers.size} users`);
+      
+      const guild = message.guild;
+      await this.handleCoordinatedRaid(
+        guild.id,
+        Array.from(uniqueUsers),
+        recentMessages.map(msg => ({
+          type: 'spam',
+          userId: msg.userId,
+          timestamp: msg.timestamp,
+          weight: 5,
+          details: { content: msg.content.slice(0, 100) }
+        }))
+      );
+    }
   }
 
   checkDuplicateMessage(message) {
@@ -297,20 +766,110 @@ export default class AntiNuke {
     }
     
     const joins = this.contentTracking.joinHistory.get(guildId);
-    joins.push(now);
+    joins.push({
+      userId: member.id,
+      timestamp: now,
+      username: member.user.username,
+      accountAge: now - member.user.createdTimestamp
+    });
     
     // Filter recent joins
     const recentJoins = joins.filter(
-      timestamp => now - timestamp < config.timeWindow
+      join => now - join.timestamp < config.timeWindow
     );
     
     // Update the array with only recent joins
     this.contentTracking.joinHistory.set(guildId, recentJoins);
     
+    // Check for suspicious patterns
+    const suspiciousPatterns = this.analyzeJoinPatterns(recentJoins);
+    
     // Check if raid threshold is met
-    if (recentJoins.length >= config.joinThreshold) {
-      await this.triggerRaidMode(member.guild, 'Mass joins detected');
+    if (recentJoins.length >= config.joinThreshold || suspiciousPatterns.detected) {
+      await this.triggerRaidMode(
+        member.guild, 
+        suspiciousPatterns.reason || 'Mass joins detected'
+      );
     }
+  }
+
+  analyzeJoinPatterns(joins) {
+    // Check for suspicious patterns in joins
+    const patterns = {
+      detected: false,
+      reason: null
+    };
+    
+    // Check for very new accounts
+    const newAccounts = joins.filter(join => join.accountAge < 86400000); // 1 day
+    if (newAccounts.length >= 3) {
+      patterns.detected = true;
+      patterns.reason = `${newAccounts.length} brand new accounts joining`;
+    }
+    
+    // Check for similar usernames
+    const usernames = joins.map(j => j.username.toLowerCase());
+    const similarNames = this.findSimilarStrings(usernames);
+    if (similarNames.length >= 3) {
+      patterns.detected = true;
+      patterns.reason = 'Multiple accounts with similar usernames joining';
+    }
+    
+    return patterns;
+  }
+
+  findSimilarStrings(strings) {
+    const similar = [];
+    
+    for (let i = 0; i < strings.length; i++) {
+      for (let j = i + 1; j < strings.length; j++) {
+        const similarity = this.calculateSimilarity(strings[i], strings[j]);
+        if (similarity > 0.7) {
+          similar.push([strings[i], strings[j]]);
+        }
+      }
+    }
+    
+    return similar;
+  }
+
+  calculateSimilarity(str1, str2) {
+    // Simple similarity calculation
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = this.getEditDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+
+  getEditDistance(str1, str2) {
+    const matrix = [];
+    
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+    
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+    
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
   }
 
   async handleContentViolations(message, violations) {
@@ -353,7 +912,14 @@ export default class AntiNuke {
       triggeredBy: reason
     };
     
-    this.contentStats.raidsDetected++;
+    this.stats.raidsDetected++;
+    
+    // Record active raid
+    this.raidTracking.activeRaids.set(guild.id, {
+      startTime: Date.now(),
+      reason,
+      actionsBlocked: 0
+    });
     
     // Apply lockdown
     if (this.config.contentModeration.antiRaid.lockdownEnabled) {
@@ -362,7 +928,7 @@ export default class AntiNuke {
     
     // Log the raid
     await this.logToAdminChannel({
-      title: 'RAID MODE ACTIVATED',
+      title: '🚨 RAID MODE ACTIVATED',
       description: `Raid mode has been activated.\nReason: ${reason}`,
       fields: [
         { name: 'Server', value: guild.name, inline: true },
@@ -380,6 +946,9 @@ export default class AntiNuke {
 
   async disableRaidMode(guild) {
     this.raidMode.enabled = false;
+    
+    // Remove from active raids
+    this.raidTracking.activeRaids.delete(guild.id);
     
     // Restore permissions
     try {
@@ -409,7 +978,8 @@ export default class AntiNuke {
         everyoneRole.permissions.remove([
           PermissionFlagsBits.SendMessages,
           PermissionFlagsBits.AddReactions,
-          PermissionFlagsBits.Connect
+          PermissionFlagsBits.Connect,
+          PermissionFlagsBits.Speak
         ]),
         'AntiNuke: Raid lockdown'
       );
@@ -452,94 +1022,26 @@ export default class AntiNuke {
     }
   }
 
-  async getExecutor(guild, auditType) {
-    try {
-      const auditLogs = await guild.fetchAuditLogs({
-        limit: 1,
-        type: auditType
-      });
-      
-      const auditEntry = auditLogs.entries.first();
-      if (!auditEntry || Date.now() - auditEntry.createdTimestamp > 5000) return null;
-      
-      // Skip bot actions if it's our bot
-      if (auditEntry.executor.id === this.client.user.id) return null;
-      
-      return auditEntry.executor;
-    } catch (error) {
-      console.error('[AntiNuke] Error fetching audit logs:', error);
-      return null;
-    }
-  }
-
-  track(userId, action, metadata = {}) {
-    // Skip if user is whitelisted
-    if (this.isWhitelisted(userId)) return null;
-    
-    // Check if user is suspicious and apply stricter limits
-    let limit = this.config.limits[action];
-    if (this.isSuspicious(userId) && limit?.maxActions) {
-      limit = {
-        ...limit,
-        maxActions: Math.max(1, Math.floor(limit.maxActions / 2))
-      };
-    }
-    
-    if (!limit) return null;
-    
-    const now = Date.now();
-    
-    // Initialize user tracking
-    if (!this.tracker.has(userId)) {
-      this.tracker.set(userId, {});
-    }
-    
-    const userTracker = this.tracker.get(userId);
-    
-    if (!userTracker[action]) {
-      userTracker[action] = {
-        count: 0,
-        firstAction: now,
-        lastAction: now,
-        metadata: []
-      };
-    }
-    
-    const actionTracker = userTracker[action];
-    
-    // Check if time window has passed
-    if (now - actionTracker.firstAction > limit.timeWindowSeconds * 1000) {
-      // Reset tracking
-      actionTracker.count = 0;
-      actionTracker.firstAction = now;
-      actionTracker.metadata = [];
-    }
-    
-    actionTracker.count++;
-    actionTracker.lastAction = now;
-    actionTracker.metadata.push({ ...metadata, timestamp: now });
-    
-    // Check for violation
-    if (actionTracker.count > limit.maxActions) {
-      return {
-        userId,
-        action,
-        count: actionTracker.count,
-        limit: limit.maxActions,
-        timeWindow: limit.timeWindowSeconds,
-        metadata: actionTracker.metadata
-      };
-    }
-    
-    return null;
-  }
-
   async handleViolation(guild, user, action, violation) {
     console.log(`[AntiNuke] Violation detected: ${user.tag} - ${action} (${violation.count}/${violation.limit})`);
     
     // Get member
     const member = await guild.members.fetch(user.id).catch(() => null);
     if (!member) return;
+    
+    // Check if user has related accounts (potential alts)
+    const relatedUsers = this.raidTracking.userRelations.get(user.id);
+    if (relatedUsers && relatedUsers.size > 0) {
+      console.log(`[AntiNuke] User has ${relatedUsers.size} related accounts`);
+      
+      // Process related accounts too
+      for (const relatedId of relatedUsers) {
+        const relatedMember = await guild.members.fetch(relatedId).catch(() => null);
+        if (relatedMember && relatedMember.bannable) {
+          await relatedMember.ban({ reason: 'AntiNuke: Related to violating account' });
+        }
+      }
+    }
     
     // Apply punishment based on action type
     let punishment = 'None';
@@ -563,6 +1065,12 @@ export default class AntiNuke {
           if (rolesToRemove.size > 0) {
             await member.roles.remove(rolesToRemove, `AntiNuke: Excessive ${action}`);
             punishment = 'Roles Removed';
+          }
+          
+          // If it's channel/role deletion, ban them
+          if (action.includes('Delete') && member.bannable) {
+            await member.ban({ reason: `AntiNuke: ${action}` });
+            punishment = 'Banned';
           }
           break;
           
@@ -775,9 +1283,16 @@ export default class AntiNuke {
       ...baseStats,
       highAlert: this.highAlert,
       suspiciousUsers: this.suspiciousUsers.size,
+      stats: this.stats,
+      multiUserDetection: {
+        enabled: this.multiUserConfig.enabled,
+        activeRaids: this.raidTracking.activeRaids.size,
+        relatedAccounts: this.raidTracking.userRelations.size,
+        globalActionsTracked: Array.from(this.raidTracking.globalActions.keys())
+      },
       contentModeration: {
         enabled: this.config.contentModeration?.enabled || false,
-        violations: this.contentStats,
+        violations: this.stats.contentViolations,
         raidMode: this.raidMode,
         trackedMessages: this.contentTracking.messageHistory.size,
         trackedGuilds: this.contentTracking.joinHistory.size
@@ -803,8 +1318,8 @@ export default class AntiNuke {
     
     // Clean old join history
     for (const [guildId, joins] of this.contentTracking.joinHistory) {
-      const filtered = joins.filter(timestamp => 
-        now - timestamp < 300000 // Keep 5 minutes
+      const filtered = joins.filter(join => 
+        now - join.timestamp < 300000 // Keep 5 minutes
       );
       
       if (filtered.length === 0) {
