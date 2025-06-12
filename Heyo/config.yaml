@@ -159,7 +159,7 @@ linkProtection:
     - "1234567890123456789"
   logChannel: "1380422905191731210"
   deleteMessage: true
-  warningMessage: ❌ You do not have permission to send links in this channel.
+  warningMessage: You do not have permission to send links in this channel.
   ephemeralWarning: true
 vanity:
   enabled: false
@@ -391,16 +391,16 @@ ticketSystem:
     notifyOnClaim: true
     notifyOnClose: true
   messages:
-    ticketCreated: "✅ Your ticket has been created: {channel}"
-    ticketClosed: 🔒 This ticket has been closed by {user}
-    ticketClaimed: 🎫 {user} has claimed this ticket
-    ticketDeleting: 🗑️ Deleting ticket in {seconds} seconds...
-    maxTicketsReached: ❌ You already have {max} open ticket(s). Please close one before creating another.
-    cooldownActive: ❌ Please wait {time} seconds before creating another ticket.
-    noPermission: ❌ You do not have permission to {action} this ticket.
-    transcriptSaved: ✅ Transcript saved!
-    errorCreating: ❌ Failed to create ticket. Please try again later.
-    errorTranscript: ❌ Failed to generate transcript.
+    ticketCreated: "Your ticket has been created: {channel}"
+    ticketClosed: This ticket has been closed by {user}
+    ticketClaimed: {user} has claimed this ticket
+    ticketDeleting: Deleting ticket in {seconds} seconds...
+    maxTicketsReached: You already have {max} open ticket(s). Please close one before creating another.
+    cooldownActive: Please wait {time} seconds before creating another ticket.
+    noPermission: You do not have permission to {action} this ticket.
+    transcriptSaved: Transcript saved!
+    errorCreating: Failed to create ticket. Please try again later.
+    errorTranscript: Failed to generate transcript.
   logActions:
     - create
     - close
@@ -463,7 +463,7 @@ genderVerify:
     mainCategory: Gender Verification
   reviewChannelFormat: verify-{number}
   verifyEmbed:
-    title: ✅ Gender Verification
+    title: Gender Verification
     description: |
       To access gender-specific channels, you need to verify your identity.
 
@@ -496,16 +496,16 @@ genderVerify:
       placeholder: Any additional information for reviewers
       required: false
   messages:
-    alreadyVerified: ✅ You are already verified!
-    pendingVerification: ⏳ You already have a pending verification request.
-    cooldownActive: ⏰ Please wait {time} before submitting another verification.
-    maxAttemptsReached: ❌ You have reached the maximum number of verification attempts.
-    invalidGender: ❌ Please enter either "male" or "female".
-    invalidUrls: ❌ Please provide valid image URLs.
-    submitted: ✅ Your verification has been submitted! You will be notified once reviewed.
-    approved: ✅ Your verification has been approved! You now have access to gender-specific channels.
-    denied: "❌ Your verification has been denied. Reason: {reason}"
-    errorSubmitting: ❌ Failed to submit verification. Please try again later.
+    alreadyVerified: You are already verified!
+    pendingVerification: You already have a pending verification request.
+    cooldownActive: Please wait {time} before submitting another verification.
+    maxAttemptsReached: You have reached the maximum number of verification attempts.
+    invalidGender: Please enter either "male" or "female".
+    invalidUrls: Please provide valid image URLs.
+    submitted: Your verification has been submitted! You will be notified once reviewed.
+    approved: Your verification has been approved! You now have access to gender-specific channels.
+    denied: "Your verification has been denied. Reason: {reason}"
+    errorSubmitting: Failed to submit verification. Please try again later.
   notifications:
     notifyOnSubmit: true
     notifyOnReview: true
@@ -604,7 +604,7 @@ confess:
   cooldown: 300
   minLength: 10
   maxLength: 2000
-  embedTitle: 🤫 Anonymous Confession
+  embedTitle: Anonymous Confession
   embedColor: 3092790
   showConfessionNumber: true
   filterBannedWords: true
@@ -615,11 +615,11 @@ confess:
     - fag
     - retard
     - kys
-  successMessage: "✅ Your confession has been sent! ID: {id}"
+  successMessage: "Your confession has been sent! ID: {id}"
   logChannel: null
   setupMessage:
     enabled: true
-    title: 🤫 Anonymous Confessions
+    title: Anonymous Confessions
     description: |
       Use `/confess` command to send an anonymous confession to this channel.
 
@@ -682,15 +682,15 @@ friendGroup:
   vcUserLimit: 0
   vcBitrate: 64000
   messages:
-    alreadyHasGroup: ❌ You already own a friend group!
-    pendingApplication: ⏳ You already have a pending application.
-    cooldownActive: ⏰ Please wait {time} before applying again.
-    notEnoughMembers: ❌ You must mention at least {min} members.
-    applicationSubmitted: ✅ Your friend group application has been submitted!
-    applicationApproved: ✅ Your friend group application has been approved! Check your DMs for instructions.
-    applicationDenied: "❌ Your friend group application has been denied. Reason: {reason}"
-    setupRequired: ❌ Friend group system is not set up. An admin needs to run `/setupfg` first.
-    errorSubmitting: ❌ Failed to submit application. Please try again later.
+    alreadyHasGroup: You already own a friend group!
+    pendingApplication: You already have a pending application.
+    cooldownActive: Please wait {time} before applying again.
+    notEnoughMembers: You must mention at least {min} members.
+    applicationSubmitted: Your friend group application has been submitted!
+    applicationApproved: Your friend group application has been approved! Check your DMs for instructions.
+    applicationDenied: "Your friend group application has been denied. Reason: {reason}"
+    setupRequired: Friend group system is not set up. An admin needs to run `/setupfg` first.
+    errorSubmitting: Failed to submit application. Please try again later.
   notifications:
     notifyOnSubmit: true
     notifyOnReview: true
