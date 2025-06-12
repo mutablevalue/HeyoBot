@@ -124,18 +124,18 @@ async function handleSetBirthday(interaction) {
     
     const daysUntil = result.isToday ? 0 : Math.ceil((thisYearBirthday - today) / (1000 * 60 * 60 * 24));
     
-    let message = `Your birthday has been set to **${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}**\n`;
+    let message = `${interaction.user} set their birthday to **${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}**\n`;
     
     if (result.isToday) {
       message += '\n🎉 **Happy Birthday!** 🎂';
     } else if (daysUntil === 1) {
-      message += `\nYour next birthday is **tomorrow!**`;
+      message += `\nTheir next birthday is **tomorrow!**`;
     } else {
-      message += `\nYour next birthday is in **${daysUntil} days**`;
+      message += `\nTheir next birthday is in **${daysUntil} days**`;
     }
     
     const embed = embedLoader.success(message);
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed] });
   } catch (error) {
     const embed = embedLoader.error(error.message);
     await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -157,21 +157,41 @@ async function handleViewBirthday(interaction) {
   
   const birthDate = birthdayData.date;
   
+  // Calculate days until next birthday
+  const today = new Date();
+  const thisYearBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  
+  if (thisYearBirthday < today) {
+    thisYearBirthday.setFullYear(thisYearBirthday.getFullYear() + 1);
+  }
+  
+  const daysUntil = Math.ceil((thisYearBirthday - today) / (1000 * 60 * 60 * 24));
+  
+  let description = `**Birthday:** ${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`;
+  
+  if (daysUntil === 0) {
+    description += '\n\n🎉 **It\'s their birthday today!** 🎂';
+  } else if (daysUntil === 1) {
+    description += '\n\n**Their birthday is tomorrow!**';
+  } else {
+    description += `\n\n**${daysUntil} days** until your birthday`;
+  }
+  
   const embed = embedLoader.createEmbed({
     title: `${user.username}'s Birthday`,
-    description: `**Birthday:** ${birthDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
+    description: description,
     formatDescription: false
   });
   
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  await interaction.reply({ embeds: [embed] });
 }
 
 async function handleRemoveBirthday(interaction) {
   const removed = birthdaySystem.removeBirthday(interaction.user.id);
   
   if (removed) {
-    const embed = embedLoader.success('Your birthday has been removed');
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    const embed = embedLoader.success(`${interaction.user} removed their birthday`);
+    await interaction.reply({ embeds: [embed] });
   } else {
     const embed = embedLoader.info('You haven\'t set a birthday yet');
     await interaction.reply({ embeds: [embed], ephemeral: true });

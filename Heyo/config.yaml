@@ -33,6 +33,7 @@ moderation:
         - "987654321098765432"
         - "234567890123456789"
         - "1162730217895379025"
+        - "825436754680348683"
       roles:
         - "1235002473698299956"
         - "1380398417079046205"
@@ -259,8 +260,8 @@ antiNuke:
     - "456789012345678901"
   multiUserDetection:
     enabled: true
-    coordinationWindow: 10000  # 10 seconds
-    patternWindow: 30000  # 30 seconds
+    coordinationWindow: 10000
+    patternWindow: 30000
     minUsersForRaid: 3
     similarActionThreshold: 5
     actionWeights:
@@ -586,7 +587,7 @@ snipe:
     enabled: true
     dataFile: ghost_pings.json
     maxPingsPerUser: 50
-    pingExpiry: 604800000  # 7 days
+    pingExpiry: 604800000
     ignoreBots: true
     logChannel: null
     notifyOnGhostPing: true
@@ -764,11 +765,11 @@ birthday:
   minimumAge: 13
   maximumAge: 100
   timezone: UTC
-  checkTime: "00:00"
+  checkTime: 00:00
   messages:
-    announcement: "🎉 Happy Birthday {user}! 🎂"
-    dm: "Happy Birthday! 🎉 Hope you have an amazing day!"
-    firstMessage: "🎂 It's {user}'s birthday today! 🎉"
+    announcement: 🎉 Happy Birthday {user}! 🎂
+    dm: Happy Birthday! 🎉 Hope you have an amazing day!
+    firstMessage: 🎂 It's {user}'s birthday today! 🎉
   stats:
     totalBirthdays: 0
     birthdaysToday: 0
