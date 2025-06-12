@@ -1,13 +1,18 @@
 // commands/setupj2c.js
 import {
   SlashCommandBuilder,
-  PermissionFlagsBits,
-  EmbedBuilder
+  PermissionFlagsBits
 } from 'discord.js';
 
 let j2cManagerInstance = null;
+let embedLoader = null;
+
 export function setJ2CManager(j2cManager) {
   j2cManagerInstance = j2cManager;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -16,7 +21,7 @@ export const data = new SlashCommandBuilder()
   .addStringOption(option =>
     option
       .setName('channel_name')
-      .setDescription('Name for the J2C channel (default: ➕ Create Voice Channel)')
+      .setDescription('Name for the J2C channel')
       .setRequired(false)
   )
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels);
@@ -27,47 +32,37 @@ export async function execute(interaction) {
   }
 
   await interaction.deferReply();
-  const channelName = interaction.options.getString('channel_name') || '➕ Create Voice Channel';
+  
+  // Get channel name from option or config
+  const channelName = interaction.options.getString('channel_name') || 
+    j2cManagerInstance.config.get('j2c.defaultChannelName');
 
   try {
     const result = await j2cManagerInstance.setupJ2C(interaction.guild, channelName);
 
     if (!result.success) {
-      const embed = new EmbedBuilder()
-        .setTitle('J2C Setup Failed')
-        .setDescription(result.message)
-        .setColor(0xff0000)
-        .addFields({ name: 'Existing Channel', value: `<#${result.channel.id}>` })
-        .setTimestamp();
+      const embed = embedLoader.createEmbed()
+        .setDescription(`${result.message}\nExisting Channel: <#${result.channel.id}>`);
       return interaction.editReply({ embeds: [embed] });
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ J2C System Set Up')
-      .setDescription('Join to Create voice channel system has been successfully set up!')
-      .setColor(0x00ff00)
-      .addFields(
-        { name: 'J2C Channel', value: `<#${result.channel.id}>` },
-        {
-          name: 'How it works',
-          value:
-            '1️⃣ Users join this channel\n' +
-            '2️⃣ A new voice channel is created for them\n' +
-            '3️⃣ They become the owner with full control\n' +
-            '4️⃣ Channel is deleted when empty'
-        }
-      )
-      .setFooter({ text: 'Use /vchelp for voice channel commands' })
-      .setTimestamp();
+    const embed = embedLoader.createEmbed()
+      .setTitle('J2C System')
+      .setDescription(
+        'Join to Create voice channel system has been successfully set up\n\n' +
+        `J2C Channel: <#${result.channel.id}>\n\n` +
+        'How it works\n' +
+        '• Users join this channel\n' +
+        '• A new voice channel is created for them\n' +
+        '• They become the owner with full control\n' +
+        '• Channel is deleted when empty'
+      );
 
     return interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('Error setting up J2C:', error);
-    const embed = new EmbedBuilder()
-      .setTitle('❌ Error')
-      .setDescription('An error occurred while setting up the J2C system.')
-      .setColor(0xff0000)
-      .setTimestamp();
+    console.error('[J2C] Error setting up J2C:', error);
+    const embed = embedLoader.createEmbed()
+      .setDescription('An error occurred while setting up the J2C system');
     return interaction.editReply({ embeds: [embed] });
   }
 }

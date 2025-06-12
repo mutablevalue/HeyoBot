@@ -1,16 +1,20 @@
 // src/commands/leaderboard.js
 import {
   SlashCommandBuilder,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } from 'discord.js';
 
 let leaderboardSystem = null;
+let embedLoader = null;
 
 export function setLeaderboardSystem(system) {
   leaderboardSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 export const data = new SlashCommandBuilder()
@@ -93,7 +97,9 @@ export const topData = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!leaderboardSystem) {
-    return interaction.reply({ content: '❌ Leaderboard system not loaded.', ephemeral: true });
+    const embed = embedLoader.createEmbed()
+      .setDescription('Leaderboard system not loaded');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -123,24 +129,20 @@ async function executeMessages(interaction) {
   );
 
   if (leaderboard.length === 0) {
-    return interaction.editReply({ 
-      content: '📊 No message data available for this period yet.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.createEmbed()
+      .setDescription('No message data available for this period yet');
+    return interaction.editReply({ embeds: [embed], ephemeral: true });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(`📨 Message Leaderboard - ${period.charAt(0).toUpperCase() + period.slice(1)}`)
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({ text: `${interaction.guild.name}`, iconURL: interaction.guild.iconURL() });
+  const embed = embedLoader.createEmbed()
+    .setTitle(`Message Leaderboard - ${capitalize(period)}`);
 
   // Build leaderboard text
   const leaderboardText = await Promise.all(
     leaderboard.map(async (entry, index) => {
       const user = await interaction.client.users.fetch(entry.userId).catch(() => null);
-      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`;
-      return `${medal} ${user ? user.username : 'Unknown User'} - **${entry.value.toLocaleString()}** messages`;
+      const position = index + 1;
+      return `**${position}.** ${user ? user.username : 'Unknown User'} - **${entry.value.toLocaleString()}** messages`;
     })
   );
 
@@ -195,25 +197,21 @@ async function executeVoice(interaction) {
   );
 
   if (leaderboard.length === 0) {
-    return interaction.editReply({ 
-      content: '🎤 No voice data available for this period yet.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.createEmbed()
+      .setDescription('No voice data available for this period yet');
+    return interaction.editReply({ embeds: [embed], ephemeral: true });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(`🎤 Voice Time Leaderboard - ${period.charAt(0).toUpperCase() + period.slice(1)}`)
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({ text: `${interaction.guild.name}`, iconURL: interaction.guild.iconURL() });
+  const embed = embedLoader.createEmbed()
+    .setTitle(`Voice Time Leaderboard - ${capitalize(period)}`);
 
   // Build leaderboard text
   const leaderboardText = await Promise.all(
     leaderboard.map(async (entry, index) => {
       const user = await interaction.client.users.fetch(entry.userId).catch(() => null);
-      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`;
+      const position = index + 1;
       const time = leaderboardSystem.constructor.formatTime(entry.value);
-      return `${medal} ${user ? user.username : 'Unknown User'} - **${time}**`;
+      return `**${position}.** ${user ? user.username : 'Unknown User'} - **${time}**`;
     })
   );
 
@@ -259,15 +257,13 @@ async function executeStats(interaction) {
   const targetUser = interaction.options.getUser('user') || interaction.user;
   const stats = leaderboardSystem.getUserStats(targetUser.id, interaction.guild.id);
 
-  const embed = new EmbedBuilder()
-    .setTitle(`📊 Statistics for ${targetUser.username}`)
-    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-    .setColor(0x0099ff)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed()
+    .setTitle(`Statistics for ${targetUser.username}`)
+    .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }));
 
   // Message stats
   embed.addFields({
-    name: '📨 Messages',
+    name: 'Messages',
     value: `Weekly: **${stats.messages.weekly.toLocaleString()}**\n` +
            `Monthly: **${stats.messages.monthly.toLocaleString()}**\n` +
            `Lifetime: **${stats.messages.lifetime.toLocaleString()}**`,
@@ -276,7 +272,7 @@ async function executeStats(interaction) {
 
   // Voice stats
   embed.addFields({
-    name: '🎤 Voice Time',
+    name: 'Voice Time',
     value: `Weekly: **${leaderboardSystem.constructor.formatTime(stats.voice.weekly)}**\n` +
            `Monthly: **${leaderboardSystem.constructor.formatTime(stats.voice.monthly)}**\n` +
            `Lifetime: **${leaderboardSystem.constructor.formatTime(stats.voice.lifetime)}**`,
@@ -288,7 +284,7 @@ async function executeStats(interaction) {
   if (currentSession) {
     const sessionTime = Math.floor((Date.now() - currentSession.joinTime) / 1000);
     embed.addFields({
-      name: '🔴 Currently in Voice',
+      name: 'Currently in Voice',
       value: `Session Time: **${leaderboardSystem.constructor.formatTime(sessionTime)}**\n` +
              `Channel: <#${currentSession.channelId}>`,
       inline: false
@@ -302,7 +298,7 @@ async function executeStats(interaction) {
     const vcRank = await getRanking(interaction.guild.id, targetUser.id, 'voice', period);
     
     if (msgRank > 0 || vcRank > 0) {
-      rankings.push(`**${period.charAt(0).toUpperCase() + period.slice(1)}**: ` +
+      rankings.push(`**${capitalize(period)}**: ` +
         `Messages #${msgRank > 0 ? msgRank : 'N/A'} | ` +
         `Voice #${vcRank > 0 ? vcRank : 'N/A'}`);
     }
@@ -310,7 +306,7 @@ async function executeStats(interaction) {
 
   if (rankings.length > 0) {
     embed.addFields({
-      name: '🏆 Rankings',
+      name: 'Rankings',
       value: rankings.join('\n'),
       inline: false
     });
@@ -324,17 +320,13 @@ async function executeActive(interaction) {
     .filter(session => session.guildId === interaction.guild.id);
 
   if (activeSessions.length === 0) {
-    return interaction.reply({ 
-      content: '🔇 No active voice sessions right now.', 
-      ephemeral: true 
-    });
+    const embed = embedLoader.createEmbed()
+      .setDescription('No active voice sessions right now');
+    return interaction.reply({ embeds: [embed], ephemeral: true });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('🔊 Active Voice Sessions')
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({ text: `${activeSessions.length} users in voice` });
+  const embed = embedLoader.createEmbed()
+    .setTitle('Active Voice Sessions');
 
   // Sort by duration
   activeSessions.sort((a, b) => b.duration - a.duration);
@@ -352,7 +344,11 @@ async function executeActive(interaction) {
   embed.setDescription(sessionText.join('\n'));
 
   if (activeSessions.length > 20) {
-    embed.setFooter({ text: `Showing top 20 of ${activeSessions.length} active sessions` });
+    embed.addFields({
+      name: 'Note',
+      value: `Showing top 20 of ${activeSessions.length} active sessions`,
+      inline: false
+    });
   }
 
   await interaction.reply({ embeds: [embed] });
@@ -372,28 +368,25 @@ async function executeTop(interaction) {
   );
 
   if (leaderboard.length === 0) {
-    return interaction.editReply({ 
-      content: `No ${type} data available for this period yet.`, 
-      ephemeral: true 
-    });
+    const embed = embedLoader.createEmbed()
+      .setDescription(`No ${type} data available for this period yet`);
+    return interaction.editReply({ embeds: [embed], ephemeral: true });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(`${type === 'messages' ? '📨' : '🎤'} Top ${type.charAt(0).toUpperCase() + type.slice(1)} - ${period.charAt(0).toUpperCase() + period.slice(1)}`)
-    .setColor(0x00ff00)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed()
+    .setTitle(`Top ${capitalize(type)} - ${capitalize(period)}`);
 
   // Build leaderboard text
   const leaderboardText = await Promise.all(
     leaderboard.map(async (entry, index) => {
       const user = await interaction.client.users.fetch(entry.userId).catch(() => null);
-      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `**${index + 1}.**`;
+      const position = index + 1;
       
       if (type === 'messages') {
-        return `${medal} ${user ? user.username : 'Unknown User'} - **${entry.value.toLocaleString()}** messages`;
+        return `**${position}.** ${user ? user.username : 'Unknown User'} - **${entry.value.toLocaleString()}** messages`;
       } else {
         const time = leaderboardSystem.constructor.formatTime(entry.value);
-        return `${medal} ${user ? user.username : 'Unknown User'} - **${time}**`;
+        return `**${position}.** ${user ? user.username : 'Unknown User'} - **${time}**`;
       }
     })
   );
@@ -438,39 +431,36 @@ export async function handleButtonInteraction(interaction) {
 
   // if no data, just ack & exit
   if (leaderboard.length === 0) {
+    const embed = embedLoader.createEmbed()
+      .setDescription(
+        type === 'messages'
+          ? 'No message data available for this period yet'
+          : 'No voice data available for this period yet'
+      );
     return interaction.update({
-      content: type === 'messages'
-        ? '📊 No message data available for this period yet.'
-        : '🎤 No voice data available for this period yet.',
-      embeds: [],
+      embeds: [embed],
       components: []
     });
   }
 
   // build the embed
-  const embed = new EmbedBuilder()
+  const embed = embedLoader.createEmbed()
     .setTitle(
       type === 'messages'
-        ? `📨 Message Leaderboard - ${capitalize(period)}`
-        : `🎤 Voice Time Leaderboard - ${capitalize(period)}`
-    )
-    .setColor(0x00ff00)
-    .setTimestamp()
-    .setFooter({
-      text: interaction.guild.name,
-      iconURL: interaction.guild.iconURL()
-    });
+        ? `Message Leaderboard - ${capitalize(period)}`
+        : `Voice Time Leaderboard - ${capitalize(period)}`
+    );
 
   // build the description lines
   const description = await Promise.all(
     leaderboard.map(async (entry, i) => {
       const user = await interaction.client.users.fetch(entry.userId).catch(() => null);
-      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+      const position = i + 1;
       if (type === 'messages') {
-        return `${medal} ${user?.username || 'Unknown'} - **${entry.value.toLocaleString()}** messages`;
+        return `**${position}.** ${user?.username || 'Unknown'} - **${entry.value.toLocaleString()}** messages`;
       } else {
         const time = leaderboardSystem.constructor.formatTime(entry.value);
-        return `${medal} ${user?.username || 'Unknown'} - **${time}**`;
+        return `**${position}.** ${user?.username || 'Unknown'} - **${time}**`;
       }
     })
   );

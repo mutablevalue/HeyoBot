@@ -126,7 +126,9 @@ async function main() {
    antiNukeCommand.setAntiNuke(antiNuke);
   
   setupJ2CCommand.setJ2CManager(j2cManager);
+  setupJ2CCommand.setEmbedLoader(embedLoader);
   vcCommand.setJ2CManager(j2cManager);
+vcCommand.setEmbedLoader(embedLoader);
   moderationCommands.setModerationSystem(moderationSystem);
   moderationCommands.setEmbedLoader(embedLoader); // Add this lin
   vanityCommand.setVanityManager(vanityManager);
@@ -139,6 +141,7 @@ async function main() {
   channelCommands.setEmbedLoader(embedLoader);
   
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
+leaderboardCommands.setEmbedLoader(embedLoader);
   eventCommands.setEventHostingSystem(eventHostingSystem);
   eventCommands.setLeaderboardSystem(leaderboardSystem);
   boosterCommands.setBoosterSystem(boosterSystem);

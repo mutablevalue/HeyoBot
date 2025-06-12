@@ -1,3 +1,4 @@
+// src/systems/j2cManager.js
 import {
   ChannelType,
   PermissionFlagsBits
@@ -23,27 +24,22 @@ export class J2CManager extends EventEmitter {
     // Map to store user -> channelId (for quick lookup)
     this.userChannels = new Map();
 
-    // ─────────── DEFERRED LOADING ─────────────────────────────────────
-    // We wait until the client is fully “ready” and has cached guilds+channels,
-    // then read config.get("j2c.j2cChannelId") and populate this.j2cChannels.
+    // Load persisted J2C channel after client is ready
     this.client.once('ready', () => {
       this._loadPersistedJ2CChannel();
     });
-    // ─────────────────────────────────────────────────────────────────
 
     this.setupEventHandlers();
   }
 
   /**
-   * Called once Discord.js is “ready,” so guilds.cache and channel caches are populated.
-   * Reads `j2c.j2cChannelId` from config.yaml and, if that channel still exists as a voice
-   * channel in any guild, remembers it.
+   * Load persisted J2C channel from config
    */
   _loadPersistedJ2CChannel() {
     const persistedId = this.config.get("j2c.j2cChannelId");
     if (!persistedId) return;
 
-    // Loop through all cached guilds until we find one that has a voice channel with this ID.
+    // Find the guild that has this voice channel
     for (const [guildId, guild] of this.client.guilds.cache) {
       const channel = guild.channels.cache.get(persistedId);
       if (channel && channel.type === ChannelType.GuildVoice) {
@@ -54,7 +50,7 @@ export class J2CManager extends EventEmitter {
   }
 
   setupEventHandlers() {
-    // Whenever someone’s voice state updates, see if they join/leave the J2C channel
+    // Voice state updates
     this.client.on('voiceStateUpdate', async (oldState, newState) => {
       try {
         // Joined a channel
@@ -65,17 +61,17 @@ export class J2CManager extends EventEmitter {
         else if (oldState.channelId && !newState.channelId) {
           await this.handleUserLeave(oldState);
         }
-        // Switched from one channel to another
+        // Switched channels
         else if (oldState.channelId !== newState.channelId) {
           await this.handleUserLeave(oldState);
           await this.handleUserJoin(newState);
         }
       } catch (error) {
-        console.error('Error in voiceStateUpdate:', error);
+        console.error('[J2C] Error in voiceStateUpdate:', error);
       }
     });
 
-    // If someone deletes a channel, we need to clean up our in‐memory maps
+    // Channel deletion cleanup
     this.client.on('channelDelete', (channel) => {
       if (this.createdChannels.has(channel.id)) {
         const info = this.createdChannels.get(channel.id);
@@ -83,11 +79,7 @@ export class J2CManager extends EventEmitter {
         this.createdChannels.delete(channel.id);
       }
 
-      // If the J2C channel itself is deleted by someone in Discord UI, we should
-      // also zero out config.j2c.j2cChannelId so that next restart “forgets” it.
-      //
-      // (Optional—for safety) if the owner manually deleted the “➕ Create Voice Channel,”
-      // we wipe it from memory & from the YAML so that you can run /setupj2c again.
+      // If J2C channel itself is deleted, clear from config
       if (this.j2cChannels.has(channel.guild.id) && this.j2cChannels.get(channel.guild.id) === channel.id) {
         this.j2cChannels.delete(channel.guild.id);
         this.config.set("j2c.j2cChannelId", null);
@@ -100,11 +92,11 @@ export class J2CManager extends EventEmitter {
     const { member, channel, guild } = voiceState;
     if (!member || !channel) return;
 
-    // Is this channel the “Join‐to‐Create” channel for this guild?
+    // Check if this is the J2C channel
     const j2cChannelId = this.j2cChannels.get(guild.id);
     if (!j2cChannelId || channel.id !== j2cChannelId) return;
 
-    // If the user already owns a channel, move them there instead of creating a new one:
+    // Check if user already owns a channel
     if (this.userChannels.has(member.id)) {
       const existingChannelId = this.userChannels.get(member.id);
       const existingChannel = guild.channels.cache.get(existingChannelId);
@@ -112,16 +104,18 @@ export class J2CManager extends EventEmitter {
         await member.voice.setChannel(existingChannel);
         return;
       } else {
-        // If the channel was deleted but the in‐memory map wasn’t cleaned, clean up now:
+        // Clean up stale reference
         this.userChannels.delete(member.id);
         this.createdChannels.delete(existingChannelId);
       }
     }
 
-    // Create a new voice channel under the same parent category as the J2C channel:
+    // Create new voice channel
     const parentCategory = channel.parentId ? channel.parent : null;
+    const channelName = `${member.displayName}'s Channel`;
+    
     const newChannel = await guild.channels.create({
-      name: `${member.displayName}'s Channel`,
+      name: channelName,
       type: ChannelType.GuildVoice,
       parent: parentCategory,
       permissionOverwrites: [
@@ -144,17 +138,24 @@ export class J2CManager extends EventEmitter {
       ]
     });
 
-    // Store it in our in‐memory maps
+    // Store channel info
     this.createdChannels.set(newChannel.id, {
       ownerId: member.id,
       guildId: guild.id
     });
     this.userChannels.set(member.id, newChannel.id);
 
-    // Finally move the user into their newly created channel:
+    // Move user to their new channel
     await member.voice.setChannel(newChannel);
 
-    // Emit an event in case anything else wants to listen
+    // Log if configured
+    if (this.config.get('j2c.logChannel')) {
+      const logChannel = guild.channels.cache.get(this.config.get('j2c.logChannel'));
+      if (logChannel) {
+        await logChannel.send(`Channel created for ${member.displayName}`);
+      }
+    }
+
     this.emit('channelCreated', { channel: newChannel, owner: member, guild });
   }
 
@@ -162,14 +163,14 @@ export class J2CManager extends EventEmitter {
     const { channel, member } = voiceState;
     if (!channel || !member) return;
 
-    // If that channel was one we “created,” check for emptiness:
+    // Check if this is a created channel
     if (!this.createdChannels.has(channel.id)) return;
     const channelInfo = this.createdChannels.get(channel.id);
 
-    // Count how many other members remain (besides the one who left):
+    // Count remaining members
     const remaining = channel.members.filter(m => m.id !== member.id);
 
-    // If the channel is now empty, delete it
+    // Delete empty channel
     if (remaining.size === 0) {
       await channel.delete().catch(console.error);
       this.userChannels.delete(channelInfo.ownerId);
@@ -178,11 +179,11 @@ export class J2CManager extends EventEmitter {
       return;
     }
 
-    // If the original owner left but there are still people in it, transfer ownership:
+    // Transfer ownership if owner left
     if (channelInfo.ownerId === member.id) {
       const newOwner = remaining.first();
 
-      // Grant the new owner all the per‐member perms:
+      // Grant new owner permissions
       await channel.permissionOverwrites.edit(newOwner.id, {
         Connect: true,
         Speak: true,
@@ -193,15 +194,15 @@ export class J2CManager extends EventEmitter {
         PrioritySpeaker: true
       });
 
-      // Remove the old owner’s explicit overwrite (revert to default)
+      // Remove old owner permissions
       await channel.permissionOverwrites.delete(member.id);
 
-      // Update our in‐memory records
+      // Update records
       channelInfo.ownerId = newOwner.id;
       this.userChannels.delete(member.id);
       this.userChannels.set(newOwner.id, channel.id);
 
-      // Rename the channel
+      // Rename channel
       await channel.setName(`${newOwner.displayName}'s Channel`);
 
       this.emit('ownershipTransferred', {
@@ -213,27 +214,31 @@ export class J2CManager extends EventEmitter {
   }
 
   /**
-   * Call this once from your slash command /setupj2c.
-   * If a J2C channel already exists in memory (or in config), we refuse.
+   * Setup J2C channel for a guild
    */
-  async setupJ2C(guild, channelName = '➕ Create Voice Channel') {
-    // 1) If we already have a persisted J2C channel in memory → refuse
+  async setupJ2C(guild, channelName) {
+    // Check if already exists
     if (this.j2cChannels.has(guild.id)) {
       const existingId = this.j2cChannels.get(guild.id);
       const existing = guild.channels.cache.get(existingId);
       if (existing) {
-        return { success: false, message: 'J2C channel already exists!', channel: existing };
+        return { success: false, message: 'J2C channel already exists', channel: existing };
       }
-      // If we had a stale ID but that channel was deleted, wipe it:
+      // Clean up stale reference
       this.j2cChannels.delete(guild.id);
       this.config.set("j2c.j2cChannelId", null);
       await this.config.save();
     }
 
-    // 2) Create the actual Join‐to‐Create voice channel
+    // Get category from config if specified
+    const categoryId = this.config.get('j2c.categoryId');
+    const category = categoryId ? guild.channels.cache.get(categoryId) : null;
+
+    // Create J2C channel
     const j2cChannel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildVoice,
+      parent: category,
       permissionOverwrites: [
         {
           id: guild.id,
@@ -242,7 +247,7 @@ export class J2CManager extends EventEmitter {
       ]
     });
 
-    // 3) Persist it (both in memory _and_ in config.yaml)
+    // Save to memory and config
     this.j2cChannels.set(guild.id, j2cChannel.id);
     this.config.set("j2c.j2cChannelId", j2cChannel.id);
     await this.config.save();
@@ -265,35 +270,33 @@ export class J2CManager extends EventEmitter {
 
   async lockChannel(channel, userId) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
-    // Deny connect for @everyone
     await channel.permissionOverwrites.edit(channel.guild.id, { Connect: false });
     return { success: true };
   }
 
   async unlockChannel(channel, userId) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
-    // Allow connect for @everyone
     await channel.permissionOverwrites.edit(channel.guild.id, { Connect: true });
     return { success: true };
   }
 
   async rejectUser(channel, userId, targetUserId) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
     if (userId === targetUserId) {
-      return { success: false, message: 'You cannot reject yourself!' };
+      return { success: false, message: 'You cannot reject yourself' };
     }
-    // Deny view & connect for target user
+    
     await channel.permissionOverwrites.edit(targetUserId, {
       ViewChannel: false,
       Connect: false
     });
-    // If they’re in voice, disconnect them
+    
     const targetMember = channel.members.get(targetUserId);
     if (targetMember) {
       await targetMember.voice.disconnect();
@@ -303,19 +306,18 @@ export class J2CManager extends EventEmitter {
 
   async allowUser(channel, userId, targetUserId) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
-    // Remove custom overwrite for that user (they revert to default @everyone perms)
     await channel.permissionOverwrites.delete(targetUserId);
     return { success: true };
   }
 
   async setUserLimit(channel, userId, limit) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
     if (limit < 0 || limit > 99) {
-      return { success: false, message: 'Limit must be between 0 and 99!' };
+      return { success: false, message: 'Limit must be between 0 and 99' };
     }
     await channel.setUserLimit(limit);
     return { success: true };
@@ -323,10 +325,10 @@ export class J2CManager extends EventEmitter {
 
   async renameChannel(channel, userId, newName) {
     if (!this.isUserOwner(userId, channel.id)) {
-      return { success: false, message: 'You do not own this channel!' };
+      return { success: false, message: 'You do not own this channel' };
     }
     if (newName.length > 100) {
-      return { success: false, message: 'Channel name must be < 100 characters!' };
+      return { success: false, message: 'Channel name must be less than 100 characters' };
     }
     await channel.setName(newName);
     return { success: true };

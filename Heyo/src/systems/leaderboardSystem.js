@@ -17,20 +17,17 @@ export class LeaderboardSystem {
     this.configLoader = configLoader;
     
     // Load leaderboard config
-    const leaderboardConfig = this.configLoader.get('leaderboard') || {};
+    const leaderboardConfig = this.configLoader.get('leaderboard');
     this.config = {
-      enabled: leaderboardConfig.enabled ?? true,
-      trackMessages: leaderboardConfig.trackMessages ?? true,
-      trackVoice: leaderboardConfig.trackVoice ?? true,
-      dataFile: leaderboardConfig.dataFile || 'leaderboard_data.json',
-      resetSchedule: leaderboardConfig.resetSchedule || {
-        weekly: 'Monday', // Day of week to reset
-        monthly: 1, // Day of month to reset
-      },
-      minimumVCTime: leaderboardConfig.minimumVCTime || 60, // Minimum seconds in VC to count
-      excludedChannels: leaderboardConfig.excludedChannels || [], // Channel IDs to exclude
-      excludedRoles: leaderboardConfig.excludedRoles || [], // Role IDs to exclude from tracking
-      trackBots: leaderboardConfig.trackBots ?? false
+      enabled: leaderboardConfig.enabled,
+      trackMessages: leaderboardConfig.trackMessages,
+      trackVoice: leaderboardConfig.trackVoice,
+      dataFile: leaderboardConfig.dataFile,
+      resetSchedule: leaderboardConfig.resetSchedule,
+      minimumVCTime: leaderboardConfig.minimumVCTime,
+      excludedChannels: leaderboardConfig.excludedChannels || [],
+      excludedRoles: leaderboardConfig.excludedRoles || [],
+      trackBots: leaderboardConfig.trackBots
     };
 
     // Data storage
@@ -52,7 +49,7 @@ export class LeaderboardSystem {
     };
 
     // Voice state tracking
-    this.voiceStates = new Map(); // userId -> { channelId, joinTime }
+    this.voiceStates = new Map();
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -65,7 +62,7 @@ export class LeaderboardSystem {
     }
 
     // Save data periodically
-    setInterval(() => this.saveData(), 60000); // Save every minute
+    setInterval(() => this.saveData(), 60000);
   }
 
   /**
@@ -85,7 +82,7 @@ export class LeaderboardSystem {
         
         this.data.lastReset = rawData.lastReset || this.data.lastReset;
         
-        console.log(`[LeaderboardSystem] Loaded leaderboard data`);
+        console.log('[LeaderboardSystem] Loaded leaderboard data');
       }
     } catch (error) {
       console.error('[LeaderboardSystem] Error loading data:', error);
@@ -153,7 +150,7 @@ export class LeaderboardSystem {
         else if (oldState.channelId && !newState.channelId) {
           const voiceData = this.voiceStates.get(oldState.member.id);
           if (voiceData) {
-            const duration = Math.floor((Date.now() - voiceData.joinTime) / 1000); // in seconds
+            const duration = Math.floor((Date.now() - voiceData.joinTime) / 1000);
             
             if (duration >= this.config.minimumVCTime) {
               this.addVoiceTime(oldState.member.id, oldState.guild.id, duration);
@@ -315,7 +312,7 @@ export class LeaderboardSystem {
       // Weekly reset
       if (now.getDay() === this.getDayNumber(this.config.resetSchedule.weekly)) {
         const lastWeeklyReset = new Date(this.data.lastReset.weekly);
-        if (now - lastWeeklyReset > 7 * 24 * 60 * 60 * 1000 - 3600000) { // 7 days minus 1 hour buffer
+        if (now - lastWeeklyReset > 7 * 24 * 60 * 60 * 1000 - 3600000) {
           this.resetPeriod('weekly');
         }
       }
@@ -323,11 +320,11 @@ export class LeaderboardSystem {
       // Monthly reset
       if (now.getDate() === this.config.resetSchedule.monthly) {
         const lastMonthlyReset = new Date(this.data.lastReset.monthly);
-        if (now - lastMonthlyReset > 28 * 24 * 60 * 60 * 1000) { // At least 28 days
+        if (now - lastMonthlyReset > 28 * 24 * 60 * 60 * 1000) {
           this.resetPeriod('monthly');
         }
       }
-    }, 3600000); // Check every hour
+    }, 3600000);
   }
 
   /**
@@ -362,17 +359,7 @@ export class LeaderboardSystem {
    * Save configuration
    */
   async saveConfig() {
-    this.configLoader.set('leaderboard', {
-      enabled: this.config.enabled,
-      trackMessages: this.config.trackMessages,
-      trackVoice: this.config.trackVoice,
-      dataFile: this.config.dataFile,
-      resetSchedule: this.config.resetSchedule,
-      minimumVCTime: this.config.minimumVCTime,
-      excludedChannels: this.config.excludedChannels,
-      excludedRoles: this.config.excludedRoles,
-      trackBots: this.config.trackBots
-    });
+    this.configLoader.set('leaderboard', this.config);
     return this.configLoader.save();
   }
 
