@@ -1,6 +1,5 @@
 // src/systems/skullboardSystem.js
 import { 
-  EmbedBuilder,
   AttachmentBuilder,
   PermissionFlagsBits
 } from 'discord.js';
@@ -13,10 +12,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export class SkullboardSystem {
-  constructor(client, configLoader, antiNuke = null) {
+  constructor(client, configLoader, embedLoader, antiNuke = null) {
     this.client = client;
     this.configLoader = configLoader;
-    this.antiNuke = antiNuke; // Anti-nuke system reference
+    this.embedLoader = embedLoader;
+    this.antiNuke = antiNuke;
     this.config = this.configLoader.get('skullboard');
     
     if (!this.config.enabled) {
@@ -133,7 +133,7 @@ export class SkullboardSystem {
     const isMatch = (
       emojiString === guildEmoji || 
       emojiName === guildEmoji ||
-      (emojiId && guildEmoji.includes(emojiId)) // Handle custom emojis
+      (emojiId && guildEmoji.includes(emojiId))
     );
     
     if (!isMatch) {
@@ -272,39 +272,27 @@ export class SkullboardSystem {
   
   async createSkullboardEmbed(message, reactionCount, guildConfig) {
     const emoji = guildConfig.emoji || this.config.emoji;
-    const stars = this.getStarRating(reactionCount);
     
-    const embed = new EmbedBuilder()
-      .setAuthor({
-        name: message.author.tag,
-        iconURL: message.author.displayAvatarURL({ dynamic: true })
-      })
-      .setColor(this.getColorForCount(reactionCount))
-      .setTimestamp(message.createdAt)
-      .setFooter({ text: `${emoji} ${reactionCount} | ${message.id}` });
-    
-    // Add title with star rating
-    embed.setTitle(`${stars} ${emoji} ${reactionCount}`);
+    const fields = [];
     
     // Add content
-    if (message.content) {
-      embed.setDescription(message.content.slice(0, 2000));
-    }
+    const description = message.content ? message.content.slice(0, 2000) : null;
     
     // Add link to original
-    embed.addFields({
+    fields.push({
       name: 'Source',
       value: `[Jump to message](${message.url})`,
       inline: false
     });
     
     // Add first attachment if image
+    let imageUrl = null;
     if (message.attachments.size > 0) {
       const attachment = message.attachments.first();
       if (attachment.contentType?.startsWith('image/')) {
-        embed.setImage(attachment.url);
+        imageUrl = attachment.url;
       } else {
-        embed.addFields({
+        fields.push({
           name: 'Attachment',
           value: `[${attachment.name}](${attachment.url})`,
           inline: false
@@ -313,27 +301,27 @@ export class SkullboardSystem {
     }
     
     // Add first embed's image if exists
-    if (message.embeds.length > 0 && message.embeds[0].image) {
-      embed.setImage(message.embeds[0].image.url);
+    if (!imageUrl && message.embeds.length > 0 && message.embeds[0].image) {
+      imageUrl = message.embeds[0].image.url;
+    }
+    
+    const embed = this.embedLoader.createEmbed({
+      title: 'Skullboard',
+      description: description,
+      fields: fields,
+      footer: `${emoji} ${reactionCount} | ${message.id}`
+    });
+    
+    embed.setAuthor({
+      name: message.author.tag,
+      iconURL: message.author.displayAvatarURL({ dynamic: true })
+    });
+    
+    if (imageUrl) {
+      embed.setImage(imageUrl);
     }
     
     return embed;
-  }
-  
-  getStarRating(count) {
-    if (count >= 20) return '⭐⭐⭐⭐⭐';
-    if (count >= 15) return '⭐⭐⭐⭐';
-    if (count >= 10) return '⭐⭐⭐';
-    if (count >= 5) return '⭐⭐';
-    return '⭐';
-  }
-  
-  getColorForCount(count) {
-    if (count >= 20) return 0xffac33; // Gold
-    if (count >= 15) return 0xffd700; // Bright gold
-    if (count >= 10) return 0xffed4e; // Light gold
-    if (count >= 5) return 0xfff5a6; // Pale gold
-    return 0xffffff; // White
   }
   
   async handleMessageDelete(message) {
@@ -401,24 +389,25 @@ export class SkullboardSystem {
     
     const emoji = guildConfig?.emoji || this.config.emoji;
     
-    const embed = new EmbedBuilder()
-      .setTitle(`Skullboard ${action.charAt(0).toUpperCase() + action.slice(1)}`)
-      .setDescription(`Message ${action} skullboard`)
-      .addFields(
-        { name: 'Author', value: `${message.author.tag} (${message.author.id})`, inline: true },
-        { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-        { name: `${emoji} Count`, value: count.toString(), inline: true }
-      )
-      .setColor(action === 'add' ? 0x00ff00 : action === 'remove' ? 0xff0000 : 0xffa500)
-      .setTimestamp();
+    const fields = [
+      { name: 'Author', value: `${message.author.tag} (${message.author.id})`, inline: true },
+      { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
+      { name: `${emoji} Count`, value: count.toString(), inline: true }
+    ];
     
     if (message.content) {
-      embed.addFields({
+      fields.push({
         name: 'Content Preview',
         value: message.content.slice(0, 100) + (message.content.length > 100 ? '...' : ''),
         inline: false
       });
     }
+    
+    const embed = this.embedLoader.createEmbed({
+      title: 'Skullboard',
+      description: `Message ${action} skullboard`,
+      fields: fields
+    });
     
     await logChannel.send({ embeds: [embed] }).catch(console.error);
   }

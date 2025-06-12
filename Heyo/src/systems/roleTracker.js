@@ -8,24 +8,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 export class RoleTracker {
-  /**
-   * @param {import("discord.js").Client} client
-   * @param {import("../utils/configLoader.js").ConfigLoader} configLoader
-   */
-  constructor(client, configLoader) {
+  constructor(client, configLoader, embedLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = embedLoader;
     
     // Load role tracker config
-    const roleConfig = this.configLoader.get('roleTracker') || {};
-    this.config = {
-      enabled: roleConfig.enabled ?? true,
-      dataFile: roleConfig.dataFile || 'role_history.json',
-      maxHistoryPerUser: roleConfig.maxHistoryPerUser || 10,
-      trackBots: roleConfig.trackBots ?? false,
-      exemptRoles: roleConfig.exemptRoles || [], // Roles to not track/restore
-      logChannel: roleConfig.logChannel || null
-    };
+    this.config = this.configLoader.get('roleTracker');
 
     // Role history storage
     this.roleHistory = new Map();
@@ -43,9 +32,6 @@ export class RoleTracker {
     };
   }
 
-  /**
-   * Load role history from file
-   */
   loadRoleHistory() {
     try {
       if (fs.existsSync(this.dataPath)) {
@@ -58,9 +44,6 @@ export class RoleTracker {
     }
   }
 
-  /**
-   * Save role history to file
-   */
   saveRoleHistory() {
     try {
       const data = Object.fromEntries(this.roleHistory);
@@ -74,9 +57,6 @@ export class RoleTracker {
     }
   }
 
-  /**
-   * Setup event listeners
-   */
   setupEventListeners() {
     // Track when member leaves
     this.client.on('guildMemberRemove', async (member) => {
@@ -113,10 +93,6 @@ export class RoleTracker {
     });
   }
 
-  /**
-   * Track a member's current roles
-   * @param {import("discord.js").GuildMember} member 
-   */
   async trackMemberRoles(member) {
     try {
       // Get roles excluding @everyone and exempt roles
@@ -176,24 +152,11 @@ export class RoleTracker {
     }
   }
 
-  /**
-   * Get role history for a user
-   * @param {string} guildId 
-   * @param {string} userId 
-   * @returns {Object|null}
-   */
   getRoleHistory(guildId, userId) {
     const key = `${guildId}-${userId}`;
     return this.roleHistory.get(key) || null;
   }
 
-  /**
-   * Restore roles for a user
-   * @param {import("discord.js").Guild} guild 
-   * @param {string} userId 
-   * @param {number} historyIndex - Which history entry to restore (0 = most recent)
-   * @returns {Promise<{success: boolean, restored: number, failed: number, errors: string[]}>}
-   */
   async restoreRoles(guild, userId, historyIndex = 0) {
     const key = `${guild.id}-${userId}`;
     const userHistory = this.roleHistory.get(key);
@@ -277,11 +240,6 @@ export class RoleTracker {
     };
   }
 
-  /**
-   * Clear role history for a user
-   * @param {string} guildId 
-   * @param {string} userId 
-   */
   clearHistory(guildId, userId) {
     const key = `${guildId}-${userId}`;
     if (this.roleHistory.has(key)) {
@@ -292,26 +250,16 @@ export class RoleTracker {
     return false;
   }
 
-  /**
-   * Log role tracking action
-   * @param {import("discord.js").Guild} guild 
-   * @param {Object} data 
-   */
   async logAction(guild, data) {
     if (!this.config.logChannel) return;
 
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
 
-    const embed = {
-      title: `Role Tracker: ${data.action}`,
-      color: data.action === 'Roles Restored' ? 0x00ff00 : 0x0099ff,
-      fields: [],
-      timestamp: new Date().toISOString()
-    };
+    const fields = [];
 
     if (data.user) {
-      embed.fields.push({
+      fields.push({
         name: 'User',
         value: `${data.user.username || 'Unknown'} (${data.user.id})`,
         inline: true
@@ -319,7 +267,7 @@ export class RoleTracker {
     }
 
     if (data.roleCount !== undefined) {
-      embed.fields.push({
+      fields.push({
         name: 'Roles Tracked',
         value: data.roleCount.toString(),
         inline: true
@@ -327,7 +275,7 @@ export class RoleTracker {
     }
 
     if (data.restored !== undefined) {
-      embed.fields.push({
+      fields.push({
         name: 'Restored',
         value: data.restored.toString(),
         inline: true
@@ -335,7 +283,7 @@ export class RoleTracker {
     }
 
     if (data.failed !== undefined) {
-      embed.fields.push({
+      fields.push({
         name: 'Failed',
         value: data.failed.toString(),
         inline: true
@@ -343,7 +291,7 @@ export class RoleTracker {
     }
 
     if (data.from) {
-      embed.fields.push({
+      fields.push({
         name: 'Restored From',
         value: data.from,
         inline: false
@@ -351,12 +299,17 @@ export class RoleTracker {
     }
 
     if (data.reason) {
-      embed.fields.push({
+      fields.push({
         name: 'Reason',
         value: data.reason,
         inline: false
       });
     }
+
+    const embed = this.embedLoader.createEmbed({
+      title: `Role Tracker: ${data.action}`,
+      fields: fields
+    });
 
     try {
       await channel.send({ embeds: [embed] });
@@ -365,9 +318,6 @@ export class RoleTracker {
     }
   }
 
-  /**
-   * Get statistics
-   */
   getStats() {
     return {
       usersTracked: this.roleHistory.size,
@@ -377,9 +327,6 @@ export class RoleTracker {
     };
   }
 
-  /**
-   * Save configuration
-   */
   async saveConfig() {
     this.configLoader.set('roleTracker', {
       enabled: this.config.enabled,

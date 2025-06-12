@@ -2,14 +2,23 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType
 } from 'discord.js';
 
 let skullboardSystem = null;
+let embedLoader = null;
+let moderationSystem = null;
 
 export function setSkullboardSystem(system) {
   skullboardSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
+}
+
+export function setModerationSystem(system) {
+  moderationSystem = system;
 }
 
 // Setup skullboard command
@@ -49,33 +58,24 @@ export const skullboardTopData = new SlashCommandBuilder()
   .setName('skullboardtop')
   .setDescription('View top skullboard messages');
 
-// Import moderation system reference
-let moderationSystem = null;
-
-export function setModerationSystem(system) {
-  moderationSystem = system;
-}
-
 // Execute functions
 export async function executeSetupSkullboard(interaction) {
-  if (!skullboardSystem) {
+  if (!skullboardSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Skullboard system not loaded.', 
+      content: embedLoader?.format('Skullboard system not loaded.', 'message') || 'Skullboard system not loaded.', 
       ephemeral: true 
     });
   }
   
   // Check moderation permissions if system is available
   if (moderationSystem) {
-    // For setupskullboard, we'll check if user has admin permissions
-    // even if the command isn't explicitly in the config
     const hasAdminPerms = moderationSystem.hasPermissionLevel(interaction.member, 'administrator') ||
                          interaction.member.permissions.has(PermissionFlagsBits.Administrator) ||
                          interaction.member.id === interaction.guild.ownerId;
     
     if (!hasAdminPerms) {
       return interaction.reply({
-        content: '❌ You need administrator permissions to set up skullboard.',
+        content: embedLoader.format('You need administrator permissions to set up skullboard.', 'message'),
         ephemeral: true
       });
     }
@@ -84,7 +84,7 @@ export async function executeSetupSkullboard(interaction) {
     const cooldown = moderationSystem.checkCooldown(interaction.user.id, 'setupskullboard');
     if (cooldown.onCooldown) {
       return interaction.reply({
-        content: `⏱️ Please wait ${cooldown.timeLeft} seconds before using this command again.`,
+        content: embedLoader.format(`Please wait ${cooldown.timeLeft} seconds before using this command again.`, 'message'),
         ephemeral: true
       });
     }
@@ -99,18 +99,17 @@ export async function executeSetupSkullboard(interaction) {
   const success = await skullboardSystem.setupSkullboard(interaction.guild, channel.id, threshold, emoji);
   
   if (success) {
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Skullboard Channel Set')
-      .setDescription(`Skullboard has been configured for this server`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      title: 'Skullboard',
+      description: 'Skullboard has been configured for this server',
+      fields: [
         { name: 'Channel', value: `${channel}`, inline: true },
         { name: 'Emoji', value: emoji, inline: true },
         { name: 'Threshold', value: `${threshold} reactions`, inline: true },
         { name: 'Set By', value: `${interaction.user.tag}`, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setFooter({ text: `Messages need ${threshold} ${emoji} reactions to appear on skullboard` })
-      .setTimestamp();
+      ],
+      footer: `Messages need ${threshold} ${emoji} reactions to appear on skullboard`
+    });
     
     await interaction.editReply({ embeds: [embed] });
     
@@ -120,59 +119,59 @@ export async function executeSetupSkullboard(interaction) {
         action: 'Skullboard Setup',
         moderator: interaction.user,
         target: `#${channel.name}`,
-        additional: `Emoji: ${emoji}, Threshold: ${threshold}`,
-        color: 0x00ff00
+        additional: `Emoji: ${emoji}, Threshold: ${threshold}`
       });
     }
   } else {
     await interaction.editReply({ 
-      content: '❌ Failed to set up skullboard channel.' 
+      content: embedLoader.format('Failed to set up skullboard channel.', 'message')
     });
   }
 }
 
 export async function executeSkullboardStats(interaction) {
-  if (!skullboardSystem) {
+  if (!skullboardSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Skullboard system not loaded.', 
+      content: embedLoader?.format('Skullboard system not loaded.', 'message') || 'Skullboard system not loaded.', 
       ephemeral: true 
     });
   }
   
   const stats = skullboardSystem.getStats(interaction.guild.id);
   
-  const embed = new EmbedBuilder()
-    .setTitle(`📊 Skullboard Statistics`)
-    .setDescription(`Statistics for ${interaction.guild.name}'s skullboard`)
-    .addFields(
-      { name: 'Total Messages', value: stats.total.toString(), inline: true },
-      { name: 'Emoji', value: stats.config?.emoji || skullboardSystem.config.emoji, inline: true },
-      { name: 'Threshold', value: stats.config?.threshold?.toString() || 'Not set', inline: true }
-    )
-    .setColor(0xffd700)
-    .setTimestamp();
+  const fields = [
+    { name: 'Total Messages', value: stats.total.toString(), inline: true },
+    { name: 'Emoji', value: stats.config?.emoji || skullboardSystem.config.emoji, inline: true },
+    { name: 'Threshold', value: stats.config?.threshold?.toString() || 'Not set', inline: true }
+  ];
   
   if (stats.config?.channelId) {
-    embed.addFields({ 
+    fields.push({ 
       name: 'Skullboard Channel', 
       value: `<#${stats.config.channelId}>`, 
       inline: false 
     });
   } else {
-    embed.addFields({ 
+    fields.push({ 
       name: 'Status', 
-      value: '❌ Skullboard not set up in this server', 
+      value: 'Skullboard not set up in this server', 
       inline: false 
     });
   }
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Skullboard Statistics',
+    description: `Statistics for ${interaction.guild.name}'s skullboard`,
+    fields: fields
+  });
   
   await interaction.reply({ embeds: [embed] });
 }
 
 export async function executeSkullboardTop(interaction) {
-  if (!skullboardSystem) {
+  if (!skullboardSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Skullboard system not loaded.', 
+      content: embedLoader?.format('Skullboard system not loaded.', 'message') || 'Skullboard system not loaded.', 
       ephemeral: true 
     });
   }
@@ -181,38 +180,39 @@ export async function executeSkullboardTop(interaction) {
   
   if (!stats.config?.channelId) {
     return interaction.reply({ 
-      content: '❌ Skullboard is not set up in this server.', 
+      content: embedLoader.format('Skullboard is not set up in this server.', 'message'), 
       ephemeral: true 
     });
   }
   
   if (stats.topMessages.length === 0) {
     return interaction.reply({ 
-      content: 'No messages on the skullboard yet!', 
+      content: embedLoader.format('No messages on the skullboard yet!', 'message'), 
       ephemeral: true 
     });
   }
   
   const guildEmoji = stats.config.emoji || skullboardSystem.config.emoji;
   
-  const embed = new EmbedBuilder()
-    .setTitle(`🏆 Top Skullboard Messages`)
-    .setDescription(`Top ${Math.min(10, stats.topMessages.length)} messages by ${guildEmoji} count`)
-    .setColor(0xffd700)
-    .setTimestamp();
+  const fields = [];
   
   // Add top messages
   for (let i = 0; i < Math.min(10, stats.topMessages.length); i++) {
     const msg = stats.topMessages[i];
-    const medals = ['🥇', '🥈', '🥉'];
-    const prefix = medals[i] || `**${i + 1}.**`;
+    const prefix = `${i + 1}.`;
     
-    embed.addFields({
+    fields.push({
       name: `${prefix} ${guildEmoji} ${msg.reactionCount}`,
       value: `By <@${msg.authorId}> in <#${msg.channelId}>\n[Jump to message](https://discord.com/channels/${msg.guildId}/${msg.channelId}/${msg.originalMessageId})`,
       inline: false
     });
   }
+  
+  const embed = embedLoader.createEmbed({
+    title: 'Top Skullboard Messages',
+    description: `Top ${Math.min(10, stats.topMessages.length)} messages by ${guildEmoji} count`,
+    fields: fields
+  });
   
   await interaction.reply({ embeds: [embed] });
 }

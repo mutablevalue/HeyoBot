@@ -8,6 +8,7 @@ import fs from "fs";
 import { Client, Collection, Events, ActivityType, Partials } from "discord.js";
 import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
+import { EmbedLoader } from "./utils/embedLoader.js";
 import AntiNuke from "./systems/antiNuke.js";
 import { J2CManager } from "./systems/j2cManager.js";
 import { ModerationSystem } from "./systems/moderationSystem.js";
@@ -28,6 +29,7 @@ import { SnipeSystem } from "./systems/snipeSystem.js";
 import { SocialLookupSystem } from "./systems/socialLookupSystem.js";
 import { EntranceSystem } from "./systems/entranceSystem.js";
 import { GenderVerifySystem } from "./systems/genderVerifySystem.js";
+import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -37,7 +39,6 @@ import * as afkCommand from "./commands/afk.js";
 import * as funCommands from "./commands/funcommands.js";
 import * as welcomeCommand from "./commands/welcome.js";
 import * as channelCommands from "./commands/channels.js";
-import { EmbedLoader } from "./utils/embedLoader.js";
 import * as leaderboardCommands from "./commands/leaderboard.js";
 import * as eventCommands from "./commands/events.js";
 import * as boosterCommands from "./commands/booster.js";
@@ -54,9 +55,8 @@ import * as antiNukeCommand from "./commands/antinuke.js";
 import * as emojiCommand from "./commands/emoji.js";
 import * as genderVerifyCommands from "./commands/genderverify.js";
 import * as messageCommand from "./commands/message.js";
-import { QueueManager } from "./utils/queueManager.js";
-import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
 import * as friendGroupCommands from "./commands/friendgroup.js";
+import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Polyfill __dirname and __filename for ESM
@@ -81,7 +81,10 @@ async function main() {
     ]
   });
 
-  // 3) Initialize systems with hierarchy: AntiNuke -> ModerationSystem -> Other Systems
+  // 3) Initialize systems with hierarchy: EmbedLoader -> AntiNuke -> ModerationSystem -> Other Systems
+  
+  // First: EmbedLoader (needed by many systems)
+  const embedLoader = new EmbedLoader(config);
   
   // Top level: AntiNuke (no dependencies)
   const antiNuke = new AntiNuke(client, config);
@@ -90,7 +93,7 @@ async function main() {
   const moderationSystem = new ModerationSystem(client, config);
   moderationSystem.setAntiNuke(antiNuke); // Set AntiNuke reference for hierarchy checking
   
-  // Third level: All other systems (depend on ModerationSystem for permissions)
+  // Third level: All other systems (depend on ModerationSystem for permissions and EmbedLoader for visuals)
   const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
@@ -100,12 +103,10 @@ async function main() {
   linkProtection.setModerationSystem(moderationSystem); // Set reference for centralized permissions
   
   const welcomeSystem = new WelcomeSystem(client, config);
-  const roleTracker = new RoleTracker(client, config);
+  const roleTracker = new RoleTracker(client, config, embedLoader);
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
   const boosterSystem = new BoosterSystem(client, config, moderationSystem);
-  const embedLoader = new EmbedLoader(config);
-
   
   const filterSystem = new FilterSystem(client, config);
   filterSystem.setModerationSystem(moderationSystem); // Set reference for centralized permissions
@@ -113,8 +114,8 @@ async function main() {
   const banAppealSystem = new BanAppealSystem(client, config);
   const ticketSystem = new TicketSystem(client, config);
   const confessSystem = new ConfessSystem(client, config);
-  const skullboardSystem = new SkullboardSystem(client, config, antiNuke);
-  const snipeSystem = new SnipeSystem(client, config);
+  const skullboardSystem = new SkullboardSystem(client, config, embedLoader, antiNuke);
+  const snipeSystem = new SnipeSystem(client, config, embedLoader);
   const socialLookupSystem = new SocialLookupSystem(client, config);
   const entranceSystem = new EntranceSystem(client, config);
   const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
@@ -128,8 +129,12 @@ async function main() {
   vanityCommand.setVanityManager(vanityManager);
   afkCommand.setAfkManager(afkManager);
   welcomeCommand.setWelcomeSystem(welcomeSystem);
+  
+  // Channel commands need both ModerationSystem, RoleTracker, and EmbedLoader
   channelCommands.setModerationSystem(moderationSystem);
   channelCommands.setRoleTracker(roleTracker);
+  channelCommands.setEmbedLoader(embedLoader);
+  
   leaderboardCommands.setLeaderboardSystem(leaderboardSystem);
   eventCommands.setEventHostingSystem(eventHostingSystem);
   eventCommands.setLeaderboardSystem(leaderboardSystem);
@@ -138,9 +143,16 @@ async function main() {
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   ticketCommands.setTicketSystem(ticketSystem);
   confessCommands.setConfessSystem(confessSystem);
+  
+  // Skullboard commands need all three systems
   skullboardCommands.setSkullboardSystem(skullboardSystem);
   skullboardCommands.setModerationSystem(moderationSystem);
+  skullboardCommands.setEmbedLoader(embedLoader);
+  
+  // Snipe commands need both SnipeSystem and EmbedLoader
   snipeCommands.setSnipeSystem(snipeSystem);
+  snipeCommands.setEmbedLoader(embedLoader);
+  
   socialCommands.setSocialLookupSystem(socialLookupSystem);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
   emojiCommand.setModerationSystem(moderationSystem);
@@ -149,7 +161,7 @@ async function main() {
   messageCommand.setModerationSystem(moderationSystem);
   messageCommand.setAntiNuke(antiNuke);
   friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
-  friendGroupCommands.setModerationSystem(moderationSystem);  
+  friendGroupCommands.setModerationSystem(moderationSystem);
 
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -179,12 +191,12 @@ async function main() {
     const commandModule = await import(moduleUrl);
 
     // Special handling for files that export multiple commands
-const multiCommandFiles = [
-  'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
-  'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
-  'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
-  'genderverify.js', 'friendgroup.js'
-];
+    const multiCommandFiles = [
+      'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
+      'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
+      'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
+      'genderverify.js', 'friendgroup.js'
+    ];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
       for (const cmd of commandModule.commands) {
@@ -313,6 +325,7 @@ const multiCommandFiles = [
     console.log('HIERARCHY: AntiNuke → ModerationSystem → Other Systems');
     console.log(`Owner Bypass: ${moderationSystem.config.ownerBypass ? 'ENABLED' : 'DISABLED'}`);
     console.log('---');
+    console.log('EmbedLoader: Active (Unified Visual System)');
     console.log('AntiNuke: Active' + (antiNuke.config.contentModeration?.enabled ? ' (with Content Moderation)' : ''));
     console.log('Moderation System: Active (Centralized Permissions)');
     console.log('J2C Manager: Active');
@@ -380,10 +393,10 @@ const multiCommandFiles = [
         // Ticket system interactions are handled by the system's own listener
         // No need to handle here as TicketSystem sets up its own listeners
       } else if (interaction.customId.startsWith('snipe_')) {
-  // Snipe pagination buttons are handled within the command
-} else if (interaction.customId.startsWith('rs_')) {
-  // Reaction snipe pagination buttons are handled within the command
-} else if (interaction.customId.startsWith('entrance_')) {
+        // Snipe pagination buttons are handled within the command
+      } else if (interaction.customId.startsWith('rs_')) {
+        // Reaction snipe pagination buttons are handled within the command
+      } else if (interaction.customId.startsWith('entrance_')) {
         // Entrance system buttons are handled within the command
       }
     } else if (interaction.isModalSubmit()) {

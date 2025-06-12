@@ -2,16 +2,20 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle
 } from 'discord.js';
 
 let snipeSystem = null;
+let embedLoader = null;
 
 export function setSnipeSystem(system) {
   snipeSystem = system;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 // Snipe command
@@ -119,9 +123,9 @@ export const csData = new SlashCommandBuilder()
 
 // Execute functions
 export async function executeSnipe(interaction) {
-  if (!snipeSystem) {
+  if (!snipeSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Snipe system not loaded.', 
+      content: embedLoader?.format('Snipe system not loaded.', 'message') || 'Snipe system not loaded.', 
       ephemeral: true 
     });
   }
@@ -129,7 +133,7 @@ export async function executeSnipe(interaction) {
   // Check permissions
   if (!snipeSystem.hasPermission(interaction.member, 'snipe')) {
     return interaction.reply({ 
-      content: '❌ You do not have permission to use this command.', 
+      content: embedLoader.format('You do not have permission to use this command.', 'message'), 
       ephemeral: true 
     });
   }
@@ -141,7 +145,7 @@ export async function executeSnipe(interaction) {
   
   if (snipes.length === 0) {
     return interaction.reply({ 
-      content: 'No deleted messages found in this channel.', 
+      content: embedLoader.format('No deleted messages found in this channel.', 'message'), 
       ephemeral: true 
     });
   }
@@ -185,7 +189,7 @@ export async function executeSnipe(interaction) {
   collector.on('collect', async i => {
     if (i.user.id !== interaction.user.id) {
       return i.reply({ 
-        content: 'You cannot use these buttons.', 
+        content: embedLoader.format('You cannot use these buttons.', 'message'), 
         ephemeral: true 
       });
     }
@@ -206,9 +210,9 @@ export async function executeSnipe(interaction) {
 
 // Execute reaction snipe
 export async function executeReactionSnipe(interaction) {
-  if (!snipeSystem) {
+  if (!snipeSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Snipe system not loaded.', 
+      content: embedLoader?.format('Snipe system not loaded.', 'message') || 'Snipe system not loaded.', 
       ephemeral: true 
     });
   }
@@ -216,7 +220,7 @@ export async function executeReactionSnipe(interaction) {
   // Check permissions
   if (!snipeSystem.hasPermission(interaction.member, 'reactionsnipe')) {
     return interaction.reply({ 
-      content: '❌ You do not have permission to use this command.', 
+      content: embedLoader.format('You do not have permission to use this command.', 'message'), 
       ephemeral: true 
     });
   }
@@ -228,7 +232,7 @@ export async function executeReactionSnipe(interaction) {
   
   if (reactionSnipes.length === 0) {
     return interaction.reply({ 
-      content: 'No removed reactions found in this channel.', 
+      content: embedLoader.format('No removed reactions found in this channel.', 'message'), 
       ephemeral: true 
     });
   }
@@ -272,7 +276,7 @@ export async function executeReactionSnipe(interaction) {
   collector.on('collect', async i => {
     if (i.user.id !== interaction.user.id) {
       return i.reply({ 
-        content: 'You cannot use these buttons.', 
+        content: embedLoader.format('You cannot use these buttons.', 'message'), 
         ephemeral: true 
       });
     }
@@ -292,9 +296,9 @@ export async function executeReactionSnipe(interaction) {
 }
 
 export async function executeClearSnipes(interaction) {
-  if (!snipeSystem) {
+  if (!snipeSystem || !embedLoader) {
     return interaction.reply({ 
-      content: '❌ Snipe system not loaded.', 
+      content: embedLoader?.format('Snipe system not loaded.', 'message') || 'Snipe system not loaded.', 
       ephemeral: true 
     });
   }
@@ -302,7 +306,7 @@ export async function executeClearSnipes(interaction) {
   // Check permissions
   if (!snipeSystem.hasPermission(interaction.member, 'clearsnipes')) {
     return interaction.reply({ 
-      content: '❌ You do not have permission to use this command.', 
+      content: embedLoader.format('You do not have permission to use this command.', 'message'), 
       ephemeral: true 
     });
   }
@@ -348,11 +352,10 @@ export async function executeClearSnipes(interaction) {
     }
   }
   
-  const embed = new EmbedBuilder()
-    .setTitle('🧹 Snipes Cleared')
-    .setDescription(description)
-    .setColor(0x00ff00)
-    .setTimestamp();
+  const embed = embedLoader.createEmbed({
+    title: 'Snipes Cleared',
+    description: description
+  });
   
   await interaction.reply({ embeds: [embed], ephemeral: true });
   
@@ -360,11 +363,9 @@ export async function executeClearSnipes(interaction) {
   if (snipeSystem.config.logChannel) {
     const logChannel = interaction.guild.channels.cache.get(snipeSystem.config.logChannel);
     if (logChannel?.isTextBased()) {
-      const logEmbed = new EmbedBuilder()
-        .setTitle('Snipes Cleared')
-        .setDescription(`${interaction.user.tag} cleared ${description.toLowerCase()}`)
-        .setColor(0xff0000)
-        .setTimestamp();
+      const logEmbed = embedLoader.createEmbed({
+        description: `${interaction.user.tag} cleared ${description.toLowerCase()}`
+      });
       
       await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
     }

@@ -2,14 +2,23 @@
 import {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder,
   ChannelType
 } from 'discord.js';
 
 let moderationSystem = null;
+let roleTracker = null;
+let embedLoader = null;
 
 export function setModerationSystem(system) {
   moderationSystem = system;
+}
+
+export function setRoleTracker(tracker) {
+  roleTracker = tracker;
+}
+
+export function setEmbedLoader(loader) {
+  embedLoader = loader;
 }
 
 // Create channel command
@@ -198,17 +207,13 @@ export const channelData = new SlashCommandBuilder()
       )
   );
 
-// Role tracker instance
-let roleTracker = null;
-
-export function setRoleTracker(tracker) {
-  roleTracker = tracker;
-}
-
 // Execute functions
 export async function executeChannel(interaction) {
-  if (!moderationSystem) {
-    return interaction.reply({ content: '❌ Moderation system not loaded.', ephemeral: true });
+  if (!moderationSystem || !embedLoader) {
+    return interaction.reply({ 
+      content: embedLoader?.format('Moderation system not loaded.', 'message') || 'Moderation system not loaded.', 
+      ephemeral: true 
+    });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -217,7 +222,7 @@ export async function executeChannel(interaction) {
   const permCheck = moderationSystem.checkPermission(interaction.member, 'createchannel');
   if (!permCheck.allowed) {
     return interaction.reply({ 
-      content: `❌ ${permCheck.reason}`, 
+      content: embedLoader.format(permCheck.reason, 'message'), 
       ephemeral: true 
     });
   }
@@ -247,7 +252,7 @@ export async function executeCreateChannel(interaction) {
     const permCheck = moderationSystem.checkPermission(interaction.member, 'createchannel');
     if (!permCheck.allowed) {
       return interaction.reply({ 
-        content: `❌ ${permCheck.reason}`, 
+        content: embedLoader.format(permCheck.reason, 'message'), 
         ephemeral: true 
       });
     }
@@ -285,16 +290,14 @@ export async function executeCreateChannel(interaction) {
   try {
     const channel = await interaction.guild.channels.create(channelOptions);
 
-    const embed = new EmbedBuilder()
-      .setTitle('✅ Channel Created')
-      .setDescription(`Successfully created ${channel}`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: `Successfully created ${channel}`,
+      fields: [
         { name: 'Name', value: channel.name, inline: true },
         { name: 'Type', value: type, inline: true },
         { name: 'Category', value: category ? category.name : 'None', inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+      ]
+    });
 
     await interaction.reply({ embeds: [embed] });
 
@@ -303,13 +306,12 @@ export async function executeCreateChannel(interaction) {
       action: 'Channel Create',
       moderator: interaction.user,
       target: `${channel.name} (${channel.id})`,
-      additional: `Type: ${type}`,
-      color: 0x00ff00
+      additional: `Type: ${type}`
     });
   } catch (error) {
     console.error('Error creating channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to create channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to create channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
@@ -324,7 +326,7 @@ export async function executeDeleteChannel(interaction) {
     const permCheck = moderationSystem.checkPermission(interaction.member, 'deletechannel');
     if (!permCheck.allowed) {
       return interaction.reply({ 
-        content: `❌ ${permCheck.reason}`, 
+        content: embedLoader.format(permCheck.reason, 'message'), 
         ephemeral: true 
       });
     }
@@ -332,7 +334,7 @@ export async function executeDeleteChannel(interaction) {
 
   if (!confirm) {
     return interaction.reply({ 
-      content: '❌ Channel deletion cancelled. Set confirm to true to proceed.', 
+      content: embedLoader.format('Channel deletion cancelled. Set confirm to true to proceed.', 'message'), 
       ephemeral: true 
     });
   }
@@ -340,7 +342,7 @@ export async function executeDeleteChannel(interaction) {
   // Prevent deletion of the channel the command was used in
   if (channel.id === interaction.channel.id) {
     return interaction.reply({ 
-      content: '❌ You cannot delete the channel you are currently in.', 
+      content: embedLoader.format('You cannot delete the channel you are currently in.', 'message'), 
       ephemeral: true 
     });
   }
@@ -352,16 +354,14 @@ export async function executeDeleteChannel(interaction) {
 
     await channel.delete(`Deleted by ${interaction.user.tag}`);
 
-    const embed = new EmbedBuilder()
-      .setTitle('🗑️ Channel Deleted')
-      .setDescription(`Successfully deleted channel`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: 'Successfully deleted channel',
+      fields: [
         { name: 'Channel', value: `#${channelName} (${channelId})`, inline: true },
         { name: 'Type', value: ChannelType[channelType] || 'Unknown', inline: true },
         { name: 'Deleted By', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0xff0000)
-      .setTimestamp();
+      ]
+    });
 
     await interaction.reply({ embeds: [embed] });
 
@@ -369,13 +369,12 @@ export async function executeDeleteChannel(interaction) {
     await moderationSystem.logAction(interaction.guild, {
       action: 'Channel Delete',
       moderator: interaction.user,
-      target: `#${channelName} (${channelId})`,
-      color: 0xff0000
+      target: `#${channelName} (${channelId})`
     });
   } catch (error) {
     console.error('Error deleting channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to delete channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to delete channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
@@ -391,16 +390,14 @@ export async function executeCloneChannel(interaction) {
       reason: `Cloned by ${interaction.user.tag}`
     });
 
-    const embed = new EmbedBuilder()
-      .setTitle('📋 Channel Cloned')
-      .setDescription(`Successfully cloned ${channel} to ${clonedChannel}`)
-      .addFields(
+    const embed = embedLoader.createEmbed({
+      description: `Successfully cloned ${channel} to ${clonedChannel}`,
+      fields: [
         { name: 'Original', value: `${channel}`, inline: true },
         { name: 'Clone', value: `${clonedChannel}`, inline: true },
         { name: 'Cloned By', value: interaction.user.tag, inline: true }
-      )
-      .setColor(0x00ff00)
-      .setTimestamp();
+      ]
+    });
 
     await interaction.reply({ embeds: [embed] });
 
@@ -408,28 +405,30 @@ export async function executeCloneChannel(interaction) {
     await moderationSystem.logAction(interaction.guild, {
       action: 'Channel Clone',
       moderator: interaction.user,
-      target: `${channel.name} → ${clonedChannel.name}`,
-      color: 0x00ff00
+      target: `${channel.name} → ${clonedChannel.name}`
     });
   } catch (error) {
     console.error('Error cloning channel:', error);
     await interaction.reply({ 
-      content: '❌ Failed to clone channel. Make sure I have the necessary permissions.', 
+      content: embedLoader.format('Failed to clone channel. Make sure I have the necessary permissions.', 'message'), 
       ephemeral: true 
     });
   }
 }
 
 export async function executeRestoreRoles(interaction) {
-  if (!roleTracker) {
-    return interaction.reply({ content: '❌ Role tracker not loaded.', ephemeral: true });
+  if (!roleTracker || !embedLoader) {
+    return interaction.reply({ 
+      content: embedLoader?.format('Role tracker not loaded.', 'message') || 'Role tracker not loaded.', 
+      ephemeral: true 
+    });
   }
 
   // Check permissions
   const permCheck = moderationSystem.checkPermission(interaction.member, 'restoreroles');
   if (!permCheck.allowed) {
     return interaction.reply({ 
-      content: `❌ ${permCheck.reason}`, 
+      content: embedLoader.format(permCheck.reason, 'message'), 
       ephemeral: true 
     });
   }
@@ -442,38 +441,36 @@ export async function executeRestoreRoles(interaction) {
   const result = await roleTracker.restoreRoles(interaction.guild, user.id, fromIndex);
 
   if (!result.success && result.errors.length > 0) {
-    const embed = new EmbedBuilder()
-      .setTitle('❌ Role Restoration Failed')
-      .setDescription(`Could not restore roles for ${user.tag}`)
-      .addFields({
+    const embed = embedLoader.createEmbed({
+      description: `Could not restore roles for ${user.tag}`,
+      fields: [{
         name: 'Errors',
         value: result.errors.join('\n').slice(0, 1024),
         inline: false
-      })
-      .setColor(0xff0000)
-      .setTimestamp();
+      }]
+    });
 
     return interaction.editReply({ embeds: [embed] });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle(result.success ? '✅ Roles Restored' : '⚠️ Partial Restoration')
-    .setDescription(`Role restoration for ${user.tag}`)
-    .addFields(
-      { name: 'Restored', value: result.restored.toString(), inline: true },
-      { name: 'Failed', value: result.failed.toString(), inline: true },
-      { name: 'From Index', value: fromIndex.toString(), inline: true }
-    )
-    .setColor(result.success ? 0x00ff00 : 0xffa500)
-    .setTimestamp();
+  const fields = [
+    { name: 'Restored', value: result.restored.toString(), inline: true },
+    { name: 'Failed', value: result.failed.toString(), inline: true },
+    { name: 'From Index', value: fromIndex.toString(), inline: true }
+  ];
 
   if (result.errors.length > 0) {
-    embed.addFields({
+    fields.push({
       name: 'Issues',
       value: result.errors.join('\n').slice(0, 1024),
       inline: false
     });
   }
+
+  const embed = embedLoader.createEmbed({
+    description: `Role restoration for ${user.tag}`,
+    fields: fields
+  });
 
   await interaction.editReply({ embeds: [embed] });
 
@@ -482,14 +479,16 @@ export async function executeRestoreRoles(interaction) {
     action: 'Restore Roles',
     moderator: interaction.user,
     target: `${user.tag} (${user.id})`,
-    additional: `Restored: ${result.restored}, Failed: ${result.failed}`,
-    color: result.success ? 0x00ff00 : 0xffa500
+    additional: `Restored: ${result.restored}, Failed: ${result.failed}`
   });
 }
 
 export async function executeRoleHistory(interaction) {
-  if (!roleTracker) {
-    return interaction.reply({ content: '❌ Role tracker not loaded.', ephemeral: true });
+  if (!roleTracker || !embedLoader) {
+    return interaction.reply({ 
+      content: embedLoader?.format('Role tracker not loaded.', 'message') || 'Role tracker not loaded.', 
+      ephemeral: true 
+    });
   }
 
   const user = interaction.options.getUser('user');
@@ -497,21 +496,15 @@ export async function executeRoleHistory(interaction) {
   const history = roleTracker.getRoleHistory(interaction.guild.id, user.id);
 
   if (!history || history.history.length === 0) {
-    const embed = new EmbedBuilder()
-      .setTitle('📋 Role History')
-      .setDescription(`No role history found for ${user.tag}`)
-      .setColor(0xff0000)
-      .setTimestamp();
+    const embed = embedLoader.createEmbed({
+      title: 'Role History',
+      description: `No role history found for ${user.tag}`
+    });
 
     return interaction.reply({ embeds: [embed] });
   }
 
-  const embed = new EmbedBuilder()
-    .setTitle('📋 Role History')
-    .setDescription(`Role history for ${user.tag}`)
-    .setColor(0x0099ff)
-    .setThumbnail(user.displayAvatarURL({ dynamic: true }))
-    .setTimestamp();
+  const fields = [];
 
   // Show up to 5 most recent entries
   const recentHistory = history.history.slice(0, 5);
@@ -520,12 +513,20 @@ export async function executeRoleHistory(interaction) {
     const timestamp = Math.floor(new Date(entry.timestamp).getTime() / 1000);
     const rolesList = entry.roles.map(r => `• ${r.name}`).join('\n');
 
-    embed.addFields({
+    fields.push({
       name: `#${index} - <t:${timestamp}:R>`,
       value: rolesList || 'No roles',
       inline: false
     });
   });
+
+  const embed = embedLoader.createEmbed({
+    title: 'Role History',
+    description: `Role history for ${user.tag}`,
+    fields: fields
+  });
+
+  embed.setThumbnail(user.displayAvatarURL({ dynamic: true }));
 
   if (history.history.length > 5) {
     embed.setFooter({ 

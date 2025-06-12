@@ -138,10 +138,8 @@ moderation:
 afk:
   enabled: true
   dataFile: afk_data.json
-  embedColor: 8421504
   removeOnMessage: true
   mentionResponse:
-    showTimestamp: true
     showReason: true
 linkProtection:
   enabled: true
@@ -162,7 +160,7 @@ linkProtection:
   warningMessage: You do not have permission to send links in this channel.
   ephemeralWarning: true
 vanity:
-  enabled: false
+  enabled: true
   checkIntervalSeconds: 1800
   vanityStrings:
     - YourServer
@@ -267,19 +265,14 @@ welcome:
     title: Welcome!
     description: |-
       Welcome {user} to {server}!
-
       You are member #{memberCount}
-    color: 65280
     thumbnail: true
     footer: Enjoy your stay!
-    timestamp: true
   dmEnabled: false
   dmMessage:
     title: Welcome to {server}!
     description: Welcome {user}! Were glad to have you here.
-    color: 65280
     footer: Have a great time!
-    timestamp: true
   roleOnJoin: null
   pingUser: false
   deleteAfter: null
@@ -340,17 +333,11 @@ ticketSystem:
   channelNameFormat: ticket-{number}
   welcomeMessage: |
     Thank you for creating a ticket! 
-
     Please describe your issue in detail and our support team will assist you shortly.
-
-    Be patient - we'll respond as soon as possible
-    Provide all relevant information
-    Be respectful to our support team
   categories: []
   panelEmbed:
-    title: 🎫 Support Tickets
+    title: Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
-    color: 39423
     footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
     buttonEmoji: 🎫
@@ -446,8 +433,8 @@ embed:
   color: 8388608
   formatters:
     header:
-      prefix: "["
-      suffix: "]"
+      prefix: "⩤⟨ "
+      suffix: " ⟩⩥"
     footer:
       prefix: ""
       suffix: ""
@@ -455,11 +442,11 @@ embed:
       prefix: ""
       suffix: ""
     message:
-      prefix: "["
-      suffix: "]"
+      prefix: "⩤ "
+      suffix: ""
   defaults:
-    showFooter: false
-    footerText: ""
+    showFooter: true
+    footerText: "༒"
     inline: true
 genderVerify:
   enabled: true

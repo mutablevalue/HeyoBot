@@ -1,34 +1,16 @@
 // src/systems/snipeSystem.js
-import { PermissionFlagsBits, EmbedBuilder } from 'discord.js';
+import { PermissionFlagsBits } from 'discord.js';
 
 export class SnipeSystem {
-  constructor(client, configLoader) {
+  constructor(client, configLoader, embedLoader) {
     this.client = client;
     this.configLoader = configLoader;
-    this.config = this.configLoader.get('snipe') || {};
-    
-    // Default configuration
-    this.config = {
-      enabled: true,
-      maxSnipesPerChannel: 5,
-      messageExpiry: 3600, // 1 hour
-      trackEdits: true,
-      trackReactions: true, // NEW: Track reaction removals
-      includeBots: false,
-      excludedChannels: [],
-      ephemeral: false,
-      requirePermission: false,
-      allowedRoles: [],
-      moderatorRoles: [],
-      embedColor: 0x2f3136,
-      logDeleted: false,
-      logChannel: null,
-      ...this.config
-    };
+    this.embedLoader = embedLoader;
+    this.config = this.configLoader.get('snipe');
     
     // Snipe storage: channelId -> array of snipes
     this.snipes = new Map();
-    this.reactionSnipes = new Map(); // NEW: Separate storage for reaction snipes
+    this.reactionSnipes = new Map();
     
     // Setup event listeners
     if (this.config.enabled) {
@@ -56,10 +38,9 @@ export class SnipeSystem {
       });
     }
     
-    // NEW: Track removed reactions if enabled
+    // Track removed reactions if enabled
     if (this.config.trackReactions) {
       this.client.on('messageReactionRemove', async (reaction, user) => {
-        // Fetch the reaction if it's partial
         if (reaction.partial) {
           try {
             await reaction.fetch();
@@ -93,10 +74,8 @@ export class SnipeSystem {
       content: message.content,
       attachments: message.attachments.map(att => ({
         name: att.name,
-        url: att.url,
-        size: att.size
+        url: att.url
       })),
-      embeds: message.embeds.map(embed => embed.toJSON()),
       channelId: message.channel.id,
       guildId: message.guild.id,
       deletedAt: Date.now(),
@@ -130,10 +109,8 @@ export class SnipeSystem {
       oldContent: oldMessage.content,
       attachments: newMessage.attachments.map(att => ({
         name: att.name,
-        url: att.url,
-        size: att.size
+        url: att.url
       })),
-      embeds: newMessage.embeds.map(embed => embed.toJSON()),
       channelId: oldMessage.channel.id,
       guildId: oldMessage.guild.id,
       deletedAt: Date.now(),
@@ -144,7 +121,6 @@ export class SnipeSystem {
     this.addSnipe(oldMessage.channel.id, snipe);
   }
   
-  // NEW: Handle removed reactions
   async handleReactionRemove(reaction, user) {
     // Skip if in excluded channel
     if (this.config.excludedChannels.includes(reaction.message.channel.id)) return;
@@ -171,13 +147,10 @@ export class SnipeSystem {
         avatar: user.displayAvatarURL()
       },
       emoji: reaction.emoji.toString(),
-      emojiName: reaction.emoji.name,
-      emojiId: reaction.emoji.id,
       messageId: message.id,
       messageAuthor: {
         id: message.author.id,
-        tag: message.author.tag,
-        avatar: message.author.displayAvatarURL()
+        tag: message.author.tag
       },
       messageContent: message.content,
       messageUrl: message.url,
@@ -212,7 +185,6 @@ export class SnipeSystem {
     }
   }
   
-  // NEW: Add reaction snipe
   addReactionSnipe(channelId, reactionSnipe) {
     if (!this.reactionSnipes.has(channelId)) {
       this.reactionSnipes.set(channelId, []);
@@ -234,7 +206,6 @@ export class SnipeSystem {
     return channelSnipes.slice(0, limit);
   }
   
-  // NEW: Get reaction snipes
   getReactionSnipes(channelId, limit = 1) {
     const channelReactionSnipes = this.reactionSnipes.get(channelId) || [];
     return channelReactionSnipes.slice(0, limit);
@@ -242,20 +213,18 @@ export class SnipeSystem {
   
   clearSnipes() {
     this.snipes.clear();
-    this.reactionSnipes.clear(); // Also clear reaction snipes
+    this.reactionSnipes.clear();
   }
   
   clearChannelSnipes(channelId) {
     this.snipes.delete(channelId);
-    this.reactionSnipes.delete(channelId); // Also clear reaction snipes for channel
+    this.reactionSnipes.delete(channelId);
   }
   
-  // NEW: Clear only reaction snipes
   clearReactionSnipes() {
     this.reactionSnipes.clear();
   }
   
-  // NEW: Clear reaction snipes for specific channel
   clearChannelReactionSnipes(channelId) {
     this.reactionSnipes.delete(channelId);
   }
@@ -295,15 +264,15 @@ export class SnipeSystem {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
     
-    const embed = new EmbedBuilder()
-      .setTitle(title)
-      .setAuthor({
-        name: snipe.author.tag,
-        iconURL: snipe.author.avatar
-      })
-      .setDescription(snipe.content || 'No content')
-      .setColor(this.config.embedColor)
-      .setTimestamp(snipe.deletedAt);
+    const embed = this.embedLoader.createEmbed({
+      description: snipe.content || 'No content',
+      fields: []
+    });
+    
+    embed.setAuthor({
+      name: snipe.author.tag,
+      iconURL: snipe.author.avatar
+    });
     
     if (snipe.attachments.length > 0) {
       embed.addFields({
@@ -319,24 +288,22 @@ export class SnipeSystem {
     }
   }
   
-  // NEW: Log reaction snipe
   async logReactionSnipe(guild, reactionSnipe) {
     const channel = guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
     
-    const embed = new EmbedBuilder()
-      .setTitle('Reaction Removed')
-      .setAuthor({
-        name: reactionSnipe.user.tag,
-        iconURL: reactionSnipe.user.avatar
-      })
-      .setDescription(`Removed reaction ${reactionSnipe.emoji} from [this message](${reactionSnipe.messageUrl})`)
-      .addFields(
+    const embed = this.embedLoader.createEmbed({
+      description: `Removed reaction ${reactionSnipe.emoji} from [this message](${reactionSnipe.messageUrl})`,
+      fields: [
         { name: 'Message Author', value: reactionSnipe.messageAuthor.tag, inline: true },
         { name: 'Emoji', value: reactionSnipe.emoji, inline: true }
-      )
-      .setColor(this.config.embedColor)
-      .setTimestamp(reactionSnipe.removedAt);
+      ]
+    });
+    
+    embed.setAuthor({
+      name: reactionSnipe.user.tag,
+      iconURL: reactionSnipe.user.avatar
+    });
     
     if (reactionSnipe.messageContent) {
       embed.addFields({
@@ -352,24 +319,14 @@ export class SnipeSystem {
     }
   }
   
-  /**
-   * Get the number of snipes for a specific channel
-   * @param {string} channelId 
-   * @returns {number}
-   */
   getChannelSnipeCount(channelId) {
     return this.snipes.get(channelId)?.length || 0;
   }
   
-  // NEW: Get reaction snipe count
   getChannelReactionSnipeCount(channelId) {
     return this.reactionSnipes.get(channelId)?.length || 0;
   }
 
-  /**
-   * Get the total number of snipes across all channels
-   * @returns {number}
-   */
   getTotalSnipeCount() {
     let total = 0;
     for (const channelSnipes of this.snipes.values()) {
@@ -378,7 +335,6 @@ export class SnipeSystem {
     return total;
   }
   
-  // NEW: Get total reaction snipe count
   getTotalReactionSnipeCount() {
     let total = 0;
     for (const channelReactionSnipes of this.reactionSnipes.values()) {
@@ -387,12 +343,6 @@ export class SnipeSystem {
     return total;
   }
 
-  /**
-   * Check if a member has permission to use snipe commands
-   * @param {import('discord.js').GuildMember} member 
-   * @param {string} command - 'snipe', 'reactionsnipe', or 'clearsnipes'
-   * @returns {boolean}
-   */
   hasPermission(member, command) {
     // If permission checking is disabled, allow everyone for snipe commands
     if (!this.config.requirePermission && (command === 'snipe' || command === 'reactionsnipe')) {
@@ -421,71 +371,42 @@ export class SnipeSystem {
     return false;
   }
 
-  /**
-   * Create a snipe embed with consistent formatting
-   * @param {Object} snipe 
-   * @param {number} index 
-   * @param {number} total 
-   * @returns {EmbedBuilder}
-   */
   async createSnipeEmbed(snipe, index, total) {
-    const embed = new EmbedBuilder()
-      .setColor(this.config.embedColor || 0x2f3136)
-      .setTimestamp(snipe.deletedAt);
-    
-    // Set footer with pagination info
-    if (total > 1) {
-      embed.setFooter({ text: `Snipe ${index + 1} of ${total}` });
-    }
+    const fields = [];
     
     // Get user info
+    let authorName = snipe.author.tag || 'Unknown User';
     try {
       const user = await this.client.users.fetch(snipe.author.id);
-      embed.setAuthor({
-        name: user.tag,
-        iconURL: user.displayAvatarURL()
-      });
+      authorName = user.tag;
     } catch {
-      embed.setAuthor({
-        name: snipe.author.tag || 'Unknown User'
-      });
+      // Use cached name
     }
     
     // Add content
-    if (snipe.content) {
-      embed.setDescription(snipe.content);
-    }
+    const description = snipe.content || 'No content';
     
     // Add attachments info
     if (snipe.attachments && snipe.attachments.length > 0) {
       const attachmentList = snipe.attachments
         .map(att => `[${att.name || 'Attachment'}](${att.url})`)
         .join('\n');
-      embed.addFields({
+      fields.push({
         name: 'Attachments',
         value: attachmentList.slice(0, 1024)
       });
     }
     
-    // Add embeds info
-    if (snipe.embeds && snipe.embeds.length > 0) {
-      embed.addFields({
-        name: 'Embeds',
-        value: `Message contained ${snipe.embeds.length} embed(s)`
-      });
-    }
-    
     // Add edit info if this is an edited message
     if (snipe.type === 'edit' && snipe.oldContent) {
-      embed.addFields({
+      fields.push({
         name: 'Original Content',
         value: snipe.oldContent.slice(0, 1024)
       });
-      embed.setTitle('Message Edit');
     }
     
     // Add channel info
-    embed.addFields({
+    fields.push({
       name: 'Channel',
       value: `<#${snipe.channelId}>`,
       inline: true
@@ -493,45 +414,47 @@ export class SnipeSystem {
     
     // Add deletion time
     const deletedAgo = this.getTimeAgo(snipe.deletedAt);
-    embed.addFields({
+    fields.push({
       name: 'Deleted',
       value: deletedAgo,
       inline: true
     });
     
-    return embed;
-  }
-  
-  // NEW: Create reaction snipe embed
-  async createReactionSnipeEmbed(reactionSnipe, index, total) {
-    const embed = new EmbedBuilder()
-      .setColor(this.config.embedColor || 0x2f3136)
-      .setTimestamp(reactionSnipe.removedAt)
-      .setTitle('🎯 Reaction Snipe');
+    const embed = this.embedLoader.createEmbed({
+      description: description,
+      fields: fields
+    });
+    
+    embed.setAuthor({
+      name: authorName,
+      iconURL: snipe.author.avatar
+    });
     
     // Set footer with pagination info
     if (total > 1) {
-      embed.setFooter({ text: `Reaction Snipe ${index + 1} of ${total}` });
+      embed.setFooter({ text: `Snipe ${index + 1} of ${total}` });
     }
     
+    return embed;
+  }
+  
+  async createReactionSnipeEmbed(reactionSnipe, index, total) {
+    const fields = [];
+    
     // Get user info
+    let userName = reactionSnipe.user.tag || 'Unknown User';
     try {
       const user = await this.client.users.fetch(reactionSnipe.user.id);
-      embed.setAuthor({
-        name: user.tag,
-        iconURL: user.displayAvatarURL()
-      });
+      userName = user.tag;
     } catch {
-      embed.setAuthor({
-        name: reactionSnipe.user.tag || 'Unknown User'
-      });
+      // Use cached name
     }
     
     // Add reaction info
-    embed.setDescription(`Removed reaction: ${reactionSnipe.emoji}`);
+    const description = `Removed reaction: ${reactionSnipe.emoji}`;
     
     // Add message info
-    embed.addFields(
+    fields.push(
       {
         name: 'Original Message',
         value: `[Jump to Message](${reactionSnipe.messageUrl})`,
@@ -554,28 +477,39 @@ export class SnipeSystem {
       const preview = reactionSnipe.messageContent.length > 100 
         ? reactionSnipe.messageContent.slice(0, 97) + '...'
         : reactionSnipe.messageContent;
-      embed.addFields({
+      fields.push({
         name: 'Message Preview',
-        value: preview || '*No content*'
+        value: preview || 'No content'
       });
     }
     
     // Add removal time
     const removedAgo = this.getTimeAgo(reactionSnipe.removedAt);
-    embed.addFields({
+    fields.push({
       name: 'Removed',
       value: removedAgo,
       inline: true
     });
     
+    const embed = this.embedLoader.createEmbed({
+      title: 'Reaction Snipe',
+      description: description,
+      fields: fields
+    });
+    
+    embed.setAuthor({
+      name: userName,
+      iconURL: reactionSnipe.user.avatar
+    });
+    
+    // Set footer with pagination info
+    if (total > 1) {
+      embed.setFooter({ text: `Reaction Snipe ${index + 1} of ${total}` });
+    }
+    
     return embed;
   }
 
-  /**
-   * Get human-readable time ago string
-   * @param {number} timestamp 
-   * @returns {string}
-   */
   getTimeAgo(timestamp) {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
     
