@@ -67,6 +67,9 @@ moderation:
         - verifylist
         - verifystatus
         - message
+        - setupdj
+        - djadd
+        - djremove
     moderator:
       users:
         - ""
@@ -119,6 +122,9 @@ moderation:
     setupgenderverify: 1000
     verifyuser: 5
     verifylist: 10
+    setupdj: 1000
+    djadd: 5
+    djremove: 5
   forcedNicknames:
     dataFile: forced_nicknames.json
     checkInterval: 5000
@@ -158,6 +164,17 @@ moderation:
       requiresPermissionLevel: 3
       maxUsers: 20
       cooldownMultiplier: 1.5
+music:
+  enabled: true
+  djDataFile: dj_setups.json
+  defaultVolume: 80              # Default volume (0-100)
+  voteSkipPercentage: 50         # % of users needed to vote skip
+  maxQueueLength: 1000           # Max songs in queue
+  maxSongDuration: 7200          # Max song duration in seconds (2 hours)
+  defaultSettings:
+    djOnly: false                # Require DJ role for all commands?
+    allowAloneDJ: true           # Can users be DJ when alone?
+    voteSkipEnabled: true        # Enable vote skipping?
 afk:
   enabled: true
   dataFile: afk_data.json

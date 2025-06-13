@@ -1,6 +1,6 @@
 // src/index.js
 // Entry point for your Discord bot (ESM).
-// Complete file with unified permission system
+// Complete file with unified permission system and music system
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -34,6 +34,7 @@ import { GenderVerifySystem } from "./systems/genderVerifySystem.js";
 import { FriendGroupSystem } from "./systems/friendGroupSystem.js";
 import { GiveawaySystem } from "./systems/giveawaySystem.js";
 import { BirthdaySystem } from "./systems/birthdaySystem.js";
+import { MusicSystem } from "./systems/musicSystem.js";
 import { botIntents } from "./intents.js";
 import * as setupJ2CCommand from "./commands/setupj2c.js";
 import * as vcCommand from "./commands/vc.js";
@@ -65,6 +66,7 @@ import * as birthdayCommands from "./commands/birthday.js";
 import * as rateLimitCommand from "./commands/ratelimit.js";
 import * as pingCommand from "./commands/ping.js";
 import * as permissionsCommand from "./commands/permissions.js";
+import * as musicCommands from "./commands/music.js";
 import { QueueManager } from "./utils/queueManager.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +162,12 @@ async function main() {
   const birthdaySystem = new BirthdaySystem(client, config);
   birthdaySystem.embedLoader = embedLoader;
   
+  // Initialize Music System
+  const musicSystem = new MusicSystem(client, config);
+  musicSystem.setEmbedLoader(embedLoader);
+  musicSystem.setPermissionSystem(permissionSystem);
+  console.log('✓ Music System initialized');
+  
   console.log('✓ All subsystems initialized');
   console.log('================================\n');
 
@@ -178,6 +186,11 @@ async function main() {
   moderationCommands.setModerationSystem(moderationSystem);
   moderationCommands.setEmbedLoader(embedLoader);
   moderationCommands.setAntiNukeInstance(antiNuke); // For multi-user detection
+  
+  // Music commands
+  musicCommands.setMusicSystem(musicSystem);
+  musicCommands.setEmbedLoader(embedLoader);
+  musicCommands.setPermissionSystem(permissionSystem);
   
   // Other system commands
   setupJ2CCommand.setJ2CManager(j2cManager);
@@ -275,7 +288,7 @@ async function main() {
       'moderation.js', 'funcommands.js', 'channels.js', 'leaderboard.js', 
       'events.js', 'booster.js', 'filter.js', 'banappeal.js', 'ticket.js',
       'confess.js', 'skullboard.js', 'snipe.js', 'social.js', 'setupentrance.js',
-      'genderverify.js', 'friendgroup.js', 'giveaway.js', 'birthday.js'
+      'genderverify.js', 'friendgroup.js', 'giveaway.js', 'birthday.js', 'music.js'
     ];
     
     if (multiCommandFiles.includes(file) && commandModule.commands) {
@@ -319,9 +332,9 @@ async function main() {
   // 7) Initialize and start QueueManager
   const queueCfg     = config.get("queue") || {};
   const queueManager = new QueueManager(
-    queueCfg.maxSize        ?? 100,
-    queueCfg.workerCount    ?? 3,
-    queueCfg.retryDelaySeconds ?? 5
+    queueCfg.maxSize,
+    queueCfg.workerCount,
+    queueCfg.retryDelaySeconds
   );
   const workerFn = async (item) => {
     console.log(`Processing queue item: ${item}`);
@@ -335,9 +348,9 @@ async function main() {
     console.log(`\n✅ Logged in as ${client.user.tag}`);
 
     // Set bot presence (status color and activity)
-    const botConfig = config.get("bot") || {};
+    const botConfig = config.get("bot");
     
-    if (botConfig.status) {
+    if (botConfig?.status) {
       const activityTypes = {
         'PLAYING': ActivityType.Playing,
         'WATCHING': ActivityType.Watching,
@@ -356,7 +369,7 @@ async function main() {
 
       const activityType = activityTypes[botConfig.status.type] || ActivityType.Playing;
       const activityOptions = {
-        name: botConfig.status.text || 'with commands',
+        name: botConfig.status.text,
         type: activityType
       };
 
@@ -367,7 +380,7 @@ async function main() {
       // Set presence with both activity and status
       const presenceData = {
         activities: [activityOptions],
-        status: presenceStatus[botConfig.status.color?.toUpperCase()] || 'online'
+        status: presenceStatus[botConfig.status.color?.toUpperCase()]
       };
 
       client.user.setPresence(presenceData);
@@ -381,6 +394,7 @@ async function main() {
       }
       permissionSystem.clearCache();
       moderationSystem.cleanupCooldowns();
+      musicSystem.cleanup().catch(() => {}); // Refresh play-dl tokens
     }, 60000); // Run cleanup every minute
 
     const registry = new CommandRegistry(config.get("token"));
@@ -456,6 +470,9 @@ async function main() {
     console.log(`✓ Friend Group System: ${friendGroupSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Giveaway System: ${giveawaySystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Birthday System: ${birthdaySystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`✓ Music System: ${musicSystem.config.enabled ? 'Active' : 'Disabled'}` +
+      (musicSystem.config.soundcloud?.clientId ? ' + SoundCloud' : '') +
+      (musicSystem.config.youtube?.enabled ? ' + YouTube' : ''));
     console.log('✓ Fun Commands: Active');
     console.log('====================\n');
   });
@@ -523,7 +540,7 @@ async function main() {
   // 10) Example prefix-based "enqueue" listener
   client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
-    const prefix = config.get("prefix") || "";
+    const prefix = config.get("prefix");
     if (!message.content.startsWith(prefix)) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
