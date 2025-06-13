@@ -676,6 +676,88 @@ const djRemoveCommand = {
   }
 };
 
+// Quit command (disconnect from voice)
+const quitCommand = {
+  data: new SlashCommandBuilder()
+    .setName('quit')
+    .setDescription('Disconnect the bot from voice channel'),
+  
+  async execute(interaction) {
+    // Check if bot is in a voice channel
+    const queue = musicSystem.player.nodes.get(interaction.guild.id);
+    
+    if (!queue) {
+      const embed = embedLoader.error('I\'m not connected to any voice channel!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Check if user is in the same voice channel
+    const botVoice = interaction.guild.members.me.voice.channel;
+    if (!botVoice || interaction.member.voice.channel?.id !== botVoice.id) {
+      const embed = embedLoader.error('You need to be in the same voice channel as the bot!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Check DJ permissions
+    if (!musicSystem.hasDJPermissions(interaction.member)) {
+      const embed = embedLoader.error('You need DJ permissions to disconnect the bot!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    try {
+      // Disconnect the bot
+      queue.delete();
+      const embed = embedLoader.success('👋 Disconnected from voice channel.');
+      await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+      console.error('[Music] Quit command error:', error);
+      const embed = embedLoader.error('Failed to disconnect from voice channel.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  }
+};
+
+// Fuckoff command (same as quit, just a different name)
+const fuckoffCommand = {
+  data: new SlashCommandBuilder()
+    .setName('fuckoff')
+    .setDescription('Disconnect the bot from voice channel'),
+  
+  async execute(interaction) {
+    // Check if bot is in a voice channel
+    const queue = musicSystem.player.nodes.get(interaction.guild.id);
+    
+    if (!queue) {
+      const embed = embedLoader.error('I\'m not connected to any voice channel!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Check if user is in the same voice channel
+    const botVoice = interaction.guild.members.me.voice.channel;
+    if (!botVoice || interaction.member.voice.channel?.id !== botVoice.id) {
+      const embed = embedLoader.error('You need to be in the same voice channel as the bot!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Check DJ permissions
+    if (!musicSystem.hasDJPermissions(interaction.member)) {
+      const embed = embedLoader.error('You need DJ permissions to disconnect the bot!');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    try {
+      // Disconnect the bot
+      queue.delete();
+      const embed = embedLoader.success('ok bye..');
+      await interaction.reply({ embeds: [embed] });
+    } catch (error) {
+      console.error('[Music] Fuckoff command error:', error);
+      const embed = embedLoader.error('Failed to disconnect from voice channel.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  }
+};
+
 // Helper function to create progress bar
 function createProgressBar(percentage, length = 20) {
   const progress = Math.round((percentage / 100) * length);
@@ -702,5 +784,7 @@ export const commands = [
   removeCommand,
   moveCommand,
   djAddCommand,
-  djRemoveCommand
+  djRemoveCommand,
+  quitCommand,
+  fuckoffCommand
 ];
