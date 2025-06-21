@@ -68,6 +68,9 @@ import * as pingCommand from "./commands/ping.js";
 import * as permissionsCommand from "./commands/permissions.js";
 import * as musicCommands from "./commands/music.js";
 import { QueueManager } from "./utils/queueManager.js";
+import * as activeWebhooksCommand from "./commands/activewebhooks.js";
+import * as inviteLinksCommand from "./commands/invitelinks.js";
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Polyfill __dirname and __filename for ESM
@@ -249,6 +252,12 @@ async function main() {
   friendGroupCommands.setModerationSystem(moderationSystem);
   birthdayCommands.setBirthdaySystem(birthdaySystem);
   birthdayCommands.setEmbedLoader(embedLoader);
+
+  activeWebhooksCommand.setEmbedLoader(embedLoader);
+activeWebhooksCommand.setPermissionSystem(permissionSystem);
+
+inviteLinksCommand.setEmbedLoader(embedLoader);
+inviteLinksCommand.setPermissionSystem(permissionSystem);
   
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);

@@ -1,4 +1,4 @@
-// src/systems/antiNuke.js
+// src/systems/antiNuke.js - Simplified with webhook/bot protection
 import { Events, PermissionFlagsBits, AuditLogEvent } from 'discord.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -20,6 +20,9 @@ export default class AntiNuke {
     this.channelActions = new Map();
     this.roleActions = new Map();
     this.suspiciousUsers = new Set();
+    
+    // Webhook spam tracking (temporary, in-memory only)
+    this.webhookMessages = new Map(); // webhookId -> timestamp array
     
     // High alert state from config
     this.highAlert = this.config.highAlert?.enabled || false;
@@ -43,12 +46,14 @@ export default class AntiNuke {
         massEmojis: 0,
         capsSpam: 0,
         duplicates: 0,
-        raidsDetected: 0
+        raidsDetected: 0,
+        webhookAbuse: 0,
+        unauthorizedBots: 0
       }
     };
     
     this.setupEventListeners();
-    console.log('[AntiNuke] System initialized with unified permissions');
+    console.log('[AntiNuke] System initialized with unified permissions, webhook & bot protection');
   }
   
   /**
@@ -109,6 +114,36 @@ export default class AntiNuke {
    */
   isMemberAntiNukeAdmin(member) {
     if (!this.permissionSystem) return false;
+    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ANTINUKE_ADMIN;
+  }
+  
+  /**
+   * Check if member can create webhooks (Administrator+ only)
+   */
+  canCreateWebhooks(member) {
+    if (!this.permissionSystem) return false;
+    
+    // Owner with bypass can always create webhooks
+    if (this.fullConfig.get('moderation.ownerBypass') && member.id === member.guild.ownerId) {
+      return true;
+    }
+    
+    // Administrator level (3) or higher can create webhooks
+    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ADMINISTRATOR;
+  }
+  
+  /**
+   * Check if member can invite bots (AntiNuke Admin+ only)
+   */
+  canInviteBots(member) {
+    if (!this.permissionSystem) return false;
+    
+    // Owner with bypass can always invite bots
+    if (this.fullConfig.get('moderation.ownerBypass') && member.id === member.guild.ownerId) {
+      return true;
+    }
+    
+    // AntiNuke Admin level (4) or higher can invite bots
     return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ANTINUKE_ADMIN;
   }
   
@@ -227,6 +262,79 @@ export default class AntiNuke {
   }
   
   /**
+   * Track webhook message for spam detection
+   */
+  async checkWebhookSpam(message) {
+    if (!message.webhookId) return false;
+    
+    const now = Date.now();
+    const webhookId = message.webhookId;
+    
+    // Initialize tracking
+    if (!this.webhookMessages.has(webhookId)) {
+      this.webhookMessages.set(webhookId, []);
+    }
+    
+    const timestamps = this.webhookMessages.get(webhookId);
+    timestamps.push(now);
+    
+    // Clean old timestamps (keep last 10 seconds)
+    const recentMessages = timestamps.filter(ts => now - ts < 10000);
+    this.webhookMessages.set(webhookId, recentMessages);
+    
+    // Check if it's spamming (10+ messages in 10 seconds)
+    if (recentMessages.length >= 10) {
+      try {
+        // Find and delete the webhook
+        const webhooks = await message.channel.fetchWebhooks();
+        const webhook = webhooks.get(webhookId);
+        
+        if (webhook) {
+          // Get creator from audit logs
+          let creatorId = null;
+          try {
+            const logs = await message.guild.fetchAuditLogs({
+              type: AuditLogEvent.WebhookCreate,
+              limit: 50
+            });
+            
+            const entry = logs.entries.find(e => e.target?.id === webhookId);
+            if (entry) {
+              creatorId = entry.executor.id;
+            }
+          } catch (error) {
+            console.error('[AntiNuke] Error fetching webhook creator:', error);
+          }
+          
+          // Delete the webhook
+          await webhook.delete('AntiNuke: Webhook spam detected');
+          this.stats.contentViolations.webhookAbuse++;
+          
+          // Log the event
+          this.logSecurity(message.guild, 'Webhook Spam Detected', 
+            `Webhook "${webhook.name}" deleted for spamming.\n` +
+            `Creator: ${creatorId ? `<@${creatorId}>` : 'Unknown'}\n` +
+            `Messages sent: ${recentMessages.length} in 10 seconds`);
+          
+          // Take action against creator if known
+          if (creatorId) {
+            const member = await message.guild.members.fetch(creatorId).catch(() => null);
+            if (member && member.moderatable) {
+              await member.timeout(300000, 'AntiNuke: Created spamming webhook');
+            }
+          }
+          
+          return true;
+        }
+      } catch (error) {
+        console.error('[AntiNuke] Error handling webhook spam:', error);
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
    * Handle threshold exceeded
    */
   async handleThresholdExceeded(member, action, guild) {
@@ -296,7 +404,8 @@ export default class AntiNuke {
       PermissionFlagsBits.ManageChannels,
       PermissionFlagsBits.ManageRoles,
       PermissionFlagsBits.BanMembers,
-      PermissionFlagsBits.KickMembers
+      PermissionFlagsBits.KickMembers,
+      PermissionFlagsBits.ManageWebhooks
     ];
     
     try {
@@ -551,20 +660,123 @@ export default class AntiNuke {
       }
     });
     
-    // Message events for content moderation
-    if (this.config.contentModeration?.enabled) {
-      this.client.on(Events.MessageCreate, async (message) => {
-        if (!message.guild || message.author.bot) return;
-        if (this.isMemberWhitelisted(message.member)) return;
-        
-        await this.checkMessageContent(message);
-      });
+    // Webhook creation detection
+    this.client.on('webhooksUpdate', async (channel) => {
+      if (!channel.guild) return;
       
-      // Member join events for raid detection
-      this.client.on(Events.GuildMemberAdd, async (member) => {
-        await this.checkForRaid(member.guild);
-      });
-    }
+      try {
+        const logs = await this.fetchAuditLogs(channel.guild, AuditLogEvent.WebhookCreate);
+        if (!logs) return;
+        
+        const createLog = logs.entries.first();
+        if (!createLog || Date.now() - createLog.createdTimestamp > 5000) return;
+        
+        const { executor, target } = createLog;
+        
+        // Check if executor has permission
+        const member = await channel.guild.members.fetch(executor.id).catch(() => null);
+        if (!member) return;
+        
+        if (!this.canCreateWebhooks(member)) {
+          // Find and delete the webhook
+          const webhooks = await channel.fetchWebhooks();
+          const webhook = webhooks.find(w => w.id === target.id);
+          
+          if (webhook) {
+            await webhook.delete('AntiNuke: Unauthorized webhook creation');
+            this.logSecurity(channel.guild, 'Unauthorized Webhook Blocked', 
+              `${executor.tag} tried to create webhook "${webhook.name}" without Administrator+ permissions`);
+            
+            if (member.moderatable) {
+              await member.timeout(300000, 'AntiNuke: Unauthorized webhook creation');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[AntiNuke] Error handling webhook creation:', error);
+      }
+    });
+    
+    // Message events for webhook spam detection
+    this.client.on(Events.MessageCreate, async (message) => {
+      // Check for webhook spam
+      if (message.webhookId && message.guild) {
+        await this.checkWebhookSpam(message);
+      }
+      
+      // Original content moderation
+      if (!message.guild || message.author.bot) return;
+      if (this.isMemberWhitelisted(message.member)) return;
+      
+      await this.checkMessageContent(message);
+    });
+    
+    // Bot join detection
+    this.client.on(Events.GuildMemberAdd, async (member) => {
+      // Check if it's a bot
+      if (member.user.bot) {
+        try {
+          // Check audit logs to see who invited the bot
+          const logs = await this.fetchAuditLogs(member.guild, AuditLogEvent.BotAdd);
+          let inviter = null;
+          
+          if (logs) {
+            const botAddLog = logs.entries.find(entry => 
+              entry.target.id === member.id && 
+              Date.now() - entry.createdTimestamp < 10000
+            );
+            
+            if (botAddLog) {
+              inviter = botAddLog.executor;
+            }
+          }
+          
+          // Check if inviter has permission
+          let hasPermission = false;
+          
+          if (inviter) {
+            const inviterMember = await member.guild.members.fetch(inviter.id).catch(() => null);
+            if (inviterMember) {
+              hasPermission = this.canInviteBots(inviterMember);
+            }
+          }
+          
+          // Check whitelist
+          const whitelistedBots = this.config.botProtection?.whitelistedBots || [];
+          if (whitelistedBots.includes(member.id)) {
+            hasPermission = true;
+          }
+          
+          if (!hasPermission) {
+            // Unauthorized bot - ban it
+            await member.ban({ reason: 'AntiNuke: Unauthorized bot (requires AntiNuke Admin+)' });
+            this.stats.contentViolations.unauthorizedBots++;
+            
+            this.logSecurity(member.guild, 'Unauthorized Bot Banned', 
+              `Bot: ${member.user.tag} (${member.id})\n` +
+              `Invited by: ${inviter ? `${inviter.tag} (${inviter.id})` : 'Unknown'}\n` +
+              `Only AntiNuke Admins or the server owner can invite bots.`);
+            
+            // Take action against inviter if known
+            if (inviter) {
+              const inviterMember = await member.guild.members.fetch(inviter.id).catch(() => null);
+              if (inviterMember && inviterMember.moderatable) {
+                await inviterMember.timeout(600000, 'AntiNuke: Invited unauthorized bot');
+              }
+            }
+          } else if (inviter) {
+            // Log authorized bot addition
+            this.logSecurity(member.guild, 'Bot Added', 
+              `Bot: ${member.user.tag}\nAuthorized by: ${inviter.tag}`);
+          }
+        } catch (error) {
+          console.error('[AntiNuke] Error handling bot join:', error);
+        }
+      }
+      
+      // Original raid detection
+      await this.checkForRaid(member.guild);
+    });
   }
   
   /**
@@ -750,6 +962,16 @@ export default class AntiNuke {
         this.multiUserTracking.set(key, valid);
       }
     }
+    
+    // Clean webhook message tracking
+    for (const [webhookId, timestamps] of this.webhookMessages) {
+      const valid = timestamps.filter(ts => now - ts < 60000); // Keep for 1 minute
+      if (valid.length === 0) {
+        this.webhookMessages.delete(webhookId);
+      } else {
+        this.webhookMessages.set(webhookId, valid);
+      }
+    }
   }
   
   /**
@@ -777,6 +999,10 @@ export default class AntiNuke {
         enabled: this.config.contentModeration?.enabled || false,
         violations: this.stats.contentViolations,
         raidMode: this.raidMode
+      },
+      protection: {
+        webhookAbuses: this.stats.contentViolations.webhookAbuse,
+        unauthorizedBots: this.stats.contentViolations.unauthorizedBots
       }
     };
   }

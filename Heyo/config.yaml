@@ -264,6 +264,14 @@ antiNuke:
       maxActions: 10
       timeWindowSeconds: 60
       highAlertMaxActions: 5
+    webhookCreate:
+      maxActions: 3
+      timeWindowSeconds: 300
+      highAlertMaxActions: 1
+    webhookAbuse:
+      maxActions: 1
+      timeWindowSeconds: 60
+      highAlertMaxActions: 1
   adminLogChannel: "1380422918017650719"
   abuseLogChannel: "1380422905191731210"
   highAlert:
@@ -294,6 +302,11 @@ antiNuke:
       enabled: true
       threshold: 3
       timeWindow: 30000
+      action: delete
+    webhookSpam:
+      enabled: true
+      threshold: 10
+      timeWindow: 10000
       action: delete
     antiRaid:
       enabled: true
@@ -331,6 +344,23 @@ antiNuke:
       - limitChannelCreation
       - preventMentions
       - slowMode
+  webhookProtection:
+    enabled: true
+    minPermissionLevel: 3
+    spamDetection:
+      enabled: true
+      maxMessages: 10
+      timeWindowSeconds: 10
+      action: delete
+    trackCreators: true
+    logWebhookEvents: true
+  botProtection:
+    enabled: true
+    minPermissionLevel: 4
+    action: ban
+    inviterTimeout: 600000
+    logBotEvents: true
+    whitelistedBots: []
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
