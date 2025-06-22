@@ -99,9 +99,9 @@ moderation:
       roles: []
       commands: []
   permRoles:
-    vc: "1380755737906647060"
-    pic: "1380755738950893658"
-    link: "1380755739672313866"
+    vc: "1386379326856888513"
+    pic: "1386379327934824488"
+    link: "1386379328560038041"
   logChannel: "1380422918017650719"
   cooldowns:
     default: 3
@@ -226,7 +226,8 @@ antiNuke:
   whitelist:
     users: []
     roles: []
-  adminUsers: ["1235002473698299956"]
+  adminUsers:
+    - "1235002473698299956"
   adminRoles: []
   limits:
     commands:
@@ -373,6 +374,10 @@ j2c:
       j2cChannelId: "1382574668766121994"
       categoryId: "1382574667310698516"
       createdAt: 2025-06-12T04:19:00.215Z
+    "1385835001874088018":
+      j2cChannelId: "1386382294889136313"
+      categoryId: "1386382293706342601"
+      createdAt: 2025-06-22T16:29:17.463Z
 welcome:
   enabled: false
   channel: null
@@ -474,7 +479,7 @@ ticketSystem:
   logChannel: "1379953422241103946"
   enableLogging: true
   stats:
-    totalTickets: 0
+    totalTickets: 1
     totalClosed: 0
     averageResponseTime: 0
     averageResolutionTime: 0

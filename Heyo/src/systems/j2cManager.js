@@ -39,6 +39,9 @@ export class J2CManager extends EventEmitter {
     const j2cData = this.config.get("j2c.guilds") || {};
     
     for (const [guildId, data] of Object.entries(j2cData)) {
+      // Skip null or undefined data entries
+      if (!data) continue;
+      
       const guild = this.client.guilds.cache.get(guildId);
       if (!guild) continue;
       
@@ -92,6 +95,14 @@ export class J2CManager extends EventEmitter {
         this.config.set(`j2c.guilds.${channel.guild.id}`, null);
         this.config.save().catch(console.error);
       }
+      
+      // If a category is deleted that contains J2C channels, update the config
+      if (channel.type === ChannelType.GuildCategory && j2cData && j2cData.categoryId === channel.id) {
+        j2cData.categoryId = null;
+        this.config.set(`j2c.guilds.${channel.guild.id}.categoryId`, null);
+        this.config.save().catch(console.error);
+        console.log(`[J2C] Category deleted for guild ${channel.guild.id}, J2C will create channels without category`);
+      }
     });
   }
 
@@ -118,7 +129,22 @@ export class J2CManager extends EventEmitter {
     }
 
     // Get the category to create channel in
-    const categoryId = j2cData.categoryId;
+    let categoryId = j2cData.categoryId;
+    
+    // Verify the category still exists
+    if (categoryId) {
+      const category = guild.channels.cache.get(categoryId);
+      if (!category || category.type !== ChannelType.GuildCategory) {
+        console.error('[J2C] Category no longer exists, creating channel without category');
+        categoryId = null;
+        
+        // Update the stored data to reflect the missing category
+        j2cData.categoryId = null;
+        this.config.set(`j2c.guilds.${guild.id}.categoryId`, null);
+        this.config.save().catch(console.error);
+      }
+    }
+    
     const channelName = `${member.displayName}'s Channel`;
     
     const newChannel = await guild.channels.create({
@@ -249,10 +275,11 @@ export class J2CManager extends EventEmitter {
       ]
     });
 
-    // Create J2C channel (NOT in the category)
+    // Create J2C channel in the category
     const j2cChannel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildVoice,
+      parent: category.id,
       permissionOverwrites: [
         {
           id: guild.id,
