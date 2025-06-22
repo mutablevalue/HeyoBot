@@ -1,4 +1,4 @@
-// src/systems/antiNuke.js - Updated to use single source of truth
+// src/systems/antiNuke.js - Fixed version
 import { Events, PermissionFlagsBits, AuditLogEvent } from 'discord.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -81,16 +81,24 @@ export default class AntiNuke {
   
   /**
    * Check if a member is whitelisted
+   * @param {GuildMember|Object} member - Either a full GuildMember or an object with {id, guild}
    */
   isMemberWhitelisted(member) {
     if (!member) return false;
     
-    // Check user whitelist
+    // Check user whitelist first (always available)
     if (this.isWhitelisted(member.id)) return true;
     
-    // Check role whitelist
-    const whitelist = this.config.whitelist || { users: [], roles: [] };
-    return member.roles.cache.some(role => whitelist.roles.includes(role.id));
+    // For role whitelist, we need a proper GuildMember object
+    // Check if this is a real GuildMember (has roles property)
+    if (member.roles && member.roles.cache) {
+      const whitelist = this.config.whitelist || { users: [], roles: [] };
+      return member.roles.cache.some(role => whitelist.roles.includes(role.id));
+    }
+    
+    // If we only have partial member data, we can't check roles
+    // Return false for now (non-whitelisted by default)
+    return false;
   }
   
   /**
@@ -219,8 +227,17 @@ export default class AntiNuke {
   /**
    * Track user action
    */
-  trackAction(userId, action, guild) {
-    if (this.isMemberWhitelisted({ id: userId, guild })) return false;
+  async trackAction(userId, action, guild) {
+    // First check if user is whitelisted by ID
+    if (this.isWhitelisted(userId)) return false;
+    
+    // Try to get the full member object to check role whitelist
+    try {
+      const member = await guild.members.fetch(userId).catch(() => null);
+      if (member && this.isMemberWhitelisted(member)) return false;
+    } catch (error) {
+      // If we can't fetch member, continue with tracking
+    }
     
     const now = Date.now();
     const threshold = this.getThreshold(action);
@@ -553,9 +570,9 @@ export default class AntiNuke {
       if (!banLog) return;
       
       const { executor } = banLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'bans', guild)) {
+      if (await this.trackAction(executor.id, 'bans', guild)) {
         const member = await guild.members.fetch(executor.id).catch(() => null);
         if (member) {
           await this.handleThresholdExceeded(member, 'bans', guild);
@@ -573,9 +590,9 @@ export default class AntiNuke {
       if (!kickLog || Date.now() - kickLog.createdTimestamp > 5000) return;
       
       const { executor } = kickLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'kicks', guild)) {
+      if (await this.trackAction(executor.id, 'kicks', guild)) {
         const executorMember = await guild.members.fetch(executor.id).catch(() => null);
         if (executorMember) {
           await this.handleThresholdExceeded(executorMember, 'kicks', guild);
@@ -594,9 +611,9 @@ export default class AntiNuke {
       if (!createLog) return;
       
       const { executor } = createLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild: channel.guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'channelCreate', channel.guild)) {
+      if (await this.trackAction(executor.id, 'channelCreate', channel.guild)) {
         const member = await channel.guild.members.fetch(executor.id).catch(() => null);
         if (member) {
           await this.handleThresholdExceeded(member, 'channelCreate', channel.guild);
@@ -614,9 +631,9 @@ export default class AntiNuke {
       if (!deleteLog) return;
       
       const { executor } = deleteLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild: channel.guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'channelDelete', channel.guild)) {
+      if (await this.trackAction(executor.id, 'channelDelete', channel.guild)) {
         const member = await channel.guild.members.fetch(executor.id).catch(() => null);
         if (member) {
           await this.handleThresholdExceeded(member, 'channelDelete', channel.guild);
@@ -633,9 +650,9 @@ export default class AntiNuke {
       if (!createLog) return;
       
       const { executor } = createLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild: role.guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'roleCreate', role.guild)) {
+      if (await this.trackAction(executor.id, 'roleCreate', role.guild)) {
         const member = await role.guild.members.fetch(executor.id).catch(() => null);
         if (member) {
           await this.handleThresholdExceeded(member, 'roleCreate', role.guild);
@@ -651,9 +668,9 @@ export default class AntiNuke {
       if (!deleteLog) return;
       
       const { executor } = deleteLog;
-      if (executor.bot || this.isMemberWhitelisted({ id: executor.id, guild: role.guild })) return;
+      if (executor.bot) return;
       
-      if (this.trackAction(executor.id, 'roleDelete', role.guild)) {
+      if (await this.trackAction(executor.id, 'roleDelete', role.guild)) {
         const member = await role.guild.members.fetch(executor.id).catch(() => null);
         if (member) {
           await this.handleThresholdExceeded(member, 'roleDelete', role.guild);
@@ -707,7 +724,7 @@ export default class AntiNuke {
       
       // Original content moderation
       if (!message.guild || message.author.bot) return;
-      if (this.isMemberWhitelisted(message.member)) return;
+      if (message.member && this.isMemberWhitelisted(message.member)) return;
       
       await this.checkMessageContent(message);
     });
@@ -778,6 +795,9 @@ export default class AntiNuke {
       // Original raid detection
       await this.checkForRaid(member.guild);
     });
+    
+    // Setup cleanup interval
+    setInterval(() => this.cleanup(), 300000); // Clean every 5 minutes
   }
   
   /**
@@ -785,6 +805,8 @@ export default class AntiNuke {
    */
   async checkMessageContent(message) {
     const config = this.config.contentModeration;
+    if (!config?.enabled) return;
+    
     let violated = false;
     let violationType = null;
     

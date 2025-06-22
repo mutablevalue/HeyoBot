@@ -20,6 +20,7 @@ export class TicketSystem {
   constructor(client, configLoader) {
     this.client = client;
     this.configLoader = configLoader;
+    this.embedLoader = null;
     
     // Get ticket config from config loader
     this.config = this.configLoader.get('ticketSystem') || {};
@@ -28,6 +29,13 @@ export class TicketSystem {
     this.activeTickets = new Map(); // channelId -> ticket data
     this.userTickets = new Map(); // userId -> Set of channelIds
     this.ticketPanels = new Map(); // messageId -> panel data
+    
+    // Reaction queue for processing
+    this.reactionQueue = [];
+    this.processingQueue = false;
+    
+    // Store interval reference for cleanup
+    this.inactiveCheckInterval = null;
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile || 'tickets.json');
@@ -42,6 +50,13 @@ export class TicketSystem {
         this.setupInactiveCheck();
       }
     }
+  }
+
+  /**
+   * Set embed loader reference
+   */
+  setEmbedLoader(embedLoader) {
+    this.embedLoader = embedLoader;
   }
 
   loadTicketData() {
@@ -116,6 +131,43 @@ export class TicketSystem {
       }
     });
 
+    // Listen for reactions for emoji panels
+    this.client.on('messageReactionAdd', async (reaction, user) => {
+      if (user.bot) return;
+      
+      // Handle partial reactions
+      if (reaction.partial) {
+        try {
+          await reaction.fetch();
+        } catch (error) {
+          console.error('[TicketSystem] Error fetching reaction:', error);
+          return;
+        }
+      }
+      
+      // Check if this is a ticket panel
+      const panel = this.ticketPanels.get(reaction.message.id);
+      if (!panel || panel.type !== 'emoji') return;
+      
+      // Check if it's the correct emoji
+      if (reaction.emoji.toString() !== panel.emoji) {
+        // Remove incorrect reactions
+        await reaction.users.remove(user.id).catch(() => {});
+        return;
+      }
+      
+      // Add to queue
+      this.reactionQueue.push({
+        reaction,
+        user,
+        panel,
+        timestamp: Date.now()
+      });
+      
+      // Process queue
+      this.processReactionQueue();
+    });
+
     // Clean up on channel delete
     this.client.on('channelDelete', (channel) => {
       if (this.activeTickets.has(channel.id)) {
@@ -124,9 +176,166 @@ export class TicketSystem {
     });
   }
 
+  /**
+   * Process reaction queue
+   */
+  async processReactionQueue() {
+    if (this.processingQueue || this.reactionQueue.length === 0) return;
+    
+    this.processingQueue = true;
+    
+    while (this.reactionQueue.length > 0) {
+      const item = this.reactionQueue.shift();
+      
+      try {
+        // Remove the reaction immediately
+        await item.reaction.users.remove(item.user.id).catch(() => {});
+        
+        // Process ticket creation
+        await this.handleEmojiTicketCreate(item.reaction, item.user, item.panel);
+        
+        // Small delay to prevent rate limits
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        console.error('[TicketSystem] Error processing reaction:', error);
+      }
+    }
+    
+    this.processingQueue = false;
+  }
+
+  /**
+   * Handle emoji ticket creation
+   */
+  async handleEmojiTicketCreate(reaction, user, panel) {
+    try {
+      // Check if embed loader is set
+      if (!this.embedLoader) {
+        console.error('[TicketSystem] Embed loader not initialized for emoji ticket creation');
+        return;
+      }
+
+      // Check if system is properly configured
+      if (!this.config.categories || this.config.categories.length === 0) {
+        try {
+          await user.send({
+            content: this.embedLoader.format('Ticket system is not properly configured. Please contact an administrator.', 'message')
+          });
+        } catch (error) {
+          console.error('[TicketSystem] Could not DM user:', error);
+        }
+        return;
+      }
+
+      // Check if max active tickets reached
+      if (this.config.maxActiveTickets && this.activeTickets.size >= this.config.maxActiveTickets) {
+        try {
+          await user.send({
+            content: this.embedLoader.format('The ticket system has reached its maximum capacity. Please try again later.', 'message')
+          });
+        } catch (error) {
+          console.error('[TicketSystem] Could not DM user:', error);
+        }
+        return;
+      }
+
+      // Get guild and member
+      const guild = reaction.message.guild;
+      const member = await guild.members.fetch(user.id).catch(() => null);
+      if (!member) return;
+
+      // Check user ticket limit
+      const userTickets = this.userTickets.get(user.id) || new Set();
+      const activeUserTickets = Array.from(userTickets).filter(id => 
+        this.activeTickets.has(id)
+      );
+
+      if (activeUserTickets.length >= this.config.maxTicketsPerUser) {
+        try {
+          await user.send({
+            content: this.embedLoader.format(
+              this.config.messages.maxTicketsReached.replace('{max}', this.config.maxTicketsPerUser),
+              'message'
+            )
+          });
+        } catch (error) {
+          console.error('[TicketSystem] Could not DM user:', error);
+        }
+        return;
+      }
+
+      // Check cooldown
+      const lastTicket = Array.from(this.activeTickets.values())
+        .filter(t => t.userId === user.id)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+
+      if (lastTicket) {
+        const timeSince = Date.now() - new Date(lastTicket.createdAt).getTime();
+        if (timeSince < this.config.cooldown) {
+          const timeLeft = Math.ceil((this.config.cooldown - timeSince) / 1000);
+          try {
+            await user.send({
+              content: this.embedLoader.format(
+                this.config.messages.cooldownActive.replace('{time}', timeLeft),
+                'message'
+              )
+            });
+          } catch (error) {
+            console.error('[TicketSystem] Could not DM user:', error);
+          }
+          return;
+        }
+      }
+
+      // Get category (use specified or first available)
+      let category;
+      if (panel.categoryId) {
+        category = this.config.categories.find(c => c.id === panel.categoryId);
+      } else if (panel.categories && panel.categories.length === 1) {
+        category = this.config.categories.find(c => c.id === panel.categories[0]);
+      } else {
+        category = this.config.categories[0];
+      }
+
+      if (!category) {
+        console.error('[TicketSystem] No valid category found for ticket creation');
+        return;
+      }
+
+      // Create ticket
+      const ticket = await this.createTicket(guild, user, category);
+      
+      // Send DM notification
+      try {
+        await user.send({
+          content: this.embedLoader.format(
+            this.config.messages.ticketCreated.replace('{channel}', ticket.channel),
+            'message'
+          )
+        });
+      } catch (error) {
+        console.error('[TicketSystem] Could not DM user:', error);
+      }
+    } catch (error) {
+      console.error('[TicketSystem] Error creating ticket from emoji:', error);
+      try {
+        await user.send({
+          content: this.embedLoader.format(this.config.messages.errorCreating, 'message')
+        });
+      } catch (dmError) {
+        console.error('[TicketSystem] Could not DM user:', dmError);
+      }
+    }
+  }
+
   setupInactiveCheck() {
+    // Clear any existing interval
+    if (this.inactiveCheckInterval) {
+      clearInterval(this.inactiveCheckInterval);
+    }
+
     // Check every 6 hours
-    setInterval(async () => {
+    this.inactiveCheckInterval = setInterval(async () => {
       const now = Date.now();
       const maxInactiveMs = this.config.autoCloseInactiveDays * 24 * 60 * 60 * 1000;
 
@@ -136,7 +345,7 @@ export class TicketSystem {
         try {
           const channel = this.client.channels.cache.get(channelId);
           if (!channel) {
-            this.deleteTicket(channelId);
+            await this.deleteTicket(channelId);
             continue;
           }
 
@@ -150,11 +359,13 @@ export class TicketSystem {
             await this.closeTicket(channelId, this.client.user.id, 'Inactivity');
             
             // Send notification
-            const inactiveEmbed = this.client.embedLoader.createEmbed({
-              description: `This ticket has been automatically closed after ${this.config.autoCloseInactiveDays} days of inactivity.`
-            });
+            if (this.embedLoader) {
+              const inactiveEmbed = this.embedLoader.createEmbed({
+                description: `This ticket has been automatically closed after ${this.config.autoCloseInactiveDays} days of inactivity.`
+              });
 
-            await channel.send({ embeds: [inactiveEmbed] });
+              await channel.send({ embeds: [inactiveEmbed] });
+            }
 
             // Schedule deletion
             if (this.config.autoDelete.enabled) {
@@ -177,51 +388,91 @@ export class TicketSystem {
       throw new Error('No ticket categories configured');
     }
 
-    const embed = this.client.embedLoader.createEmbed({
-      title: options.title || this.config.panelEmbed.title,
-      description: options.description || this.config.panelEmbed.description,
-      footer: options.footer || this.config.panelEmbed.footer,
-      formatDescription: false
-    });
-
-    const components = [];
-
-    if (categories.length > 1) {
-      // Create category select menu
-      const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('ticket_create_category')
-        .setPlaceholder('Select a ticket category')
-        .addOptions(
-          categories.map(cat => ({
-            label: cat.name,
-            description: cat.description,
-            value: cat.id
-          }))
-        );
-      
-      components.push(new ActionRowBuilder().addComponents(selectMenu));
-    } else {
-      // Single category - just a button
-      const button = new ButtonBuilder()
-        .setCustomId(`ticket_create_${categories[0].id}`)
-        .setLabel(options.buttonLabel || this.config.panelEmbed.buttonLabel)
-        .setStyle(ButtonStyle.Primary);
-      
-      components.push(new ActionRowBuilder().addComponents(button));
+    if (!this.embedLoader) {
+      throw new Error('Embed loader not initialized. Please ensure setEmbedLoader() is called during bot initialization.');
     }
 
-    const message = await channel.send({
-      embeds: [embed],
-      components
-    });
+    // Create embed with custom or default content
+    const embedOptions = {
+      formatDescription: false
+    };
 
-    // Save panel data
-    this.ticketPanels.set(message.id, {
-      channelId: channel.id,
-      categories: categories.map(c => c.id),
-      createdAt: new Date().toISOString()
-    });
+    if (options.title) embedOptions.title = options.title;
+    if (options.description) embedOptions.description = options.description;
+    if (options.footer) embedOptions.footer = options.footer;
+    if (options.color) embedOptions.color = options.color;
+
+    // If no custom content provided, use defaults
+    if (!embedOptions.title && !embedOptions.description) {
+      embedOptions.title = this.config.panelEmbed.title;
+      embedOptions.description = this.config.panelEmbed.description;
+      embedOptions.footer = this.config.panelEmbed.footer;
+    }
+
+    const embed = this.embedLoader.createEmbed(embedOptions);
+
+    let message;
+    const panelType = options.type || 'button';
     
+    if (panelType === 'emoji') {
+      const emoji = options.emoji || '🎫';
+      
+      // Send message without components for emoji reaction
+      message = await channel.send({ embeds: [embed] });
+      
+      // Add reaction
+      await message.react(emoji);
+      
+      // Save panel data with emoji type
+      this.ticketPanels.set(message.id, {
+        channelId: channel.id,
+        type: 'emoji',
+        emoji: emoji,
+        categories: categories.map(c => c.id),
+        categoryId: categories.length === 1 ? categories[0].id : null,
+        createdAt: new Date().toISOString()
+      });
+    } else {
+      // Create button/select menu panel
+      const components = [];
+      
+      if (categories.length > 1) {
+        const selectMenu = new StringSelectMenuBuilder()
+          .setCustomId('ticket_create_category')
+          .setPlaceholder('Select a ticket category')
+          .addOptions(
+            categories.map(cat => ({
+              label: cat.name,
+              description: cat.description,
+              value: cat.id
+            }))
+          );
+        
+        components.push(new ActionRowBuilder().addComponents(selectMenu));
+      } else {
+        const button = new ButtonBuilder()
+          .setCustomId(`ticket_create_${categories[0].id}`)
+          .setLabel(options.buttonLabel || this.config.panelEmbed.buttonLabel)
+          .setStyle(ButtonStyle.Primary);
+        
+        if (options.buttonEmoji) {
+          button.setEmoji(options.buttonEmoji);
+        }
+        
+        components.push(new ActionRowBuilder().addComponents(button));
+      }
+      
+      message = await channel.send({ embeds: [embed], components });
+      
+      // Save panel data with button type
+      this.ticketPanels.set(message.id, {
+        channelId: channel.id,
+        type: 'button',
+        categories: categories.map(c => c.id),
+        createdAt: new Date().toISOString()
+      });
+    }
+
     this.saveTicketData();
     
     return message;
@@ -230,17 +481,24 @@ export class TicketSystem {
   async handleTicketCreate(interaction) {
     await interaction.deferReply({ ephemeral: true });
 
+    // Check if embed loader is set
+    if (!this.embedLoader) {
+      return interaction.editReply({
+        content: 'System error: Embed loader not initialized. Please contact an administrator.'
+      });
+    }
+
     // Check if system is properly configured
     if (!this.config.categories || this.config.categories.length === 0) {
       return interaction.editReply({
-        content: this.client.embedLoader.format('Ticket system is not properly configured. Please contact an administrator.', 'message')
+        content: this.embedLoader.format('Ticket system is not properly configured. Please contact an administrator.', 'message')
       });
     }
 
     // Check if max active tickets reached
     if (this.config.maxActiveTickets && this.activeTickets.size >= this.config.maxActiveTickets) {
       return interaction.editReply({
-        content: this.client.embedLoader.format('The ticket system has reached its maximum capacity. Please try again later.', 'message')
+        content: this.embedLoader.format('The ticket system has reached its maximum capacity. Please try again later.', 'message')
       });
     }
 
@@ -255,7 +513,7 @@ export class TicketSystem {
     const category = this.config.categories.find(c => c.id === categoryId);
     if (!category) {
       return interaction.editReply({
-        content: this.client.embedLoader.format('Invalid ticket category.', 'message')
+        content: this.embedLoader.format('Invalid ticket category.', 'message')
       });
     }
 
@@ -267,7 +525,7 @@ export class TicketSystem {
 
     if (activeUserTickets.length >= this.config.maxTicketsPerUser) {
       return interaction.editReply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           this.config.messages.maxTicketsReached.replace('{max}', this.config.maxTicketsPerUser),
           'message'
         )
@@ -284,7 +542,7 @@ export class TicketSystem {
       if (timeSince < this.config.cooldown) {
         const timeLeft = Math.ceil((this.config.cooldown - timeSince) / 1000);
         return interaction.editReply({
-          content: this.client.embedLoader.format(
+          content: this.embedLoader.format(
             this.config.messages.cooldownActive.replace('{time}', timeLeft),
             'message'
           )
@@ -297,16 +555,15 @@ export class TicketSystem {
       const ticket = await this.createTicket(interaction.guild, interaction.user, category);
       
       await interaction.editReply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           this.config.messages.ticketCreated.replace('{channel}', ticket.channel),
           'message'
-        ),
-        ephemeral: true
+        )
       });
     } catch (error) {
       console.error('[TicketSystem] Error creating ticket:', error);
       await interaction.editReply({
-        content: this.client.embedLoader.format(this.config.messages.errorCreating, 'message')
+        content: this.embedLoader.format(this.config.messages.errorCreating, 'message')
       });
     }
   }
@@ -406,41 +663,43 @@ export class TicketSystem {
     this.saveTicketData();
 
     // Send welcome message
-    const welcomeEmbed = this.client.embedLoader.createEmbed({
-      title: 'Ticket System',
-      description: category.welcomeMessage || this.config.welcomeMessage,
-      fields: [
-        { name: 'Category', value: category.name, inline: true },
-        { name: 'Created by', value: `${user}`, inline: true }
-      ],
-      formatDescription: false
-    });
+    if (this.embedLoader) {
+      const welcomeEmbed = this.embedLoader.createEmbed({
+        title: 'Ticket System',
+        description: category.welcomeMessage || this.config.welcomeMessage,
+        fields: [
+          { name: 'Category', value: category.name, inline: true },
+          { name: 'Created by', value: `${user}`, inline: true }
+        ],
+        formatDescription: false
+      });
 
-    const actionRow = new ActionRowBuilder()
-      .addComponents(
-        new ButtonBuilder()
-          .setCustomId('ticket_close')
-          .setLabel(this.config.buttons.close.label)
-          .setStyle(ButtonStyle[this.config.buttons.close.style]),
-        new ButtonBuilder()
-          .setCustomId('ticket_claim')
-          .setLabel(this.config.buttons.claim.label)
-          .setStyle(ButtonStyle[this.config.buttons.claim.style])
-      );
+      const actionRow = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId('ticket_close')
+            .setLabel(this.config.buttons.close.label)
+            .setStyle(ButtonStyle[this.config.buttons.close.style]),
+          new ButtonBuilder()
+            .setCustomId('ticket_claim')
+            .setLabel(this.config.buttons.claim.label)
+            .setStyle(ButtonStyle[this.config.buttons.claim.style])
+        );
 
-    const pingContent = [];
-    if (this.config.notifications.pingSupport && category.supportRole) {
-      pingContent.push(`<@&${category.supportRole}>`);
+      const pingContent = [];
+      if (this.config.notifications.pingSupport && category.supportRole) {
+        pingContent.push(`<@&${category.supportRole}>`);
+      }
+      if (this.config.notifications.pingUser) {
+        pingContent.push(`${user}`);
+      }
+
+      await channel.send({
+        content: pingContent.join(' ') || null,
+        embeds: [welcomeEmbed],
+        components: [actionRow]
+      });
     }
-    if (this.config.notifications.pingUser) {
-      pingContent.push(`${user}`);
-    }
-
-    await channel.send({
-      content: pingContent.join(' ') || null,
-      embeds: [welcomeEmbed],
-      components: [actionRow]
-    });
 
     // Log ticket creation
     if (this.config.enableLogging && this.config.logChannel) {
@@ -462,10 +721,18 @@ export class TicketSystem {
       return;
     }
 
+    // Check if interaction has a channel (it should for button interactions in channels)
+    if (!interaction.channel) {
+      return interaction.reply({
+        content: this.embedLoader.format('Invalid interaction context.', 'message'),
+        ephemeral: true
+      });
+    }
+
     const ticket = this.activeTickets.get(interaction.channel.id);
     if (!ticket) {
       return interaction.reply({
-        content: this.client.embedLoader.format('This is not a valid ticket channel.', 'message'),
+        content: this.embedLoader.format('This is not a valid ticket channel.', 'message'),
         ephemeral: true
       });
     }
@@ -497,7 +764,7 @@ export class TicketSystem {
 
     if (!canClose) {
       return interaction.reply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           this.config.messages.noPermission.replace('{action}', 'close'),
           'message'
         ),
@@ -518,7 +785,7 @@ export class TicketSystem {
     });
 
     // Create closed embed
-    const closedEmbed = this.client.embedLoader.createEmbed({
+    const closedEmbed = this.embedLoader.createEmbed({
       description: this.config.messages.ticketClosed.replace('{user}', interaction.user)
     });
 
@@ -541,9 +808,10 @@ export class TicketSystem {
 
     // Schedule auto-delete
     if (this.config.autoDelete.enabled) {
-      setTimeout(() => {
-        if (this.activeTickets.has(interaction.channel.id)) {
-          this.deleteTicket(interaction.channel.id);
+      const channelId = interaction.channel.id;
+      setTimeout(async () => {
+        if (this.activeTickets.has(channelId)) {
+          await this.deleteTicket(channelId);
         }
       }, this.config.autoDelete.timeout);
     }
@@ -568,7 +836,7 @@ export class TicketSystem {
 
     if (!canClaim) {
       return interaction.reply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           this.config.messages.noPermission.replace('{action}', 'claim'),
           'message'
         ),
@@ -578,7 +846,7 @@ export class TicketSystem {
 
     if (ticket.claimed) {
       return interaction.reply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           `This ticket is already claimed by <@${ticket.claimedBy}>.`,
           'message'
         ),
@@ -593,7 +861,7 @@ export class TicketSystem {
 
     const message = this.config.messages.ticketClaimed.replace('{user}', interaction.user);
     await interaction.reply({
-      content: this.client.embedLoader.format(message, 'message')
+      content: this.embedLoader.format(message, 'message')
     });
 
     // Log action
@@ -612,7 +880,7 @@ export class TicketSystem {
 
     if (!canDelete) {
       return interaction.reply({
-        content: this.client.embedLoader.format(
+        content: this.embedLoader.format(
           this.config.messages.noPermission.replace('{action}', 'delete'),
           'message'
         ),
@@ -621,15 +889,17 @@ export class TicketSystem {
     }
 
     const deleteDelay = 5; // seconds
+    const channelId = interaction.channel.id; // Capture channel ID before timeout
+    
     await interaction.reply({
-      content: this.client.embedLoader.format(
+      content: this.embedLoader.format(
         this.config.messages.ticketDeleting.replace('{seconds}', deleteDelay),
         'message'
       )
     });
 
     setTimeout(async () => {
-      await this.deleteTicket(interaction.channel.id);
+      await this.deleteTicket(channelId);
     }, deleteDelay * 1000);
   }
 
@@ -642,8 +912,8 @@ export class TicketSystem {
       // Save to transcript channel if configured
       if (this.config.transcriptChannel) {
         const transcriptChannel = interaction.guild.channels.cache.get(this.config.transcriptChannel);
-        if (transcriptChannel) {
-          const embed = this.client.embedLoader.createEmbed({
+        if (transcriptChannel && this.embedLoader) {
+          const embed = this.embedLoader.createEmbed({
             title: 'Ticket System',
             description: `Ticket created by <@${ticket.userId}>`,
             fields: [
@@ -668,7 +938,7 @@ export class TicketSystem {
         try {
           const user = await this.client.users.fetch(ticket.userId);
           await user.send({
-            content: this.client.embedLoader.format(`Here is the transcript of your ticket #${ticket.id}:`, 'message'),
+            content: this.embedLoader.format(`Here is the transcript of your ticket #${ticket.id}:`, 'message'),
             files: [{
               attachment: Buffer.from(transcript),
               name: `transcript-${ticket.id}.txt`
@@ -680,7 +950,7 @@ export class TicketSystem {
       }
 
       await interaction.editReply({
-        content: this.client.embedLoader.format(this.config.messages.transcriptSaved, 'message'),
+        content: this.embedLoader.format(this.config.messages.transcriptSaved, 'message'),
         files: [{
           attachment: Buffer.from(transcript),
           name: `transcript-${ticket.id}.txt`
@@ -689,7 +959,7 @@ export class TicketSystem {
     } catch (error) {
       console.error('[TicketSystem] Error generating transcript:', error);
       await interaction.editReply({
-        content: this.client.embedLoader.format(this.config.messages.errorTranscript, 'message')
+        content: this.embedLoader.format(this.config.messages.errorTranscript, 'message')
       });
     }
   }
@@ -769,7 +1039,7 @@ export class TicketSystem {
   }
 
   async logAction(guild, data) {
-    if (!this.config.enableLogging || !this.config.logChannel) return;
+    if (!this.config.enableLogging || !this.config.logChannel || !this.embedLoader) return;
 
     // Check if this action should be logged
     const actionType = data.action.toLowerCase().replace(/ticket\s+/i, '').replace(/\s+/g, '_');
@@ -821,7 +1091,7 @@ export class TicketSystem {
       });
     }
 
-    const embed = this.client.embedLoader.createEmbed({
+    const embed = this.embedLoader.createEmbed({
       title: 'Ticket System',
       description: data.action,
       fields: fields
@@ -864,6 +1134,16 @@ export class TicketSystem {
     }
 
     return breakdown;
+  }
+
+  /**
+   * Clean up resources
+   */
+  cleanup() {
+    if (this.inactiveCheckInterval) {
+      clearInterval(this.inactiveCheckInterval);
+      this.inactiveCheckInterval = null;
+    }
   }
 
   async saveConfig() {

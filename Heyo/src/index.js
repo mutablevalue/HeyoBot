@@ -252,6 +252,7 @@ async function main() {
   friendGroupCommands.setModerationSystem(moderationSystem);
   birthdayCommands.setBirthdaySystem(birthdaySystem);
   birthdayCommands.setEmbedLoader(embedLoader);
+  ticketSystem.setEmbedLoader(embedLoader);
 
   activeWebhooksCommand.setEmbedLoader(embedLoader);
 activeWebhooksCommand.setPermissionSystem(permissionSystem);

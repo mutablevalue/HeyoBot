@@ -407,27 +407,14 @@ j2c:
       categoryId: "1386382293706342601"
       createdAt: 2025-06-22T16:29:17.463Z
 welcome:
-  enabled: false
-  channel: null
+  enabled: true
+  channel: "1386407475967824043"
   message:
-    title: Welcome!
-    description: |-
-      Welcome {user} to {server}!
-      You are member #{memberCount}
-    color: 65280
+    description: "yooo {user.mention} #{memberNumber}"
     thumbnail: true
-    footer: Enjoy your stay!
+    footer: 
     timestamp: true
-  dmEnabled: false
-  dmMessage:
-    title: Welcome to {server}!
-    description: Welcome {user}! We're glad to have you here.
-    color: 65280
-    footer: Have a great time!
-    timestamp: true
-  roleOnJoin: null
   pingUser: false
-  deleteAfter: null
 roleTracker:
   enabled: true
   dataFile: role_history.json
@@ -507,8 +494,8 @@ ticketSystem:
   logChannel: "1379953422241103946"
   enableLogging: true
   stats:
-    totalTickets: 1
-    totalClosed: 0
+    totalTickets: 3
+    totalClosed: 2
     averageResponseTime: 0
     averageResolutionTime: 0
   defaultCategoryId: "1379953422241103944"

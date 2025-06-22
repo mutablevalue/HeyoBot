@@ -152,6 +152,51 @@ export class EntranceSystem {
   }
 
   /**
+   * Create verify channel and category
+   * @param {import("discord.js").Guild} guild
+   * @param {Object} options
+   */
+  async createVerifyChannel(guild, options = {}) {
+    try {
+      let category = null;
+      
+      // Create or get category
+      if (options.createCategory) {
+        category = await guild.channels.create({
+          name: options.categoryName || 'Verification',
+          type: ChannelType.GuildCategory,
+          reason: 'Entrance system setup'
+        });
+      } else if (options.categoryId) {
+        category = guild.channels.cache.get(options.categoryId);
+        if (!category || category.type !== ChannelType.GuildCategory) {
+          throw new Error('Invalid category provided');
+        }
+      }
+      
+      // Create verify channel
+      const verifyChannel = await guild.channels.create({
+        name: options.channelName || 'verify',
+        type: ChannelType.GuildText,
+        parent: category,
+        topic: 'React to the message below to gain access to the server!',
+        reason: 'Entrance system setup',
+        permissionOverwrites: [
+          {
+            id: guild.id, // @everyone
+            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+            deny: [PermissionFlagsBits.SendMessages]
+          }
+        ]
+      });
+      
+      return { channel: verifyChannel, category };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  /**
    * Setup entrance instance
    * @param {import("discord.js").Guild} guild
    * @param {string} messageId
@@ -187,6 +232,7 @@ export class EntranceSystem {
         channelId: message.channel.id,
         emoji: emoji,
         roleId: options.roleId,
+        verifyChannelId: options.verifyChannelId,
         logChannel: options.logChannel,
         welcomeMessage: options.welcomeMessage || this.config.welcomeMessage,
         dmWelcome: options.dmWelcome ?? this.config.dmWelcome,
@@ -215,6 +261,11 @@ export class EntranceSystem {
    */
   async setupRole(guild, options = {}) {
     try {
+      // Verify channel is required
+      if (!options.verifyChannel) {
+        throw new Error('Verify channel is required for role setup');
+      }
+
       // Create or get the role
       let role;
       if (options.roleId) {
@@ -240,6 +291,7 @@ export class EntranceSystem {
       const changes = {
         hiddenChannels: 0,
         exemptedChannels: 0,
+        verifyKeptVisible: false,
         errors: []
       };
 
@@ -256,8 +308,11 @@ export class EntranceSystem {
           if (channel.id === verifyChannel) {
             // Ensure @everyone can see verify channel
             await channel.permissionOverwrites.edit(guild.id, {
-              ViewChannel: true
+              ViewChannel: true,
+              ReadMessageHistory: true,
+              SendMessages: false
             });
+            changes.verifyKeptVisible = true;
             continue;
           }
 
@@ -287,10 +342,11 @@ export class EntranceSystem {
         }
       }
 
-      // Update instance with role ID if exists
+      // Update instance with role ID and verify channel if exists
       const instance = this.instances.get(guild.id);
       if (instance) {
         instance.roleId = role.id;
+        instance.verifyChannelId = verifyChannel;
         instance.exemptRoles = exemptRoles;
         instance.exemptChannels = exemptChannels;
         this.saveEntranceData();
@@ -564,6 +620,7 @@ export class EntranceSystem {
         verifiedUsers: instance.verifiedUsers.length,
         messageId: instance.messageId,
         roleId: instance.roleId,
+        verifyChannelId: instance.verifyChannelId,
         createdAt: instance.createdAt
       } : null
     };

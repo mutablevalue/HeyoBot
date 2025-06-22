@@ -54,7 +54,7 @@ export const data = new SlashCommandBuilder()
       .addStringOption(option =>
         option
           .setName('description')
-          .setDescription('Message description (use {user}, {server}, {memberCount})')
+          .setDescription('Message description (use {user}, {server}, {memberCount}, {memberNumber})')
           .setRequired(false)
       )
       .addBooleanOption(option =>
@@ -168,7 +168,7 @@ async function executeSetChannel(interaction) {
   const embed = embedLoader.success(`Welcome messages will be sent to ${channel}.`);
   await interaction.reply({ embeds: [embed] });
 }
-
+ 
 async function executeSetMessage(interaction) {
   const description = interaction.options.getString('description');
   const ping = interaction.options.getBoolean('ping');
@@ -191,7 +191,7 @@ async function executeSetMessage(interaction) {
   const embed = embedLoader.success('Welcome message configuration has been updated.');
   embed.addFields({
     name: 'Available Placeholders',
-    value: '{user} - Username\n{user.mention} - User mention\n{user.tag} - User tag\n{user.id} - User ID\n{server} - Server name\n{memberCount} - Member count',
+    value: '{user} - Username\n{user.mention} - User mention\n{user.tag} - User tag\n{user.id} - User ID\n{server} - Server name\n{memberCount} - Total member count\n{memberNumber} - Member join position',
     inline: false
   });
   
@@ -237,7 +237,7 @@ async function executePreview(interaction) {
   const config = welcomeSystem.config;
   
   // Create preview embed
-  const messageEmbed = welcomeSystem.createPreviewEmbed(interaction.member, config.message || {});
+  const messageEmbed = await welcomeSystem.createPreviewEmbed(interaction.member, config.message || {});
   
   const previewEmbed = embedLoader.info('This is how the welcome message will look:');
   
@@ -272,7 +272,7 @@ async function executeView(interaction) {
       },
       {
         name: 'Settings',
-        value: `Ping User: ${config.pingUser ? 'Yes' : 'No'}\nDelete After: ${config.deleteAfter ? `${config.deleteAfter}s` : 'Never'}\nDMs Enabled: ${config.dmEnabled ? 'Yes' : 'No'}`,
+        value: `Ping User: ${config.pingUser !== false ? 'Yes' : 'No'}\nDelete After: ${config.deleteAfter ? `${config.deleteAfter}s` : 'Never'}\nDMs Enabled: ${config.dmEnabled ? 'Yes' : 'No'}`,
         inline: false
       },
       {

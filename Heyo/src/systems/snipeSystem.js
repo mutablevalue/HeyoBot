@@ -243,28 +243,22 @@ export class SnipeSystem {
     }
   }
   
-  extractMentions(message) {
-    const mentions = new Set();
-    
-    // User mentions
-    message.mentions.users.forEach(user => mentions.add(user.id));
-    
-    // Role mentions (get all users with the role)
-    message.mentions.roles.forEach(role => {
-      role.members.forEach(member => mentions.add(member.id));
-    });
-    
-    // @everyone and @here
-    if (message.mentions.everyone) {
-      message.guild.members.cache.forEach(member => {
-        if (!member.user.bot || !this.ghostPingConfig.ignoreBots) {
-          mentions.add(member.id);
-        }
-      });
-    }
-    
-    return Array.from(mentions);
-  }
+extractMentions(message) {
+  const mentions = new Set();
+  
+  // User mentions only - direct @username mentions
+  message.mentions.users.forEach(user => mentions.add(user.id));
+  
+  // Role mentions (get all users with the role)
+  message.mentions.roles.forEach(role => {
+    role.members.forEach(member => mentions.add(member.id));
+  });
+  
+  // Skip @everyone and @here mentions entirely
+  // We don't want ghost pings for these mass mentions
+  
+  return Array.from(mentions);
+}
   
   async addGhostPing(userId, pingData) {
     const userPings = this.ghostPings.get(userId) || [];

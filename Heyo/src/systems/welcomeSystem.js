@@ -70,6 +70,31 @@ export class WelcomeSystem {
   }
 
   /**
+   * Get member's join position
+   * @param {import("discord.js").GuildMember} member 
+   * @returns {Promise<number>}
+   */
+  async getMemberNumber(member) {
+    try {
+      // Fetch all members
+      const members = await member.guild.members.fetch();
+      
+      // Sort by join date and filter out bots
+      const sortedMembers = Array.from(members.values())
+        .filter(m => !m.user.bot)
+        .sort((a, b) => a.joinedTimestamp - b.joinedTimestamp);
+      
+      // Find the position (1-indexed)
+      const position = sortedMembers.findIndex(m => m.id === member.id) + 1;
+      
+      return position || member.guild.memberCount;
+    } catch (error) {
+      console.error('[WelcomeSystem] Error getting member number:', error);
+      return member.guild.memberCount;
+    }
+  }
+
+  /**
    * Send welcome message to channel
    * @param {import("discord.js").GuildMember} member 
    */
@@ -78,12 +103,26 @@ export class WelcomeSystem {
     if (!channel || channel.type !== ChannelType.GuildText) return;
 
     try {
-      const description = this.replacePlaceholders(this.config.message?.description || '', member);
-      const embed = this.embedLoader.createEmbed({
+      // Get member number
+      const memberNumber = await this.getMemberNumber(member);
+      
+      const description = this.replacePlaceholders(this.config.message?.description || '', member, memberNumber);
+      
+      // Create embed without title
+      const embedConfig = {
         description: description,
         formatDescription: false // Don't double-format welcome messages
-      });
+      };
       
+      // Copy other embed properties except title
+      if (this.config.message?.color) embedConfig.color = this.config.message.color;
+      if (this.config.message?.thumbnail) embedConfig.thumbnail = this.config.message.thumbnail;
+      if (this.config.message?.footer) embedConfig.footer = this.config.message.footer;
+      if (this.config.message?.timestamp) embedConfig.timestamp = this.config.message.timestamp;
+      
+      const embed = this.embedLoader.createEmbed(embedConfig);
+      
+      // Only ping if explicitly enabled
       const content = this.config.pingUser ? `${member}` : undefined;
       const message = await channel.send({ content, embeds: [embed] });
 
@@ -104,7 +143,8 @@ export class WelcomeSystem {
    */
   async sendWelcomeDM(member) {
     try {
-      const description = this.replacePlaceholders(this.config.dmMessage?.description || '', member);
+      const memberNumber = await this.getMemberNumber(member);
+      const description = this.replacePlaceholders(this.config.dmMessage?.description || '', member, memberNumber);
       const embed = this.embedLoader.createEmbed({
         description: description,
         formatDescription: false
@@ -119,17 +159,20 @@ export class WelcomeSystem {
    * Replace placeholders in text
    * @param {string} text 
    * @param {import("discord.js").GuildMember} member 
+   * @param {number} memberNumber
    * @returns {string}
    */
-  replacePlaceholders(text, member) {
+  replacePlaceholders(text, member, memberNumber) {
     if (!text) return text;
+    
     return text
       .replace(/{user}/g, member.user.username)
       .replace(/{user\.mention}/g, `<@${member.user.id}>`)
       .replace(/{user\.tag}/g, member.user.tag)
       .replace(/{user\.id}/g, member.user.id)
       .replace(/{server}/g, member.guild.name)
-      .replace(/{memberCount}/g, member.guild.memberCount);
+      .replace(/{memberCount}/g, member.guild.memberCount)
+      .replace(/{memberNumber}/g, memberNumber || member.guild.memberCount);
   }
 
   /**
@@ -210,10 +253,11 @@ export class WelcomeSystem {
    * Create preview embed
    * @param {import("discord.js").GuildMember} member 
    * @param {Object} messageConfig 
-   * @returns {import("discord.js").EmbedBuilder}
+   * @returns {Promise<import("discord.js").EmbedBuilder>}
    */
-  createPreviewEmbed(member, messageConfig) {
-    const description = this.replacePlaceholders(messageConfig?.description || '', member);
+  async createPreviewEmbed(member, messageConfig) {
+    const memberNumber = await this.getMemberNumber(member);
+    const description = this.replacePlaceholders(messageConfig?.description || '', member, memberNumber);
     return this.embedLoader.createEmbed({
       description: description,
       formatDescription: false

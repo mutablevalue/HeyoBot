@@ -23,139 +23,109 @@ export const setupEntranceData = new SlashCommandBuilder()
   .setName('setupentrance')
   .setDescription('Setup server entrance verification system')
   .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('instance')
-      .setDescription('Setup entrance verification instance')
-      .addStringOption(option =>
-        option
-          .setName('message_id')
-          .setDescription('ID of the message to react to')
-          .setRequired(true)
-      )
-      .addStringOption(option =>
-        option
-          .setName('emoji')
-          .setDescription('Emoji to react with')
-          .setRequired(false)
-      )
-      .addRoleOption(option =>
-        option
-          .setName('role')
-          .setDescription('Role to give when verified (uses existing or creates default)')
-          .setRequired(false)
-      )
-      .addChannelOption(option =>
-        option
-          .setName('log_channel')
-          .setDescription('Channel for verification logs')
-          .addChannelTypes(ChannelType.GuildText)
-          .setRequired(false)
-      )
-      .addStringOption(option =>
-        option
-          .setName('welcome_message')
-          .setDescription('Custom welcome message for verified users')
-          .setRequired(false)
-      )
-      .addBooleanOption(option =>
-        option
-          .setName('dm_welcome')
-          .setDescription('Send welcome message via DM')
-          .setRequired(false)
-      )
-      .addBooleanOption(option =>
-        option
-          .setName('allow_unverify')
-          .setDescription('Allow users to unverify by removing reaction')
-          .setRequired(false)
+  .addStringOption(option =>
+    option
+      .setName('action')
+      .setDescription('Action to perform')
+      .setRequired(true)
+      .addChoices(
+        { name: 'Setup Instance', value: 'instance' },
+        { name: 'Configure Role', value: 'role' },
+        { name: 'Add Exempt', value: 'add_exempt' },
+        { name: 'Remove Exempt', value: 'remove_exempt' },
+        { name: 'Remove System', value: 'remove' },
+        { name: 'Reset Permissions', value: 'reset' },
+        { name: 'View Stats', value: 'stats' },
+        { name: 'Test System', value: 'test' }
       )
   )
-  .addSubcommand(subcommand =>
-    subcommand
+  .addStringOption(option =>
+    option
+      .setName('message_id')
+      .setDescription('ID of the message to react to (for instance setup)')
+      .setRequired(false)
+  )
+  .addStringOption(option =>
+    option
+      .setName('emoji')
+      .setDescription('Emoji to react with (default: ✅)')
+      .setRequired(false)
+  )
+  .addChannelOption(option =>
+    option
+      .setName('verify_channel')
+      .setDescription('Channel where verification happens (for role setup)')
+      .addChannelTypes(ChannelType.GuildText)
+      .setRequired(false)
+  )
+  .addBooleanOption(option =>
+    option
+      .setName('create_verify_channel')
+      .setDescription('Create a new verify channel instead of using existing')
+      .setRequired(false)
+  )
+  .addStringOption(option =>
+    option
+      .setName('channel_name')
+      .setDescription('Name for new verify channel (default: verify)')
+      .setRequired(false)
+  )
+  .addChannelOption(option =>
+    option
+      .setName('category')
+      .setDescription('Category to place verify channel in (or create new)')
+      .addChannelTypes(ChannelType.GuildCategory)
+      .setRequired(false)
+  )
+  .addBooleanOption(option =>
+    option
+      .setName('create_category')
+      .setDescription('Create a new category for the verify channel')
+      .setRequired(false)
+  )
+  .addStringOption(option =>
+    option
+      .setName('category_name')
+      .setDescription('Name for new category (default: Verification)')
+      .setRequired(false)
+  )
+  .addRoleOption(option =>
+    option
       .setName('role')
-      .setDescription('Setup entrance role permissions')
-      .addChannelOption(option =>
-        option
-          .setName('verify_channel')
-          .setDescription('Channel where verification happens (stays visible)')
-          .addChannelTypes(ChannelType.GuildText)
-          .setRequired(true)
-      )
-      .addRoleOption(option =>
-        option
-          .setName('role')
-          .setDescription('Role to configure (creates new if not specified)')
-          .setRequired(false)
-      )
-      .addStringOption(option =>
-        option
-          .setName('role_name')
-          .setDescription('Name for new role (if creating)')
-          .setRequired(false)
-      )
-      .addStringOption(option =>
-        option
-          .setName('role_color')
-          .setDescription('Hex color for new role (e.g., #00ff00)')
-          .setRequired(false)
-      )
-      .addBooleanOption(option =>
-        option
-          .setName('hoist')
-          .setDescription('Display role separately in member list')
-          .setRequired(false)
-      )
+      .setDescription('Verification role or role to exempt')
+      .setRequired(false)
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('exempt')
-      .setDescription('Manage exempt roles and channels')
-      .addRoleOption(option =>
-        option
-          .setName('role')
-          .setDescription('Role to exempt from entrance requirement')
-          .setRequired(false)
-      )
-      .addChannelOption(option =>
-        option
-          .setName('channel')
-          .setDescription('Channel to keep visible for everyone')
-          .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildCategory)
-          .setRequired(false)
-      )
-      .addBooleanOption(option =>
-        option
-          .setName('remove')
-          .setDescription('Remove exemption instead of adding')
-          .setRequired(false)
-      )
+  .addChannelOption(option =>
+    option
+      .setName('channel')
+      .setDescription('Channel to exempt from hiding')
+      .addChannelTypes(ChannelType.GuildText, ChannelType.GuildVoice, ChannelType.GuildCategory)
+      .setRequired(false)
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('remove')
-      .setDescription('Remove entrance system from server')
-      .addBooleanOption(option =>
-        option
-          .setName('reset_permissions')
-          .setDescription('Reset all channel permissions')
-          .setRequired(false)
-      )
+  .addChannelOption(option =>
+    option
+      .setName('log_channel')
+      .setDescription('Channel for verification logs')
+      .addChannelTypes(ChannelType.GuildText)
+      .setRequired(false)
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('reset')
-      .setDescription('Reset all channel permissions to default')
+  .addStringOption(option =>
+    option
+      .setName('role_name')
+      .setDescription('Name for new verification role (default: Verified)')
+      .setRequired(false)
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('stats')
-      .setDescription('View entrance system statistics')
+  .addBooleanOption(option =>
+    option
+      .setName('dm_welcome')
+      .setDescription('Send welcome message via DM')
+      .setRequired(false)
   )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('test')
-      .setDescription('Test the entrance system')
+  .addBooleanOption(option =>
+    option
+      .setName('reset_permissions')
+      .setDescription('Reset all channel permissions when removing')
+      .setRequired(false)
   );
 
 export async function execute(interaction) {
@@ -163,15 +133,17 @@ export async function execute(interaction) {
     return interaction.reply({ content: 'Entrance system not loaded.', ephemeral: true });
   }
 
-  const subcommand = interaction.options.getSubcommand();
+  const action = interaction.options.getString('action');
 
-  switch (subcommand) {
+  switch (action) {
     case 'instance':
       return executeInstance(interaction);
     case 'role':
       return executeRole(interaction);
-    case 'exempt':
-      return executeExempt(interaction);
+    case 'add_exempt':
+      return executeAddExempt(interaction);
+    case 'remove_exempt':
+      return executeRemoveExempt(interaction);
     case 'remove':
       return executeRemove(interaction);
     case 'reset':
@@ -186,11 +158,15 @@ export async function execute(interaction) {
 async function executeInstance(interaction) {
   const messageId = interaction.options.getString('message_id');
   const emoji = interaction.options.getString('emoji') || '✅';
-  const role = interaction.options.getRole('role');
   const logChannel = interaction.options.getChannel('log_channel');
-  const welcomeMessage = interaction.options.getString('welcome_message');
-  const dmWelcome = interaction.options.getBoolean('dm_welcome') ?? true;
-  const allowUnverify = interaction.options.getBoolean('allow_unverify') ?? false;
+  const dmWelcome = interaction.options.getBoolean('dm_welcome') ?? false;
+
+  if (!messageId) {
+    return interaction.reply({
+      content: 'Message ID is required for instance setup. Use `action: Setup Instance` with `message_id` option.',
+      ephemeral: true
+    });
+  }
 
   await interaction.deferReply();
 
@@ -198,18 +174,28 @@ async function executeInstance(interaction) {
     // Check if instance already exists
     const existing = entranceSystem.instances.get(interaction.guild.id);
     if (existing) {
+      // Update existing instance
+      existing.emoji = emoji;
+      existing.logChannel = logChannel?.id || existing.logChannel;
+      existing.dmWelcome = dmWelcome;
+      entranceSystem.saveEntranceData();
+
       return interaction.editReply({
-        content: 'An entrance instance already exists. Use `/setupentrance remove` first.'
+        content: 'Updated existing entrance instance configuration.'
       });
     }
 
-    // Setup instance
+    // Get current role and verify channel from system if exists
+    const currentInstance = entranceSystem.instances.get(interaction.guild.id);
+    const roleId = currentInstance?.roleId;
+    const verifyChannelId = currentInstance?.verifyChannelId;
+
+    // Setup new instance
     const options = {
-      roleId: role?.id,
+      roleId: roleId,
+      verifyChannelId: verifyChannelId,
       logChannel: logChannel?.id,
-      welcomeMessage,
       dmWelcome,
-      allowUnverify,
       createdBy: interaction.user.id
     };
 
@@ -222,17 +208,20 @@ async function executeInstance(interaction) {
     const fields = [
       { name: 'Message', value: `[Jump to Message](https://discord.com/channels/${interaction.guild.id}/${result.channel.id}/${messageId})`, inline: true },
       { name: 'Emoji', value: emoji, inline: true },
-      { name: 'Role', value: role ? `${role}` : 'Not set (use `/setupentrance role`)', inline: true },
+      { name: 'Role', value: roleId ? `<@&${roleId}>` : 'Not set (use role action)', inline: true },
       { name: 'Log Channel', value: logChannel ? `${logChannel}` : 'Not set', inline: true },
-      { name: 'DM Welcome', value: dmWelcome ? 'Yes' : 'No', inline: true },
-      { name: 'Allow Unverify', value: allowUnverify ? 'Yes' : 'No', inline: true }
+      { name: 'DM Welcome', value: dmWelcome ? 'Yes' : 'No', inline: true }
     ];
+
+    if (verifyChannelId) {
+      fields.push({ name: 'Verify Channel', value: `<#${verifyChannelId}>`, inline: true });
+    }
 
     const embed = embedLoader.createEmbed({
       title: 'Entrance System',
       description: 'Instance created successfully',
       fields,
-      footer: role ? 'Ready to use!' : 'Use /setupentrance role to complete setup'
+      footer: !roleId ? 'Use action: Configure Role to complete setup' : 'Ready to use!'
     });
 
     await interaction.editReply({ embeds: [embed] });
@@ -247,41 +236,91 @@ async function executeInstance(interaction) {
 async function executeRole(interaction) {
   const role = interaction.options.getRole('role');
   const verifyChannel = interaction.options.getChannel('verify_channel');
+  const createVerifyChannel = interaction.options.getBoolean('create_verify_channel') ?? false;
+  const channelName = interaction.options.getString('channel_name');
+  const category = interaction.options.getChannel('category');
+  const createCategory = interaction.options.getBoolean('create_category') ?? false;
+  const categoryName = interaction.options.getString('category_name');
   const roleName = interaction.options.getString('role_name') || entranceSystem.config.defaultRoleName;
-  const roleColor = interaction.options.getString('role_color');
-  const hoist = interaction.options.getBoolean('hoist') ?? false;
+
+  // Either need an existing verify channel or create a new one
+  if (!verifyChannel && !createVerifyChannel) {
+    return interaction.reply({
+      content: 'Verify channel is required. Use `verify_channel` option to select an existing channel, or use `create_verify_channel: true` to create a new one.',
+      ephemeral: true
+    });
+  }
+
+  if (verifyChannel && createVerifyChannel) {
+    return interaction.reply({
+      content: 'Please choose either an existing verify channel OR create a new one, not both.',
+      ephemeral: true
+    });
+  }
 
   await interaction.deferReply();
 
   try {
+    let finalVerifyChannel = verifyChannel;
+    
+    // Create verify channel if requested
+    if (createVerifyChannel) {
+      const createOptions = {
+        channelName: channelName,
+        createCategory: createCategory,
+        categoryName: categoryName,
+        categoryId: category?.id
+      };
+      
+      // Validate category options
+      if (createCategory && category) {
+        return interaction.editReply({
+          content: 'Please choose either to create a new category OR use an existing one, not both.'
+        });
+      }
+      
+      const result = await entranceSystem.createVerifyChannel(interaction.guild, createOptions);
+      finalVerifyChannel = result.channel;
+      
+      // Send verification instructions message
+      if (embedLoader) {
+        const instructionEmbed = embedLoader.createEmbed({
+          title: 'Server Verification',
+          description: 'Welcome to the server! To gain access to all channels, please react to this message with the verification emoji.\n\nOnce verified, you will be able to see and interact with all server channels.',
+          footer: 'React below to verify'
+        });
+        
+        await finalVerifyChannel.send({ embeds: [instructionEmbed] });
+      }
+    }
+
     // Get current instance
     const instance = entranceSystem.instances.get(interaction.guild.id);
     
     const options = {
       roleId: role?.id,
       roleName,
-      roleHoist: hoist,
-      verifyChannel: verifyChannel.id,
+      verifyChannel: finalVerifyChannel.id,
       exemptRoles: instance?.exemptRoles || [],
       exemptChannels: instance?.exemptChannels || []
     };
-
-    // Parse color
-    if (roleColor) {
-      const color = parseInt(roleColor.replace('#', ''), 16);
-      if (!isNaN(color)) {
-        options.roleColor = color;
-      }
-    }
 
     const result = await entranceSystem.setupRole(interaction.guild, options);
 
     const fields = [
       { name: 'Role', value: `${result.role}`, inline: true },
-      { name: 'Verify Channel', value: `${verifyChannel}`, inline: true },
+      { name: 'Verify Channel', value: `${finalVerifyChannel}`, inline: true },
       { name: 'Hidden Channels', value: `${result.changes.hiddenChannels}`, inline: true },
       { name: 'Exempt Channels', value: `${result.changes.exemptedChannels}`, inline: true }
     ];
+
+    if (createVerifyChannel) {
+      fields.push({ 
+        name: 'Channel Created', 
+        value: `Successfully created ${finalVerifyChannel}`, 
+        inline: false 
+      });
+    }
 
     if (result.changes.errors.length > 0) {
       fields.push({
@@ -293,9 +332,9 @@ async function executeRole(interaction) {
 
     const embed = embedLoader.createEmbed({
       title: 'Entrance System',
-      description: 'Role configured successfully',
+      description: 'Role configured successfully\n\n**All channels are now hidden except the verify channel!**',
       fields,
-      footer: !instance ? 'Use /setupentrance instance to complete setup' : 'Entrance system is ready!'
+      footer: !instance ? 'Use action: Setup Instance to complete setup' : 'Entrance system is ready!'
     });
 
     await interaction.editReply({ embeds: [embed] });
@@ -307,10 +346,9 @@ async function executeRole(interaction) {
   }
 }
 
-async function executeExempt(interaction) {
+async function executeAddExempt(interaction) {
   const role = interaction.options.getRole('role');
   const channel = interaction.options.getChannel('channel');
-  const remove = interaction.options.getBoolean('remove') ?? false;
 
   if (!role && !channel) {
     return interaction.reply({
@@ -322,7 +360,7 @@ async function executeExempt(interaction) {
   const instance = entranceSystem.instances.get(interaction.guild.id);
   if (!instance) {
     return interaction.reply({
-      content: 'No entrance instance found. Use `/setupentrance instance` first.',
+      content: 'No entrance instance found. Use `action: Setup Instance` first.',
       ephemeral: true
     });
   }
@@ -335,41 +373,43 @@ async function executeExempt(interaction) {
     if (role) {
       if (!instance.exemptRoles) instance.exemptRoles = [];
       
-      if (remove) {
-        const index = instance.exemptRoles.indexOf(role.id);
-        if (index > -1) {
-          instance.exemptRoles.splice(index, 1);
-          changes.push(`Removed exempt role: ${role}`);
+      if (!instance.exemptRoles.includes(role.id)) {
+        instance.exemptRoles.push(role.id);
+        changes.push(`Added exempt role: ${role}`);
+        
+        // Update channel permissions for this role
+        for (const channel of interaction.guild.channels.cache.values()) {
+          try {
+            await channel.permissionOverwrites.edit(role.id, {
+              ViewChannel: true
+            });
+          } catch (error) {
+            // Silent fail for channels we can't edit
+          }
         }
       } else {
-        if (!instance.exemptRoles.includes(role.id)) {
-          instance.exemptRoles.push(role.id);
-          changes.push(`Added exempt role: ${role}`);
-        }
+        changes.push(`Role ${role} is already exempt`);
       }
     }
 
     if (channel) {
       if (!instance.exemptChannels) instance.exemptChannels = [];
       
-      if (remove) {
-        const index = instance.exemptChannels.indexOf(channel.id);
-        if (index > -1) {
-          instance.exemptChannels.splice(index, 1);
-          changes.push(`Removed exempt channel: ${channel}`);
+      if (!instance.exemptChannels.includes(channel.id)) {
+        instance.exemptChannels.push(channel.id);
+        changes.push(`Added exempt channel: ${channel}`);
+        
+        // Make channel visible to everyone
+        try {
+          await channel.permissionOverwrites.edit(interaction.guild.id, {
+            ViewChannel: true
+          });
+        } catch (error) {
+          changes.push(`Warning: Could not update permissions for ${channel}`);
         }
       } else {
-        if (!instance.exemptChannels.includes(channel.id)) {
-          instance.exemptChannels.push(channel.id);
-          changes.push(`Added exempt channel: ${channel}`);
-        }
+        changes.push(`Channel ${channel} is already exempt`);
       }
-    }
-
-    if (changes.length === 0) {
-      return interaction.editReply({
-        content: 'No changes made. Item may already be in the list.'
-      });
     }
 
     entranceSystem.saveEntranceData();
@@ -387,9 +427,71 @@ async function executeExempt(interaction) {
 
     await interaction.editReply({ embeds: [embed] });
   } catch (error) {
-    console.error('[SetupEntrance] Error updating exemptions:', error);
+    console.error('[SetupEntrance] Error adding exemptions:', error);
     await interaction.editReply({
-      content: `Failed to update exemptions: ${error.message}`
+      content: `Failed to add exemptions: ${error.message}`
+    });
+  }
+}
+
+async function executeRemoveExempt(interaction) {
+  const role = interaction.options.getRole('role');
+  const channel = interaction.options.getChannel('channel');
+
+  if (!role && !channel) {
+    return interaction.reply({
+      content: 'Please specify either a role or channel to remove from exemptions.',
+      ephemeral: true
+    });
+  }
+
+  const instance = entranceSystem.instances.get(interaction.guild.id);
+  if (!instance) {
+    return interaction.reply({
+      content: 'No entrance instance found.',
+      ephemeral: true
+    });
+  }
+
+  await interaction.deferReply();
+
+  try {
+    const changes = [];
+
+    if (role && instance.exemptRoles) {
+      const index = instance.exemptRoles.indexOf(role.id);
+      if (index > -1) {
+        instance.exemptRoles.splice(index, 1);
+        changes.push(`Removed exempt role: ${role}`);
+      }
+    }
+
+    if (channel && instance.exemptChannels) {
+      const index = instance.exemptChannels.indexOf(channel.id);
+      if (index > -1) {
+        instance.exemptChannels.splice(index, 1);
+        changes.push(`Removed exempt channel: ${channel}`);
+      }
+    }
+
+    if (changes.length === 0) {
+      return interaction.editReply({
+        content: 'No exemptions were removed. Items may not have been in the exempt list.'
+      });
+    }
+
+    entranceSystem.saveEntranceData();
+
+    const embed = embedLoader.createEmbed({
+      title: 'Entrance System',
+      description: 'Exemptions removed\n' + changes.join('\n')
+    });
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    console.error('[SetupEntrance] Error removing exemptions:', error);
+    await interaction.editReply({
+      content: `Failed to remove exemptions: ${error.message}`
     });
   }
 }
@@ -476,16 +578,6 @@ async function executeRemove(interaction) {
 
     collector.stop();
   });
-
-  collector.on('end', collected => {
-    if (collected.size === 0) {
-      interaction.editReply({
-        content: 'Command timed out.',
-        embeds: [],
-        components: []
-      });
-    }
-  });
 }
 
 async function executeReset(interaction) {
@@ -555,6 +647,7 @@ async function executeReset(interaction) {
 
 async function executeStats(interaction) {
   const stats = entranceSystem.getStats(interaction.guild.id);
+  const instance = entranceSystem.instances.get(interaction.guild.id);
 
   const fields = [
     { name: 'System Status', value: stats.enabled ? 'Enabled' : 'Disabled', inline: true },
@@ -569,11 +662,43 @@ async function executeStats(interaction) {
       { name: 'Verification Role', value: stats.instanceStats.roleId ? `<@&${stats.instanceStats.roleId}>` : 'Not set', inline: true },
       { name: 'Created', value: `<t:${Math.floor(new Date(stats.instanceStats.createdAt).getTime() / 1000)}:R>`, inline: true }
     );
+    
+    if (stats.instanceStats.verifyChannelId) {
+      fields.push({
+        name: 'Verify Channel',
+        value: `<#${stats.instanceStats.verifyChannelId}>`,
+        inline: true
+      });
+    }
+  }
+
+  if (instance) {
+    fields.push(
+      { name: 'Emoji', value: instance.emoji || 'Not set', inline: true },
+      { name: 'Log Channel', value: instance.logChannel ? `<#${instance.logChannel}>` : 'Not set', inline: true },
+      { name: 'DM Welcome', value: instance.dmWelcome ? 'Yes' : 'No', inline: true }
+    );
+
+    if (instance.exemptRoles?.length > 0) {
+      fields.push({
+        name: 'Exempt Roles',
+        value: instance.exemptRoles.map(id => `<@&${id}>`).join(', '),
+        inline: false
+      });
+    }
+
+    if (instance.exemptChannels?.length > 0) {
+      fields.push({
+        name: 'Exempt Channels',
+        value: instance.exemptChannels.map(id => `<#${id}>`).join(', '),
+        inline: false
+      });
+    }
   }
 
   const embed = embedLoader.createEmbed({
     title: 'Entrance System',
-    description: 'Statistics',
+    description: 'System Statistics & Configuration',
     fields
   });
 
@@ -584,14 +709,14 @@ async function executeTest(interaction) {
   const instance = entranceSystem.instances.get(interaction.guild.id);
   if (!instance) {
     return interaction.reply({
-      content: 'No entrance instance found. Use `/setupentrance instance` first.',
+      content: 'No entrance instance found. Use `action: Setup Instance` first.',
       ephemeral: true
     });
   }
 
   if (!instance.roleId) {
     return interaction.reply({
-      content: 'No role configured. Use `/setupentrance role` first.',
+      content: 'No role configured. Use `action: Configure Role` first.',
       ephemeral: true
     });
   }
