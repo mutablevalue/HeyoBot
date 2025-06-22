@@ -40,17 +40,61 @@ export const data = new SlashCommandBuilder()
   .addSubcommand(subcommand =>
     subcommand
       .setName('raidmode')
-      .setDescription('Manually control raid mode')
+      .setDescription('Control raid mode')
       .addStringOption(option =>
         option
           .setName('action')
           .setDescription('Action to perform')
           .setRequired(true)
           .addChoices(
-            { name: 'enable', value: 'enable' },
-            { name: 'disable', value: 'disable' },
-            { name: 'status', value: 'status' }
+            { name: 'Enable', value: 'enable' },
+            { name: 'Disable', value: 'disable' },
+            { name: 'Status', value: 'status' }
           )
+      )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('admin')
+      .setDescription('Manage AntiNuke administrators')
+      .addStringOption(option =>
+        option
+          .setName('action')
+          .setDescription('Action to perform')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Add', value: 'add' },
+            { name: 'Remove', value: 'remove' },
+            { name: 'List', value: 'list' }
+          )
+      )
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to add/remove (not needed for list)')
+          .setRequired(false)
+      )
+  )
+  .addSubcommand(subcommand =>
+    subcommand
+      .setName('whitelist')
+      .setDescription('Manage AntiNuke whitelist')
+      .addStringOption(option =>
+        option
+          .setName('action')
+          .setDescription('Action to perform')
+          .setRequired(true)
+          .addChoices(
+            { name: 'Add', value: 'add' },
+            { name: 'Remove', value: 'remove' },
+            { name: 'List', value: 'list' }
+          )
+      )
+      .addUserOption(option =>
+        option
+          .setName('user')
+          .setDescription('User to add/remove (not needed for list)')
+          .setRequired(false)
       )
   );
 
@@ -62,22 +106,24 @@ export async function execute(interaction) {
     });
   }
 
-  // Check if user has AntiNuke admin permissions
+  const subcommand = interaction.options.getSubcommand();
+
+  // Permission check
   if (permissionSystem) {
-    const hasPermission = permissionSystem.hasPermissionLevel(interaction.member, permissionSystem.LEVELS.ANTINUKE_ADMIN);
-    if (!hasPermission) {
-      const embed = embedLoader.error('Only AntiNuke administrators can manage AntiNuke settings.');
+    const level = permissionSystem.getPermissionLevel(interaction.member);
+    
+    // Admin management requires AntiNuke admin or higher
+    if (subcommand === 'admin' && level < permissionSystem.LEVELS.ANTINUKE_ADMIN) {
+      const embed = embedLoader.error('Only AntiNuke administrators or the bot owner can manage AntiNuke admins.');
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
-  } else {
-    // Fallback to basic admin check
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      const embed = embedLoader.error('Only administrators can manage AntiNuke settings.');
+    
+    // All other commands require AntiNuke admin
+    if (level < permissionSystem.LEVELS.ANTINUKE_ADMIN) {
+      const embed = embedLoader.error('Only AntiNuke administrators can use this command.');
       return interaction.reply({ embeds: [embed], ephemeral: true });
     }
   }
-
-  const subcommand = interaction.options.getSubcommand();
 
   switch (subcommand) {
     case 'stats':
@@ -89,6 +135,12 @@ export async function execute(interaction) {
     case 'raidmode':
       await handleRaidMode(interaction);
       break;
+    case 'admin':
+      await handleAdmin(interaction);
+      break;
+    case 'whitelist':
+      await handleWhitelist(interaction);
+      break;
   }
 }
 
@@ -96,7 +148,7 @@ async function handleStats(interaction) {
   const stats = antiNukeInstance.getStats();
   
   const fields = [
-    { name: 'Status', value: stats.highAlert ? 'High Alert' : 'Normal', inline: true },
+    { name: 'Status', value: stats.highAlert ? '**High Alert**' : 'Normal', inline: true },
     { name: 'Tracked Users', value: `${stats.trackedUsers}`, inline: true },
     { name: 'Suspicious Users', value: `${stats.suspiciousUsers}`, inline: true }
   ];
@@ -130,16 +182,13 @@ async function handleStats(interaction) {
     });
   }
 
-  // Add permission stats if available
-  if (permissionSystem) {
-    const permStats = permissionSystem.getStats();
+  // Add protection stats
+  if (stats.protection) {
     fields.push({
-      name: 'Permission Hierarchy',
+      name: 'Protection Stats',
       value: [
-        `**AntiNuke Admins**: ${permStats.antiNukeAdmins}`,
-        `**Administrators**: ${permStats.administrators}`,
-        `**Moderators**: ${permStats.moderators}`,
-        `**Total Whitelisted**: ${permStats.whitelisted}`
+        `**Webhook Abuses**: ${stats.protection.webhookAbuses}`,
+        `**Unauthorized Bots**: ${stats.protection.unauthorizedBots}`
       ].join('\n'),
       inline: false
     });
@@ -157,7 +206,12 @@ async function handleStats(interaction) {
 async function handleHighAlert(interaction) {
   const enabled = interaction.options.getBoolean('enabled');
   
-  antiNukeInstance.setHighAlert(enabled);
+  // Update config directly
+  antiNukeInstance.config.highAlert.enabled = enabled;
+  antiNukeInstance.highAlert = enabled;
+  
+  // Save the config
+  await antiNukeInstance.saveConfig();
   
   const embed = embedLoader.createEmbed({
     title: 'High Alert Mode',
@@ -169,13 +223,11 @@ async function handleHighAlert(interaction) {
   await interaction.reply({ embeds: [embed] });
   
   // Log the action
-  if (antiNukeInstance.embedLoader) {
-    antiNukeInstance.logSecurity(
-      interaction.guild, 
-      `High Alert ${enabled ? 'Enabled' : 'Disabled'}`, 
-      `Changed by ${interaction.user.tag}`
-    );
-  }
+  antiNukeInstance.logSecurity(
+    interaction.guild, 
+    `High Alert ${enabled ? 'Enabled' : 'Disabled'}`, 
+    `Changed by ${interaction.user.tag}`
+  );
 }
 
 async function handleRaidMode(interaction) {
@@ -193,16 +245,6 @@ async function handleRaidMode(interaction) {
         { name: 'Triggered At', value: `<t:${Math.floor(raidMode.triggeredAt / 1000)}:F>`, inline: false },
         { name: 'Reason', value: raidMode.triggeredBy || 'Manual activation', inline: false }
       );
-      
-      // Show active restrictions
-      const restrictions = antiNukeInstance.config.raidMode?.restrictions || [];
-      if (restrictions.length > 0) {
-        fields.push({
-          name: 'Active Restrictions',
-          value: restrictions.map(r => `• ${r.replace(/([A-Z])/g, ' $1').trim()}`).join('\n'),
-          inline: false
-        });
-      }
     }
     
     const embed = embedLoader.createEmbed({
@@ -223,14 +265,7 @@ async function handleRaidMode(interaction) {
     
     const embed = embedLoader.createEmbed({
       title: 'Raid Mode Activated',
-      description: 'Server has been locked down with the following restrictions:',
-      fields: [{
-        name: 'Active Restrictions',
-        value: (antiNukeInstance.config.raidMode?.restrictions || [])
-          .map(r => `• ${r.replace(/([A-Z])/g, ' $1').trim()}`)
-          .join('\n') || 'Default restrictions applied',
-        inline: false
-      }]
+      description: 'Server has been locked down with anti-raid restrictions.'
     });
     
     await interaction.editReply({ embeds: [embed] });
@@ -246,6 +281,215 @@ async function handleRaidMode(interaction) {
     const embed = embedLoader.success('Raid mode has been **disabled**. Server restrictions have been lifted.');
     
     await interaction.editReply({ embeds: [embed] });
+  }
+}
+
+async function handleAdmin(interaction) {
+  const action = interaction.options.getString('action');
+  const user = interaction.options.getUser('user');
+  
+  if (action === 'list') {
+    // Get from config directly
+    const config = antiNukeInstance.fullConfig.get('moderation');
+    const admins = config.permissions.antiNukeAdmin?.users || [];
+    
+    if (admins.length === 0) {
+      const embed = embedLoader.createEmbed({
+        title: 'AntiNuke Administrators',
+        description: 'No AntiNuke administrators configured.'
+      });
+      return interaction.reply({ embeds: [embed] });
+    }
+    
+    const adminList = admins.map(id => `<@${id}>`).join('\n');
+    
+    const embed = embedLoader.createEmbed({
+      title: 'AntiNuke Administrators',
+      description: adminList,
+      footer: `Total: ${admins.length} admin${admins.length !== 1 ? 's' : ''}`
+    });
+    
+    await interaction.reply({ embeds: [embed] });
+  } else {
+    if (!user) {
+      const embed = embedLoader.error('Please provide a user.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (action === 'add') {
+      // ONLY update moderation.permissions.antiNukeAdmin (single source of truth)
+      const config = antiNukeInstance.fullConfig.get('moderation');
+      if (!config.permissions.antiNukeAdmin) {
+        config.permissions.antiNukeAdmin = { users: [], roles: [], commands: ['all'] };
+      }
+      
+      if (!config.permissions.antiNukeAdmin.users.includes(user.id)) {
+        config.permissions.antiNukeAdmin.users.push(user.id);
+        await antiNukeInstance.fullConfig.save();
+        
+        // Clear permission cache
+        if (permissionSystem) {
+          permissionSystem.clearUserCache(interaction.guild.id, user.id);
+        }
+        
+        const embed = embedLoader.success(`${user} has been granted **AntiNuke Admin** permissions.`);
+        await interaction.reply({ embeds: [embed] });
+        
+        // Log the action
+        antiNukeInstance.logSecurity(
+          interaction.guild,
+          'AntiNuke Admin Added',
+          `${user.tag} (${user.id}) by ${interaction.user.tag}`
+        );
+      } else {
+        const embed = embedLoader.warning(`${user} already has AntiNuke admin permissions.`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+    } else if (action === 'remove') {
+      if (user.id === permissionSystem.BOT_OWNER_ID) {
+        const embed = embedLoader.error('Cannot remove permissions from the bot owner.');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+      
+      // ONLY remove from moderation.permissions.antiNukeAdmin
+      const config = antiNukeInstance.fullConfig.get('moderation');
+      const index = config.permissions.antiNukeAdmin?.users?.indexOf(user.id);
+      
+      if (index > -1) {
+        config.permissions.antiNukeAdmin.users.splice(index, 1);
+        await antiNukeInstance.fullConfig.save();
+        
+        // Clear permission cache
+        if (permissionSystem) {
+          permissionSystem.clearUserCache(interaction.guild.id, user.id);
+        }
+        
+        const embed = embedLoader.success(`Removed **AntiNuke Admin** permissions from ${user}.`);
+        await interaction.reply({ embeds: [embed] });
+        
+        // Log the action
+        antiNukeInstance.logSecurity(
+          interaction.guild,
+          'AntiNuke Admin Removed',
+          `${user.tag} (${user.id}) by ${interaction.user.tag}`
+        );
+      } else {
+        const embed = embedLoader.warning(`${user} doesn't have AntiNuke admin permissions.`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+    }
+  }
+}
+
+async function handleWhitelist(interaction) {
+  const action = interaction.options.getString('action');
+  const user = interaction.options.getUser('user');
+  
+  if (action === 'list') {
+    const whitelist = antiNukeInstance.config.whitelist || { users: [], roles: [] };
+    
+    const fields = [];
+    
+    if (whitelist.users.length > 0) {
+      const userList = whitelist.users.map(id => `<@${id}>`).join('\n');
+      fields.push({
+        name: 'Whitelisted Users',
+        value: userList.slice(0, 1024),
+        inline: false
+      });
+    }
+    
+    if (whitelist.roles.length > 0) {
+      const roleList = whitelist.roles.map(id => `<@&${id}>`).join('\n');
+      fields.push({
+        name: 'Whitelisted Roles',
+        value: roleList.slice(0, 1024),
+        inline: false
+      });
+    }
+    
+    if (fields.length === 0) {
+      fields.push({
+        name: 'Empty',
+        value: 'No users or roles are whitelisted.',
+        inline: false
+      });
+    }
+    
+    const embed = embedLoader.createEmbed({
+      title: 'AntiNuke Whitelist',
+      formatDescription: false,
+      fields,
+      footer: `${whitelist.users.length} users, ${whitelist.roles.length} roles`
+    });
+    
+    await interaction.reply({ embeds: [embed] });
+  } else {
+    if (!user) {
+      const embed = embedLoader.error('Please provide a user.');
+      return interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (action === 'add') {
+      // ONLY update antiNuke.whitelist (single source of truth)
+      if (!antiNukeInstance.config.whitelist) {
+        antiNukeInstance.config.whitelist = { users: [], roles: [] };
+      }
+      
+      if (!antiNukeInstance.config.whitelist.users.includes(user.id)) {
+        antiNukeInstance.config.whitelist.users.push(user.id);
+        await antiNukeInstance.fullConfig.save();
+        
+        // Clear permission cache
+        if (permissionSystem) {
+          permissionSystem.clearUserCache(interaction.guild.id, user.id);
+        }
+        
+        const embed = embedLoader.success(`${user} has been added to the AntiNuke whitelist.`);
+        await interaction.reply({ embeds: [embed] });
+        
+        // Log the action
+        antiNukeInstance.logSecurity(
+          interaction.guild,
+          'Whitelist Add',
+          `${user.tag} (${user.id}) by ${interaction.user.tag}`
+        );
+      } else {
+        const embed = embedLoader.warning(`${user} is already whitelisted.`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+    } else if (action === 'remove') {
+      if (user.id === permissionSystem.BOT_OWNER_ID) {
+        const embed = embedLoader.error('Cannot remove the bot owner from whitelist.');
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+      
+      // ONLY remove from antiNuke.whitelist
+      const index = antiNukeInstance.config.whitelist?.users?.indexOf(user.id);
+      
+      if (index > -1) {
+        antiNukeInstance.config.whitelist.users.splice(index, 1);
+        await antiNukeInstance.fullConfig.save();
+        
+        // Clear permission cache
+        if (permissionSystem) {
+          permissionSystem.clearUserCache(interaction.guild.id, user.id);
+        }
+        
+        const embed = embedLoader.success(`${user} has been removed from the AntiNuke whitelist.`);
+        await interaction.reply({ embeds: [embed] });
+        
+        // Log the action
+        antiNukeInstance.logSecurity(
+          interaction.guild,
+          'Whitelist Remove',
+          `${user.tag} (${user.id}) by ${interaction.user.tag}`
+        );
+      } else {
+        const embed = embedLoader.warning(`${user} was not whitelisted.`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+    }
   }
 }
 

@@ -14,6 +14,9 @@ export class UnifiedPermissionSystem {
     this.moderationConfig = config.get('moderation');
     this.antiNukeConfig = config.get('antiNuke');
     
+    // Bot owner ID - has absolute highest permissions
+    this.BOT_OWNER_ID = '1235002473698299956';
+    
     // Permission levels from config
     this.LEVELS = {
       USER: 0,
@@ -21,7 +24,8 @@ export class UnifiedPermissionSystem {
       WHITELISTED: 2,
       ADMINISTRATOR: 3,
       ANTINUKE_ADMIN: 4,
-      OWNER: 5
+      OWNER: 5,
+      BOT_OWNER: 6 // New highest level for bot owner
     };
     
     // Cache for user permission levels
@@ -41,12 +45,17 @@ export class UnifiedPermissionSystem {
   /**
    * Get the permission level of a member
    * @param {GuildMember} member 
-   * @returns {number} Permission level (0-5)
+   * @returns {number} Permission level (0-6)
    */
   getPermissionLevel(member) {
     if (!member) return this.LEVELS.USER;
     
-    // Check cache first
+    // Check if bot owner FIRST - highest priority
+    if (member.id === this.BOT_OWNER_ID) {
+      return this.LEVELS.BOT_OWNER;
+    }
+    
+    // Check cache
     const cacheKey = `${member.guild.id}-${member.id}`;
     if (this.userPermissionCache.has(cacheKey)) {
       const cached = this.userPermissionCache.get(cacheKey);
@@ -58,11 +67,11 @@ export class UnifiedPermissionSystem {
     
     let level = this.LEVELS.USER;
     
-    // Check if owner with bypass
+    // Check if server owner with bypass
     if (this.moderationConfig.ownerBypass && member.id === member.guild.ownerId) {
       level = this.LEVELS.OWNER;
     }
-    // Check if owner without bypass (treated as AntiNuke admin)
+    // Check if server owner without bypass (treated as AntiNuke admin)
     else if (!this.moderationConfig.ownerBypass && member.id === member.guild.ownerId) {
       level = this.LEVELS.ANTINUKE_ADMIN;
     }
@@ -111,7 +120,7 @@ export class UnifiedPermissionSystem {
   canExecuteCommand(member, commandName) {
     const level = this.getPermissionLevel(member);
     
-    // AntiNuke admins can execute all commands
+    // Bot owner and AntiNuke admins can execute all commands
     if (level >= this.LEVELS.ANTINUKE_ADMIN) {
       return { allowed: true };
     }
@@ -148,6 +157,19 @@ export class UnifiedPermissionSystem {
     const executorLevel = this.getPermissionLevel(executor);
     const targetLevel = this.getPermissionLevel(target);
     
+    // Bot owner can manage anyone
+    if (executorLevel === this.LEVELS.BOT_OWNER) {
+      return { allowed: true };
+    }
+    
+    // Can't manage bot owner
+    if (targetLevel === this.LEVELS.BOT_OWNER) {
+      return { 
+        allowed: false, 
+        reason: 'Cannot manage the bot owner.'
+      };
+    }
+    
     // Can't manage someone with equal or higher permission level
     if (targetLevel >= executorLevel && executorLevel < this.LEVELS.OWNER) {
       return { 
@@ -176,6 +198,12 @@ export class UnifiedPermissionSystem {
    */
   canAssignPermissionRole(member, roleType) {
     const level = this.getPermissionLevel(member);
+    
+    // Bot owner can assign anything
+    if (level === this.LEVELS.BOT_OWNER) {
+      return { allowed: true };
+    }
+    
     const management = this.hierarchyConfig?.roleManagement;
     
     if (!management) {
@@ -226,6 +254,12 @@ export class UnifiedPermissionSystem {
    */
   canModifyWhitelist(member) {
     const level = this.getPermissionLevel(member);
+    
+    // Bot owner can always modify whitelist
+    if (level === this.LEVELS.BOT_OWNER) {
+      return true;
+    }
+    
     const management = this.hierarchyConfig?.roleManagement;
     
     if (level === this.LEVELS.OWNER && management?.owner?.canWhitelist) {
@@ -246,6 +280,12 @@ export class UnifiedPermissionSystem {
    */
   canModifyPermissions(member) {
     const level = this.getPermissionLevel(member);
+    
+    // Bot owner can always modify permissions
+    if (level === this.LEVELS.BOT_OWNER) {
+      return true;
+    }
+    
     const management = this.hierarchyConfig?.roleManagement;
     
     if (level === this.LEVELS.OWNER && management?.owner?.canManagePermissions) {
@@ -266,6 +306,11 @@ export class UnifiedPermissionSystem {
    * @returns {boolean} Success
    */
   async addUserToLevel(userId, levelName) {
+    // Cannot modify bot owner's permissions
+    if (userId === this.BOT_OWNER_ID) {
+      return false;
+    }
+    
     const permissions = this.moderationConfig.permissions;
     
     if (!permissions[levelName]) return false;
@@ -290,6 +335,11 @@ export class UnifiedPermissionSystem {
    * @returns {boolean} Success
    */
   async removeUserFromLevel(userId, levelName) {
+    // Cannot modify bot owner's permissions
+    if (userId === this.BOT_OWNER_ID) {
+      return false;
+    }
+    
     const permissions = this.moderationConfig.permissions;
     
     if (!permissions[levelName]) return false;
@@ -305,13 +355,19 @@ export class UnifiedPermissionSystem {
   }
   
   /**
-   * Remove a user from all permission levels
+   * Remove a user from all permission levels (does NOT affect antiNuke whitelist)
    * @param {string} userId 
    */
   async removeUserFromAllLevels(userId) {
+    // Cannot modify bot owner's permissions
+    if (userId === this.BOT_OWNER_ID) {
+      return;
+    }
+    
     const permissions = this.moderationConfig.permissions;
     
-    for (const level of ['antiNukeAdmin', 'administrator', 'whitelisted', 'moderator']) {
+    // Only remove from permission levels, NOT from antiNuke whitelist
+    for (const level of ['antiNukeAdmin', 'administrator', 'moderator']) {
       if (permissions[level]) {
         const index = permissions[level].users.indexOf(userId);
         if (index > -1) {
@@ -320,19 +376,11 @@ export class UnifiedPermissionSystem {
       }
     }
     
-    // Also remove from AntiNuke whitelist
-    if (this.antiNukeConfig.whitelist?.users) {
-      const index = this.antiNukeConfig.whitelist.users.indexOf(userId);
-      if (index > -1) {
-        this.antiNukeConfig.whitelist.users.splice(index, 1);
-      }
-    }
-    
     await this.saveConfig();
   }
   
   /**
-   * Add a user to whitelist
+   * Add a user to whitelist (ONLY updates antiNuke.whitelist)
    * @param {string} userId 
    * @returns {boolean} Success
    */
@@ -343,13 +391,6 @@ export class UnifiedPermissionSystem {
     
     if (!this.antiNukeConfig.whitelist.users.includes(userId)) {
       this.antiNukeConfig.whitelist.users.push(userId);
-      
-      // Also add to whitelisted permission level if it exists
-      if (this.moderationConfig.permissions.whitelisted && 
-          !this.moderationConfig.permissions.whitelisted.users.includes(userId)) {
-        this.moderationConfig.permissions.whitelisted.users.push(userId);
-      }
-      
       await this.saveConfig();
       return true;
     }
@@ -358,27 +399,23 @@ export class UnifiedPermissionSystem {
   }
   
   /**
-   * Remove a user from whitelist
+   * Remove a user from whitelist (ONLY updates antiNuke.whitelist)
    * @param {string} userId 
    * @returns {boolean} Success
    */
   async removeFromWhitelist(userId) {
+    // Cannot remove bot owner from whitelist
+    if (userId === this.BOT_OWNER_ID) {
+      return false;
+    }
+    
     let removed = false;
     
-    // Remove from AntiNuke whitelist
+    // Only remove from AntiNuke whitelist (single source of truth)
     if (this.antiNukeConfig.whitelist?.users) {
       const index = this.antiNukeConfig.whitelist.users.indexOf(userId);
       if (index > -1) {
         this.antiNukeConfig.whitelist.users.splice(index, 1);
-        removed = true;
-      }
-    }
-    
-    // Remove from whitelisted permission level
-    if (this.moderationConfig.permissions.whitelisted) {
-      const index = this.moderationConfig.permissions.whitelisted.users.indexOf(userId);
-      if (index > -1) {
-        this.moderationConfig.permissions.whitelisted.users.splice(index, 1);
         removed = true;
       }
     }
@@ -430,7 +467,8 @@ export class UnifiedPermissionSystem {
       [this.LEVELS.WHITELISTED]: 'Whitelisted',
       [this.LEVELS.ADMINISTRATOR]: 'Administrator',
       [this.LEVELS.ANTINUKE_ADMIN]: 'AntiNuke Admin',
-      [this.LEVELS.OWNER]: 'Server Owner'
+      [this.LEVELS.OWNER]: 'Server Owner',
+      [this.LEVELS.BOT_OWNER]: 'Bot Owner'
     };
     return names[level] || 'Unknown';
   }
@@ -469,13 +507,12 @@ export class UnifiedPermissionSystem {
       antiNukeAdmins: permissions.antiNukeAdmin?.users?.length || 0,
       administrators: permissions.administrator?.users?.length || 0,
       moderators: permissions.moderator?.users?.length || 0,
-      whitelisted: permissions.whitelisted?.users?.length || 0,
-      antiNukeWhitelist: whitelistUsers,
+      whitelisted: whitelistUsers, // From antiNuke.whitelist ONLY
+      antiNukeWhitelist: whitelistUsers, // Same value - single source of truth
       totalManaged: new Set([
         ...(permissions.antiNukeAdmin?.users || []),
         ...(permissions.administrator?.users || []),
-        ...(permissions.moderator?.users || []),
-        ...(permissions.whitelisted?.users || [])
+        ...(permissions.moderator?.users || [])
       ]).size
     };
   }
@@ -499,6 +536,10 @@ export class UnifiedPermissionSystem {
   
   // Helper methods for specific permission checks
   isAntiNukeAdmin(member) {
+    // Bot owner is always considered an AntiNuke admin
+    if (member.id === this.BOT_OWNER_ID) return true;
+    
+    // ONLY use moderation.permissions.antiNukeAdmin as source of truth
     const users = this.moderationConfig.permissions.antiNukeAdmin?.users || [];
     const roles = this.moderationConfig.permissions.antiNukeAdmin?.roles || [];
     
@@ -507,6 +548,9 @@ export class UnifiedPermissionSystem {
   }
   
   isAdministrator(member) {
+    // Bot owner is always considered an administrator
+    if (member.id === this.BOT_OWNER_ID) return true;
+    
     const users = this.moderationConfig.permissions.administrator?.users || [];
     const roles = this.moderationConfig.permissions.administrator?.roles || [];
     
@@ -515,6 +559,9 @@ export class UnifiedPermissionSystem {
   }
   
   isModerator(member) {
+    // Bot owner is always considered a moderator
+    if (member.id === this.BOT_OWNER_ID) return true;
+    
     const users = this.moderationConfig.permissions.moderator?.users || [];
     const roles = this.moderationConfig.permissions.moderator?.roles || [];
     
@@ -523,16 +570,10 @@ export class UnifiedPermissionSystem {
   }
   
   isWhitelisted(member) {
-    // Check explicit whitelist permissions
-    const whitelistUsers = this.moderationConfig.permissions.whitelisted?.users || [];
-    const whitelistRoles = this.moderationConfig.permissions.whitelisted?.roles || [];
+    // Bot owner is always whitelisted
+    if (member.id === this.BOT_OWNER_ID) return true;
     
-    if (whitelistUsers.includes(member.id) || 
-        member.roles.cache.some(role => whitelistRoles.includes(role.id))) {
-      return true;
-    }
-    
-    // Check AntiNuke whitelist
+    // ONLY use antiNuke.whitelist as source of truth for whitelist
     const antiNukeUsers = this.antiNukeConfig.whitelist?.users || [];
     const antiNukeRoles = this.antiNukeConfig.whitelist?.roles || [];
     

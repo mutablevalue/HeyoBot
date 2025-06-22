@@ -25,25 +25,86 @@ rateLimit:
     antiNukeAdmin: 0
     whitelisted: 15
     moderator: 20
+    botOwner: 0
   customRoles:
     "": 0
   message: Please wait {time} till sending another command.
-  permissionRoles:
-    antiNukeAdmin: []
-    administrator: []
-    whitelisted: []
-    moderator: []
   cleanupInterval: 60000
+music:
+  enabled: true
+  djDataFile: dj_setups.json
+  defaultVolume: 80
+  voteSkipPercentage: 50
+  maxQueueLength: 1000
+  maxSongDuration: 7200
+  defaultSettings:
+    djOnly: false
+    allowAloneDJ: true
+    voteSkipEnabled: true
+afk:
+  enabled: true
+  dataFile: afk_data.json
+  embedColor: 8421504
+  removeOnMessage: true
+  mentionResponse:
+    showTimestamp: true
+    showReason: true
+linkProtection:
+  enabled: true
+  patterns:
+    - https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)
+    - discord\.gg\/[a-zA-Z0-9]+
+    - discordapp\.com\/invite\/[a-zA-Z0-9]+
+  allowed:
+    users:
+      - "123456789012345678"
+    roles:
+      - "789012345678901234"
+    useLinkPermRole: true
+  exemptChannels:
+    - "1234567890123456789"
+  logChannel: "1380422905191731210"
+  deleteMessage: true
+  warningMessage: Stop posting links.
+  ephemeralWarning: true
+vanity:
+  enabled: true
+  checkIntervalSeconds: 1800
+  vanityStrings:
+    - YourServer
+    - .gg/yourserver
+  roles:
+    - "789012345678901234"
+    - "890123456789012345"
+    - "1380398417079046205"
+  logChannel: "1380422905191731210"
+  enableLogging: false
+  caseSensitive: false
+  checkUsername: true
+  checkNickname: true
+  checkBio: true
+  checkStatus: true
+  exemptRoles:
+    - "901234567890123456"
+  removeOnVanityLoss: true
 moderation:
   ownerBypass: true
   permissions:
+    antiNukeAdmin:
+      users:
+        - "1235002473698299956"
+        - "987654321098765432"
+        - "234567890123456789"
+        - "1135418923572023317"
+        - "766136631370711042"
+      roles: []
+      commands:
+        - all
     administrator:
       users:
         - "1162730217895379025"
         - "825436754680348683"
-      roles:
-        - ""
-        - ""
+      roles: []
       commands:
         - ban
         - unban
@@ -71,10 +132,8 @@ moderation:
         - djadd
         - djremove
     moderator:
-      users:
-        - ""
-      roles:
-        - ""
+      users: []
+      roles: []
       commands:
         - lockchannel
         - unlockchannel
@@ -85,19 +144,6 @@ moderation:
         - emoji
         - verifylist
         - verifystatus
-    antiNukeAdmin:
-      users:
-        - "987654321098765432"
-        - "234567890123456789"
-        - "1135418923572023317"
-        - "1235002473698299956"
-      roles: []
-      commands:
-        - all
-    whitelisted:
-      users: []
-      roles: []
-      commands: []
   permRoles:
     vc: "1386379326856888513"
     pic: "1386379327934824488"
@@ -165,70 +211,10 @@ moderation:
       requiresPermissionLevel: 3
       maxUsers: 20
       cooldownMultiplier: 1.5
-music:
-  enabled: true
-  djDataFile: dj_setups.json
-  defaultVolume: 80
-  voteSkipPercentage: 50
-  maxQueueLength: 1000
-  maxSongDuration: 7200
-  defaultSettings:
-    djOnly: false
-    allowAloneDJ: true
-    voteSkipEnabled: true
-afk:
-  enabled: true
-  dataFile: afk_data.json
-  embedColor: 8421504
-  removeOnMessage: true
-  mentionResponse:
-    showTimestamp: true
-    showReason: true
-linkProtection:
-  enabled: true
-  patterns:
-    - https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)
-    - discord\.gg\/[a-zA-Z0-9]+
-    - discordapp\.com\/invite\/[a-zA-Z0-9]+
-  allowed:
-    users:
-      - "123456789012345678"
-    roles:
-      - "789012345678901234"
-    useLinkPermRole: true
-  exemptChannels:
-    - "1234567890123456789"
-  logChannel: "1380422905191731210"
-  deleteMessage: true
-  warningMessage: Stop posting links.
-  ephemeralWarning: true
-vanity:
-  enabled: true
-  checkIntervalSeconds: 1800
-  vanityStrings:
-    - YourServer
-    - .gg/yourserver
-  roles:
-    - "789012345678901234"
-    - "890123456789012345"
-    - "1380398417079046205"
-  logChannel: "1380422905191731210"
-  enableLogging: false
-  caseSensitive: false
-  checkUsername: true
-  checkNickname: true
-  checkBio: true
-  checkStatus: true
-  exemptRoles:
-    - "901234567890123456"
-  removeOnVanityLoss: true
 antiNuke:
   whitelist:
     users: []
     roles: []
-  adminUsers:
-    - "1235002473698299956"
-  adminRoles: []
   limits:
     commands:
       maxActions: 5
@@ -363,6 +349,48 @@ antiNuke:
     inviterTimeout: 600000
     logBotEvents: true
     whitelistedBots: []
+permissionHierarchy:
+  levels:
+    user: 0
+    moderator: 1
+    whitelisted: 2
+    administrator: 3
+    antiNukeAdmin: 4
+    owner: 5
+    botOwner: 6
+  inheritance: true
+  roleManagement:
+    moderator:
+      canAssign: []
+      canRemove: []
+    administrator:
+      canAssign:
+        - moderator
+      canRemove:
+        - moderator
+    antiNukeAdmin:
+      canAssign:
+        - moderator
+        - administrator
+      canRemove:
+        - moderator
+        - administrator
+      canWhitelist: true
+      canManagePermissions: true
+    owner:
+      canAssign:
+        - all
+      canRemove:
+        - all
+      canWhitelist: true
+      canManagePermissions: true
+    botOwner:
+      canAssign:
+        - all
+      canRemove:
+        - all
+      canWhitelist: true
+      canManagePermissions: true
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
@@ -560,45 +588,6 @@ filter:
   logChannel: null
   enableLogging: true
   trackStats: true
-permissionHierarchy:
-  levels:
-    user: 0
-    moderator: 1
-    whitelisted: 2
-    administrator: 3
-    antiNukeAdmin: 4
-    owner: 5
-  inheritance: true
-  roleManagement:
-    moderator:
-      canAssign: []
-      canRemove: []
-    whitelisted:
-      canAssign: []
-      canRemove: []
-    administrator:
-      canAssign:
-        - moderator
-      canRemove:
-        - moderator
-    antiNukeAdmin:
-      canAssign:
-        - moderator
-        - whitelisted
-        - administrator
-      canRemove:
-        - moderator
-        - whitelisted
-        - administrator
-      canWhitelist: true
-      canManagePermissions: true
-    owner:
-      canAssign:
-        - all
-      canRemove:
-        - all
-      canWhitelist: true
-      canManagePermissions: true
 embed:
   color: 8388608
   formatters:

@@ -1,4 +1,4 @@
-// src/systems/antiNuke.js - Simplified with webhook/bot protection
+// src/systems/antiNuke.js - Updated to use single source of truth
 import { Events, PermissionFlagsBits, AuditLogEvent } from 'discord.js';
 import fs from 'fs/promises';
 import path from 'path';
@@ -74,35 +74,36 @@ export default class AntiNuke {
    * Check if a user is whitelisted (uses unified permission system)
    */
   isWhitelisted(userId) {
-    if (!this.permissionSystem) return false;
-    
-    // Create a mock member object for permission checking
-    const mockMember = {
-      id: userId,
-      guild: { id: 'check' }
-    };
-    
-    // Use permission system's WHITELISTED level constant
-    return this.permissionSystem.getPermissionLevel(mockMember) >= this.permissionSystem.LEVELS.WHITELISTED;
+    // Use AntiNuke whitelist as single source of truth
+    const whitelist = this.config.whitelist || { users: [], roles: [] };
+    return whitelist.users.includes(userId);
   }
   
   /**
    * Check if a member is whitelisted
    */
   isMemberWhitelisted(member) {
-    if (!this.permissionSystem) return false;
-    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.WHITELISTED;
+    if (!member) return false;
+    
+    // Check user whitelist
+    if (this.isWhitelisted(member.id)) return true;
+    
+    // Check role whitelist
+    const whitelist = this.config.whitelist || { users: [], roles: [] };
+    return member.roles.cache.some(role => whitelist.roles.includes(role.id));
   }
   
   /**
-   * Check if a user is an AntiNuke admin
+   * Check if a user is an AntiNuke admin (uses permission system)
    */
   isAntiNukeAdmin(userId) {
     if (!this.permissionSystem) return false;
     
+    // Create a mock member object for permission checking
     const mockMember = {
       id: userId,
-      guild: { id: 'check' }
+      guild: { id: 'check' },
+      roles: { cache: new Map() }
     };
     
     // Use permission system's ANTINUKE_ADMIN level constant
@@ -434,7 +435,7 @@ export default class AntiNuke {
     };
     
     console.log(`[AntiNuke] RAID MODE ACTIVATED: ${reason}`);
-    this.logSecurity(guild, '🚨 RAID MODE ACTIVATED', reason);
+    this.logSecurity(guild, 'RAID MODE ACTIVATED', reason);
     
     try {
       // Apply raid mode restrictions
@@ -486,7 +487,7 @@ export default class AntiNuke {
     };
     
     console.log('[AntiNuke] Raid mode deactivated');
-    this.logSecurity(guild, '✅ Raid Mode Deactivated', 'Threat level normalized');
+    this.logSecurity(guild, 'Raid Mode Deactivated', 'Threat level normalized');
     
     try {
       // Restore normal verification level

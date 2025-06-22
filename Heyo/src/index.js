@@ -278,16 +278,7 @@ inviteLinksCommand.setPermissionSystem(permissionSystem);
     .readdirSync(commandsDir)
     .filter((file) => file.endsWith(".js"));
 
-  // Exclude deprecated commands
-  const excludedFiles = ['root.js']; // Root.js functionality moved to permissions.js
-
   for (const file of commandFiles) {
-    // Skip excluded files
-    if (excludedFiles.includes(file)) {
-      console.log(`Skipping ${file} (deprecated - functionality moved to permissions.js)`);
-      continue;
-    }
-
     const filePath      = resolve(commandsDir, file);
     const moduleUrl     = pathToFileURL(filePath).href;
     const commandModule = await import(moduleUrl);
