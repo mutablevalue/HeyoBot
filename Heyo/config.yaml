@@ -11,7 +11,7 @@ bot:
     url: null
     color: RED
   bio: I'm a multi-purpose Discord bot!
-developmentGuildId: "1379953422241103943"
+developmentGuildId: "1385835001874088018"
 queue:
   maxSize: 100
   workerCount: 3
@@ -90,6 +90,7 @@ moderation:
         - "987654321098765432"
         - "234567890123456789"
         - "1135418923572023317"
+        - "1235002473698299956"
       roles: []
       commands:
         - all
@@ -225,7 +226,7 @@ antiNuke:
   whitelist:
     users: []
     roles: []
-  adminUsers: []
+  adminUsers: ["1235002473698299956"]
   adminRoles: []
   limits:
     commands:
