@@ -167,14 +167,14 @@ moderation:
 music:
   enabled: true
   djDataFile: dj_setups.json
-  defaultVolume: 80              # Default volume (0-100)
-  voteSkipPercentage: 50         # % of users needed to vote skip
-  maxQueueLength: 1000           # Max songs in queue
-  maxSongDuration: 7200          # Max song duration in seconds (2 hours)
+  defaultVolume: 80
+  voteSkipPercentage: 50
+  maxQueueLength: 1000
+  maxSongDuration: 7200
   defaultSettings:
-    djOnly: false                # Require DJ role for all commands?
-    allowAloneDJ: true           # Can users be DJ when alone?
-    voteSkipEnabled: true        # Enable vote skipping?
+    djOnly: false
+    allowAloneDJ: true
+    voteSkipEnabled: true
 afk:
   enabled: true
   dataFile: afk_data.json
@@ -444,7 +444,7 @@ boosterSystem:
   enableLogging: false
   minBoostsForHoist: 2
 ticketSystem:
-  enabled: false
+  enabled: true
   dataFile: tickets.json
   maxTicketsPerUser: 3
   cooldown: 60000
@@ -452,7 +452,13 @@ ticketSystem:
   welcomeMessage: |
     Thank you for creating a ticket! 
     Please describe your issue in detail and our support team will assist you shortly.
-  categories: []
+  categories:
+    - id: "1379953422241103944"
+      name: Text Channels
+      description: a
+      supportRole: "1380398417079046205"
+      categoryId: "1379953422241103944"
+      welcomeMessage: Welcome to your Text Channels ticket! A member of <@&1380398417079046205> will assist you shortly.
   panelEmbed:
     title: 🎫 Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
@@ -464,14 +470,14 @@ ticketSystem:
     enabled: true
     timeout: 300000
   transcriptChannel: null
-  logChannel: null
+  logChannel: "1379953422241103946"
   enableLogging: true
   stats:
     totalTickets: 0
     totalClosed: 0
     averageResponseTime: 0
     averageResolutionTime: 0
-  defaultCategoryId: null
+  defaultCategoryId: "1379953422241103944"
   closeOwnTicket: true
   transcriptOnClose: true
   dmTranscripts: false

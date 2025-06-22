@@ -36,33 +36,6 @@ export const igData = new SlashCommandBuilder()
       .setRequired(true)
   );
 
-// Combined social lookup command
-export const socialData = new SlashCommandBuilder()
-  .setName('social')
-  .setDescription('Look up social media profiles')
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('tiktok')
-      .setDescription('Look up a TikTok user')
-      .addStringOption(option =>
-        option
-          .setName('username')
-          .setDescription('TikTok username')
-          .setRequired(true)
-      )
-  )
-  .addSubcommand(subcommand =>
-    subcommand
-      .setName('instagram')
-      .setDescription('Look up an Instagram user')
-      .addStringOption(option =>
-        option
-          .setName('username')
-          .setDescription('Instagram username')
-          .setRequired(true)
-      )
-  );
-
 // Execute functions
 export async function executeTT(interaction) {
   if (!socialLookupSystem) {
@@ -166,28 +139,8 @@ export async function executeIG(interaction) {
   }
 }
 
-export async function executeSocial(interaction) {
-  if (!socialLookupSystem) {
-    const message = embedLoader ? embedLoader.error('Social lookup system not loaded.') : null;
-    return interaction.reply({ 
-      embeds: message ? [message] : undefined,
-      content: message ? undefined : 'Social lookup system not loaded.',
-      ephemeral: true 
-    });
-  }
-  
-  const subcommand = interaction.options.getSubcommand();
-  
-  if (subcommand === 'tiktok') {
-    return executeTT(interaction);
-  } else if (subcommand === 'instagram') {
-    return executeIG(interaction);
-  }
-}
-
 // Export commands
 export const commands = [
   { data: ttData, execute: executeTT },
-  { data: igData, execute: executeIG },
-  { data: socialData, execute: executeSocial }
+  { data: igData, execute: executeIG }
 ];
