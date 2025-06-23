@@ -11,7 +11,8 @@ bot:
     url: null
     color: RED
   bio: I'm a multi-purpose Discord bot!
-developmentGuildId: "1375334842434060318"
+developmentGuildId: "1379953422241103943"
+environment: production # or development  
 queue:
   maxSize: 100
   workerCount: 3
@@ -173,9 +174,9 @@ moderation:
         - verifylist
         - verifystatus
   permRoles:
-    vc: "1386379326856888513"
-    pic: "1386379327934824488"
-    link: "1386379328560038041"
+    vc: "1386756009435074590"
+    pic: "1386756010282188922"
+    link: "1386756011318317121"
   logChannel: "1376674252173873183"
   cooldowns:
     default: 3

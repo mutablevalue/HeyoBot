@@ -404,16 +404,26 @@ linkProtection.setPermissionSystem(permissionSystem);
       registry.addCommand(cmd);
     }
 
+    // Environment-based command registration
+    const environment = config.get("environment") || "development";
     const guildId = config.get("developmentGuildId");
-    const guild   = client.guilds.cache.get(guildId);
+    const guild = client.guilds.cache.get(guildId);
 
     try {
-      if (guild) {
-        await registry.registerCommands(client.user.id, guildId);
-        console.log(`Registered ${client.commands.size} commands to guild ${guild.name}.`);
-      } else {
+      if (environment === "development") {
+        if (guild) {
+          await registry.registerCommands(client.user.id, guildId);
+          console.log(`\n🚧 DEVELOPMENT MODE: Registered ${client.commands.size} commands to guild ${guild.name}.`);
+        } else {
+          console.error(`\n❌ Development guild ${guildId} not found. Skipping command registration.`);
+          console.error(`Please ensure the bot is in the guild and the developmentGuildId is correct.`);
+        }
+      } else if (environment === "production") {
         await registry.registerCommands(client.user.id);
-        console.log(`Registered ${client.commands.size} commands globally.`);
+        console.log(`\n🌐 PRODUCTION MODE: Registered ${client.commands.size} commands globally.`);
+        console.log(`Note: Global commands may take up to 1 hour to propagate.`);
+      } else {
+        console.error(`\n❌ Unknown environment: ${environment}. Use 'development' or 'production'.`);
       }
     } catch (err) {
       console.error("Error registering slash commands:", err);
@@ -421,6 +431,7 @@ linkProtection.setPermissionSystem(permissionSystem);
 
     // Log system status
     console.log('\n=== System Status ===');
+    console.log(`ENVIRONMENT: ${environment.toUpperCase()}`);
     console.log('PERMISSION HIERARCHY:');
     console.log('  Level 5: Server Owner (if bypass enabled)');
     console.log('  Level 4: AntiNuke Admin (highest normal level)');

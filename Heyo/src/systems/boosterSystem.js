@@ -266,6 +266,39 @@ export class BoosterSystem {
   }
 
   /**
+   * Find or create rich category
+   * @param {import("discord.js").Guild} guild 
+   * @returns {Promise<string|null>}
+   */
+  async findOrCreateRichCategory(guild) {
+    try {
+      // Search for category named "rich" (case-insensitive)
+      const richCategory = guild.channels.cache.find(
+        channel => channel.type === ChannelType.GuildCategory && 
+                   channel.name.toLowerCase() === 'rich'
+      );
+
+      if (richCategory) {
+        console.log(`[BoosterSystem] Found existing "rich" category: ${richCategory.id}`);
+        return richCategory.id;
+      }
+
+      // If no "rich" category exists, create one
+      console.log('[BoosterSystem] Creating new "rich" category');
+      const newCategory = await guild.channels.create({
+        name: 'rich',
+        type: ChannelType.GuildCategory,
+        reason: 'Booster channels category'
+      });
+
+      return newCategory.id;
+    } catch (error) {
+      console.error('[BoosterSystem] Error finding/creating rich category:', error);
+      return null;
+    }
+  }
+
+  /**
    * Create booster voice channel
    * @param {import("discord.js").Guild} guild 
    * @param {import("discord.js").GuildMember} member 
@@ -289,6 +322,9 @@ export class BoosterSystem {
         .replace('{username}', member.user.username)
         .replace('{tag}', member.user.tag)
         .replace('{id}', member.user.id);
+
+      // Find or create the "rich" category
+      const richCategoryId = await this.findOrCreateRichCategory(guild);
 
       // Create access role for the channel
       const accessRole = await guild.roles.create({
@@ -330,8 +366,10 @@ export class BoosterSystem {
         ]
       };
 
-      // Set category if configured
-      if (this.config.vcCategory) {
+      // Set category - prioritize "rich" category, fallback to config category
+      if (richCategoryId) {
+        channelOptions.parent = richCategoryId;
+      } else if (this.config.vcCategory) {
         channelOptions.parent = this.config.vcCategory;
       }
 
@@ -349,7 +387,8 @@ export class BoosterSystem {
           action: 'Booster VC Created',
           user: member.user,
           channel: channel,
-          accessRole: accessRole
+          accessRole: accessRole,
+          category: richCategoryId ? 'rich' : 'default'
         });
       }
 
@@ -743,6 +782,14 @@ export class BoosterSystem {
       fields.push({
         name: 'Changes',
         value: data.changes,
+        inline: true
+      });
+    }
+
+    if (data.category) {
+      fields.push({
+        name: 'Category',
+        value: data.category,
         inline: true
       });
     }
