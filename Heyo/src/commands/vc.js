@@ -1,5 +1,5 @@
 // commands/vc.js
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 let j2cManagerInstance = null;
 let embedLoader = null;
@@ -70,6 +70,11 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand(subcommand =>
     subcommand
+      .setName('take')
+      .setDescription('Take ownership of a voice channel (if owner is not present)')
+  )
+  .addSubcommand(subcommand =>
+    subcommand
       .setName('help')
       .setDescription('Show all voice channel commands')
   );
@@ -77,7 +82,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   if (!interaction.guild) {
     await interaction.reply({ 
-      content: embedLoader.format('This command can only be used in a server.'), 
+      content: embedLoader.format('This command can only be used in a server.', 'message'), 
       ephemeral: true 
     });
     return;
@@ -91,13 +96,15 @@ export async function execute(interaction) {
       title: 'Voice Channel Commands',
       description: 
         'Commands for managing your created voice channel\n\n' +
-        '/vc lock - Lock your voice channel (prevent new users from joining)\n' +
-        '/vc unlock - Unlock your voice channel\n' +
-        '/vc reject <user> - Remove a user and prevent them from seeing your channel\n' +
-        '/vc allow <user> - Allow a rejected user back into your channel\n' +
-        '/vc limit <number> - Set user limit for your channel (0 for unlimited)\n' +
-        '/vc rename <name> - Rename your voice channel\n\n' +
-        'You must be in your created voice channel to use these commands',
+        '**__Commands:__**\n' +
+        '`/vc lock` - Lock your voice channel (prevent new users from joining)\n' +
+        '`/vc unlock` - Unlock your voice channel\n' +
+        '`/vc reject <user>` - Remove a user and prevent them from seeing your channel\n' +
+        '`/vc allow <user>` - Allow a rejected user back into your channel\n' +
+        '`/vc limit <number>` - Set user limit for your channel (0 for unlimited)\n' +
+        '`/vc rename <name>` - Rename your voice channel\n' +
+        '`/vc take` - Take ownership of the channel if the owner is not present\n\n' +
+        '**Note:** You must be in a voice channel to use these commands',
       formatDescription: false
     });
     
@@ -108,17 +115,25 @@ export async function execute(interaction) {
   // Check if user is in a voice channel
   const voiceChannel = interaction.member.voice.channel;
   if (!voiceChannel) {
-    const embed = embedLoader.createEmbed({
-      description: embedLoader.format('You must be in a voice channel to use this command')
-    });
+    const embed = embedLoader.error('You must be in a voice channel to use this command');
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
-  // Check if user owns the channel
+  // For take command, check if it's a created channel
+  if (subcommand === 'take') {
+    const result = await j2cManagerInstance.takeOwnership(voiceChannel, interaction.user.id);
+    
+    const embed = result.success ? 
+      embedLoader.success(result.message || 'You now own this voice channel') :
+      embedLoader.error(result.message);
+    
+    await interaction.reply({ embeds: [embed] });
+    return;
+  }
+  
+  // For other commands, check if user owns the channel
   if (!j2cManagerInstance.isUserOwner(interaction.user.id, voiceChannel.id)) {
-    const embed = embedLoader.createEmbed({
-      description: embedLoader.format('You do not own this voice channel')
-    });
+    const embed = embedLoader.error('You do not own this voice channel');
     return interaction.reply({ embeds: [embed], ephemeral: true });
   }
   
@@ -127,11 +142,9 @@ export async function execute(interaction) {
     case 'lock': {
       const result = await j2cManagerInstance.lockChannel(voiceChannel, interaction.user.id);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          'Your voice channel has been locked. No new users can join.' : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success('Your voice channel has been locked. No new users can join.') :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -140,11 +153,9 @@ export async function execute(interaction) {
     case 'unlock': {
       const result = await j2cManagerInstance.unlockChannel(voiceChannel, interaction.user.id);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          'Your voice channel has been unlocked. New users can join.' : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success('Your voice channel has been unlocked. New users can join.') :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -154,11 +165,9 @@ export async function execute(interaction) {
       const targetUser = interaction.options.getUser('user');
       const result = await j2cManagerInstance.rejectUser(voiceChannel, interaction.user.id, targetUser.id);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          `${targetUser.username} has been rejected from your voice channel` : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success(`${targetUser.username} has been rejected from your voice channel`) :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -168,11 +177,9 @@ export async function execute(interaction) {
       const targetUser = interaction.options.getUser('user');
       const result = await j2cManagerInstance.allowUser(voiceChannel, interaction.user.id, targetUser.id);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          `${targetUser.username} can now join your voice channel again` : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success(`${targetUser.username} can now join your voice channel again`) :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -182,11 +189,9 @@ export async function execute(interaction) {
       const limit = interaction.options.getInteger('limit');
       const result = await j2cManagerInstance.setUserLimit(voiceChannel, interaction.user.id, limit);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          `User limit set to ${limit === 0 ? 'unlimited' : limit}` : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success(`User limit set to ${limit === 0 ? 'unlimited' : limit}`) :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;
@@ -196,11 +201,9 @@ export async function execute(interaction) {
       const newName = interaction.options.getString('name');
       const result = await j2cManagerInstance.renameChannel(voiceChannel, interaction.user.id, newName);
       
-      const embed = embedLoader.createEmbed({
-        description: embedLoader.format(result.success ? 
-          `Channel renamed to: ${newName}` : 
-          result.message)
-      });
+      const embed = result.success ? 
+        embedLoader.success(`Channel renamed to: ${newName}`) :
+        embedLoader.error(result.message);
       
       await interaction.reply({ embeds: [embed] });
       break;

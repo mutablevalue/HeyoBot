@@ -873,15 +873,24 @@ export default class AntiNuke {
     // Handle violation
     if (violated) {
       try {
-        if (config[violationType]?.action === 'delete') {
-          await message.delete();
-        }
+        // Check the specific action for this violation type
+        const action = config[violationType]?.action;
         
-        if (message.member.moderatable) {
+        // FIXED: Only perform the action specified in config
+        if (action === 'delete') {
+          await message.delete();
+        } else if (action === 'timeout' && message.member.moderatable) {
+          await message.delete(); // Delete message when timing out
           await message.member.timeout(
             config.timeoutDuration || 300000,
             `AntiNuke: ${violationType} violation`
           );
+        } else if (action === 'warn') {
+          // Just warn, don't delete or timeout
+          await message.reply({
+            content: `Warning: Your message violates our ${violationType} policy.`,
+            allowedMentions: { repliedUser: true }
+          });
         }
         
         this.logAbuse(message.guild, violationType, message.author);

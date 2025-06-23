@@ -10,6 +10,9 @@ export class LinkProtection {
     // Reference to embed loader (will be set by index.js)
     this.embedLoader = null;
     
+    // Reference to unified permission system
+    this.permissionSystem = null;
+    
     const linkConfig = this.configLoader.get('linkProtection') || {};
     this.config = {
       enabled: linkConfig.enabled ?? true,
@@ -27,7 +30,27 @@ export class LinkProtection {
       logChannel: linkConfig.logChannel || null,
       deleteMessage: linkConfig.deleteMessage ?? true,
       warningMessage: linkConfig.warningMessage || 'You do not have permission to send links in this channel.',
-      ephemeralWarning: linkConfig.ephemeralWarning ?? true
+      ephemeralWarning: linkConfig.ephemeralWarning ?? true,
+      // GIF service settings
+      allowGifServices: linkConfig.allowGifServices ?? true,
+      gifServices: linkConfig.gifServices || [
+        'tenor.com',
+        'giphy.com',
+        'gfycat.com',
+        'imgur.com',
+        'media.giphy.com',
+        'media.tenor.com',
+        'media0.giphy.com',
+        'media1.giphy.com', 
+        'media2.giphy.com',
+        'media3.giphy.com',
+        'media4.giphy.com',
+        'c.tenor.com',
+        'thumbs.gfycat.com',
+        'giant.gfycat.com',
+        'i.giphy.com',
+        'i.imgur.com'
+      ]
     };
 
     if (this.config.enabled) {
@@ -50,55 +73,105 @@ export class LinkProtection {
   }
 
   /**
-   * Check if a message contains links
+   * Set unified permission system reference
    */
-  containsLinks(content) {
-    return this.config.patterns.some(pattern => {
-      if (typeof pattern === 'string') {
-        return new RegExp(pattern, 'gi').test(content);
-      }
-      return pattern.test(content);
-    });
+  setPermissionSystem(permissionSystem) {
+    this.permissionSystem = permissionSystem;
   }
 
   /**
-   * Check if a member can send links using centralized permissions
+   * Check if a URL is from an allowed GIF service
+   * IMPROVED: Better URL parsing and domain checking
    */
-  canSendLinks(member, channel) {
-    // Use centralized permission check if available
-    if (this.moderationSystem) {
-      const permCheck = this.moderationSystem.checkGlobalPermission(member, 'send_links', {
-        customCheck: (mem) => {
-          // Check exempt channels
-          if (this.config.exemptChannels.includes(channel.id)) return true;
-          
-          // Check allowed users
-          if (this.config.allowed.users.includes(mem.id)) return true;
-          
-          // Check allowed roles
-          if (mem.roles.cache.some(role => this.config.allowed.roles.includes(role.id))) return true;
-          
-          // Check link permission role from moderation config
-          if (this.config.allowed.useLinkPermRole) {
-            const modConfig = this.configLoader.get('moderation');
-            const linkPermRoleId = modConfig?.permRoles?.link;
-            if (linkPermRoleId && mem.roles.cache.has(linkPermRoleId)) {
-              return true;
-            }
-          }
-          
-          return false;
-        },
-        customReason: 'Link permission'
-      });
+  isGifServiceUrl(url) {
+    if (!this.config.allowGifServices) return false;
+    
+    try {
+      // Parse the URL to extract the hostname
+      const urlObj = new URL(url.toLowerCase());
+      const hostname = urlObj.hostname;
       
-      return permCheck.allowed;
+      // Check if the hostname matches any of our allowed GIF services
+      return this.config.gifServices.some(service => {
+        const serviceLower = service.toLowerCase();
+        // Check exact match or subdomain match
+        return hostname === serviceLower || 
+               hostname.endsWith('.' + serviceLower) ||
+               (serviceLower.includes('.') && hostname === serviceLower);
+      });
+    } catch (e) {
+      // If URL parsing fails, fall back to simple string checking
+      const urlLower = url.toLowerCase();
+      return this.config.gifServices.some(service => {
+        // Ensure we're checking the domain part of the URL
+        return urlLower.includes('//' + service.toLowerCase() + '/') ||
+               urlLower.includes('//' + service.toLowerCase());
+      });
+    }
+  }
+
+  /**
+   * Extract URLs from content
+   */
+  extractUrls(content) {
+    const urls = [];
+    this.config.patterns.forEach(pattern => {
+      const regex = typeof pattern === 'string' ? new RegExp(pattern, 'gi') : pattern;
+      const matches = content.matchAll(regex);
+      for (const match of matches) {
+        urls.push(match[0]);
+      }
+    });
+    return urls;
+  }
+
+  /**
+   * Check if a message contains non-GIF links
+   */
+  containsNonGifLinks(content) {
+    const urls = this.extractUrls(content);
+    
+    // If no URLs found, return false
+    if (urls.length === 0) return false;
+    
+    // If GIF services are allowed, check if all URLs are from GIF services
+    if (this.config.allowGifServices) {
+      const nonGifUrls = urls.filter(url => !this.isGifServiceUrl(url));
+      return nonGifUrls.length > 0;
     }
     
-    // Fallback if moderation system not available
+    // If GIF services are not allowed, any URL is considered a violation
+    return urls.length > 0;
+  }
+
+  /**
+   * Check if a member can send links
+   */
+  canSendLinks(member, channel) {
+    // Check if user has elevated permissions (moderator or higher)
+    if (this.permissionSystem) {
+      const permLevel = this.permissionSystem.getPermissionLevel(member);
+      // Moderator level (1) or higher can always send links
+      if (permLevel >= 1) return true;
+    }
+    
+    // Check exempt channels
     if (this.config.exemptChannels.includes(channel.id)) return true;
+    
+    // Check allowed users
     if (this.config.allowed.users.includes(member.id)) return true;
+    
+    // Check allowed roles
     if (member.roles.cache.some(role => this.config.allowed.roles.includes(role.id))) return true;
+    
+    // Check link permission role from moderation config
+    if (this.config.allowed.useLinkPermRole) {
+      const modConfig = this.configLoader.get('moderation');
+      const linkPermRoleId = modConfig?.permRoles?.link;
+      if (linkPermRoleId && member.roles.cache.has(linkPermRoleId)) {
+        return true;
+      }
+    }
     
     return false;
   }
@@ -106,27 +179,41 @@ export class LinkProtection {
   /**
    * Log link deletion
    */
-  async logDeletion(message) {
+  async logDeletion(message, blockedUrls) {
     if (!this.config.logChannel) return;
 
     const logChannel = message.guild.channels.cache.get(this.config.logChannel);
     if (!logChannel?.isTextBased()) return;
 
+    // Show which URLs were blocked and which were allowed
+    const allUrls = this.extractUrls(message.content);
+    const allowedGifUrls = allUrls.filter(url => this.isGifServiceUrl(url));
+
     const fields = [
       { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
       { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-      { name: 'Content', value: message.content.substring(0, 1024) || 'No content', inline: false }
+      { name: 'Blocked URLs', value: blockedUrls.join('\n').substring(0, 1024) || 'No URLs detected', inline: false },
     ];
+
+    if (allowedGifUrls.length > 0) {
+      fields.push({ 
+        name: 'Allowed GIF URLs', 
+        value: allowedGifUrls.join('\n').substring(0, 1024), 
+        inline: false 
+      });
+    }
+
+    fields.push({ name: 'Content', value: message.content.substring(0, 1024) || 'No content', inline: false });
 
     const embed = this.embedLoader ? 
       this.embedLoader.createEmbed({
         title: 'Link Protection',
-        description: 'Link deleted',
+        description: 'Non-allowed links deleted',
         fields: fields
       }) :
       {
         title: 'Link Protection',
-        description: 'Link deleted',
+        description: 'Non-allowed links deleted',
         color: 0x800000,
         fields: fields
       };
@@ -145,14 +232,34 @@ export class LinkProtection {
     this.client.on('messageCreate', async (message) => {
       if (message.author.bot || !message.guild) return;
 
-      if (!this.containsLinks(message.content)) return;
+      const urls = this.extractUrls(message.content);
+      if (urls.length === 0) return;
+
+      // Debug logging for GIF detection
+      if (this.config.allowGifServices) {
+        console.log('[LinkProtection] URLs found:', urls);
+        urls.forEach(url => {
+          console.log(`[LinkProtection] URL: ${url} - Is GIF service: ${this.isGifServiceUrl(url)}`);
+        });
+      }
+
+      // Filter out allowed GIF service URLs
+      const blockedUrls = this.config.allowGifServices 
+        ? urls.filter(url => !this.isGifServiceUrl(url))
+        : urls;
+
+      if (blockedUrls.length === 0) {
+        console.log('[LinkProtection] All URLs are from allowed GIF services, allowing message');
+        return; // All URLs are from allowed GIF services
+      }
 
       if (this.canSendLinks(message.member, message.channel)) return;
 
+      // Only delete and warn, NO TIMEOUT
       if (this.config.deleteMessage) {
         try {
           await message.delete();
-          await this.logDeletion(message);
+          await this.logDeletion(message, blockedUrls);
         } catch (error) {
           console.error('[LinkProtection] Failed to delete message:', error);
         }
@@ -175,15 +282,28 @@ export class LinkProtection {
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
       if (!newMessage.guild || newMessage.author.bot) return;
       
-      if (!this.containsLinks(oldMessage.content) && this.containsLinks(newMessage.content)) {
-        if (!this.canSendLinks(newMessage.member, newMessage.channel)) {
-          if (this.config.deleteMessage) {
-            try {
-              await newMessage.delete();
-              await this.logDeletion(newMessage);
-            } catch (error) {
-              console.error('[LinkProtection] Failed to delete edited message:', error);
-            }
+      const oldUrls = this.extractUrls(oldMessage.content || '');
+      const newUrls = this.extractUrls(newMessage.content);
+      
+      // Check if new links were added
+      const addedUrls = newUrls.filter(url => !oldUrls.includes(url));
+      
+      if (addedUrls.length === 0) return;
+      
+      // Filter out allowed GIF service URLs
+      const blockedUrls = this.config.allowGifServices 
+        ? addedUrls.filter(url => !this.isGifServiceUrl(url))
+        : addedUrls;
+      
+      if (blockedUrls.length === 0) return; // All new URLs are from allowed GIF services
+      
+      if (!this.canSendLinks(newMessage.member, newMessage.channel)) {
+        if (this.config.deleteMessage) {
+          try {
+            await newMessage.delete();
+            await this.logDeletion(newMessage, blockedUrls);
+          } catch (error) {
+            console.error('[LinkProtection] Failed to delete edited message:', error);
           }
         }
       }
@@ -234,6 +354,31 @@ export class LinkProtection {
     const index = this.config.allowed.roles.indexOf(roleId);
     if (index > -1) {
       this.config.allowed.roles.splice(index, 1);
+      await this.saveConfig();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Add a GIF service domain
+   */
+  async addGifService(domain) {
+    if (!this.config.gifServices.includes(domain.toLowerCase())) {
+      this.config.gifServices.push(domain.toLowerCase());
+      await this.saveConfig();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Remove a GIF service domain
+   */
+  async removeGifService(domain) {
+    const index = this.config.gifServices.indexOf(domain.toLowerCase());
+    if (index > -1) {
+      this.config.gifServices.splice(index, 1);
       await this.saveConfig();
       return true;
     }

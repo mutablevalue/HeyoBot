@@ -259,6 +259,7 @@ activeWebhooksCommand.setPermissionSystem(permissionSystem);
 
 inviteLinksCommand.setEmbedLoader(embedLoader);
 inviteLinksCommand.setPermissionSystem(permissionSystem);
+linkProtection.setPermissionSystem(permissionSystem);
   
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);

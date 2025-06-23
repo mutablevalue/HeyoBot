@@ -7,11 +7,11 @@ bot:
   avatar: https://example.com/avatar.png
   status:
     type: PLAYING
-    text: /N9NE
+    text: /pow
     url: null
     color: RED
   bio: I'm a multi-purpose Discord bot!
-developmentGuildId: "1385835001874088018"
+developmentGuildId: "1375334842434060318"
 queue:
   maxSize: 100
   workerCount: 3
@@ -67,6 +67,24 @@ linkProtection:
   deleteMessage: true
   warningMessage: Stop posting links.
   ephemeralWarning: true
+  allowGifServices: true  # Allow links from popular GIF services
+  gifServices:  # List of allowed GIF service domains
+    - tenor.com
+    - giphy.com
+    - gfycat.com
+    - imgur.com
+    - media.giphy.com
+    - media.tenor.com
+    - media0.giphy.com
+    - media1.giphy.com
+    - media2.giphy.com
+    - media3.giphy.com
+    - media4.giphy.com
+    - c.tenor.com
+    - thumbs.gfycat.com
+    - giant.gfycat.com
+    - i.giphy.com
+    - i.imgur.com
 vanity:
   enabled: true
   checkIntervalSeconds: 1800
@@ -97,6 +115,7 @@ moderation:
         - "234567890123456789"
         - "1135418923572023317"
         - "766136631370711042"
+        - "1162730217895379025"
       roles: []
       commands:
         - all
@@ -104,6 +123,7 @@ moderation:
       users:
         - "1162730217895379025"
         - "825436754680348683"
+        - "744763880093384756"
       roles: []
       commands:
         - ban
@@ -148,7 +168,7 @@ moderation:
     vc: "1386379326856888513"
     pic: "1386379327934824488"
     link: "1386379328560038041"
-  logChannel: "1380422918017650719"
+  logChannel: "1376674252173873183"
   cooldowns:
     default: 3
     nuke: 60
@@ -213,7 +233,8 @@ moderation:
       cooldownMultiplier: 1.5
 antiNuke:
   whitelist:
-    users: []
+    users:
+      - "1249300395600384025"
     roles: []
   limits:
     commands:
@@ -260,8 +281,8 @@ antiNuke:
       maxActions: 1
       timeWindowSeconds: 60
       highAlertMaxActions: 1
-  adminLogChannel: "1380422918017650719"
-  abuseLogChannel: "1380422905191731210"
+  adminLogChannel: "1376674252173873183"
+  abuseLogChannel: "1376674252173873183"
   highAlert:
     enabled: false
     thresholdReduction: 0.5
@@ -282,7 +303,7 @@ antiNuke:
       threshold: 10
       action: delete
     capsSpam:
-      enabled: true
+      enabled: false
       percentage: 70
       minLength: 10
       action: delete
@@ -412,7 +433,7 @@ welcome:
   message:
     description: "yooo {user.mention} #{memberNumber}"
     thumbnail: true
-    footer: 
+    footer: null
     timestamp: true
   pingUser: false
 roleTracker:
@@ -421,7 +442,7 @@ roleTracker:
   maxHistoryPerUser: 10
   trackBots: false
   exemptRoles: []
-  logChannel: null
+  logChannel: "1386404206281490552"
 leaderboard:
   enabled: true
   trackMessages: true
@@ -491,11 +512,11 @@ ticketSystem:
     enabled: true
     timeout: 300000
   transcriptChannel: null
-  logChannel: "1379953422241103946"
+  logChannel: "1386404206281490552"
   enableLogging: true
   stats:
-    totalTickets: 3
-    totalClosed: 2
+    totalTickets: 6
+    totalClosed: 5
     averageResponseTime: 0
     averageResolutionTime: 0
   defaultCategoryId: "1379953422241103944"
@@ -549,15 +570,12 @@ filter:
     enabled: true
     defaultWords:
       - nigger
-      - nigga
       - faggot
       - fag
-      - retard
-      - kys
     customWords: []
     exemptRoles: []
     exemptChannels: []
-    action: delete
+    action: delete  # Options: delete, warn, timeout
     timeoutDuration: 300
     warningMessage: Your message contains prohibited words.
     caseSensitive: false
@@ -572,9 +590,22 @@ filter:
     warningMessage: Your image appears to contain NSFW content.
     apiUrl: null
     maxFileSize: 8388608
+  largeMessageFilter:
+    enabled: true
+    maxLength: 1000  # Maximum allowed message length in characters
+    exemptRoles: []  # Role IDs that can send large messages
+    exemptChannels: []  # Channel IDs where large messages are allowed
+    action: delete  # Options: delete, warn, truncate
+    warningMessage: "Your message is too long. Maximum allowed length is {maxLength} characters."
+    splitMessage: false  # If true, sends a truncated version after deletion
+    # NEW: Space abuse detection settings
+    detectSpaceAbuse: true  # Enable detection of excessive spacing
+    maxConsecutiveSpaces: 5  # Maximum allowed consecutive spaces
+    maxWhitespaceRatio: 0.5  # Maximum ratio of whitespace to total message (0.5 = 50%)
+    spaceAbuseMessage: "Your message contains excessive spacing."
   logChannel: null
-  enableLogging: true
-  trackStats: true
+  enableLogging: false
+  trackStats: false
 embed:
   color: 8388608
   formatters:
@@ -641,7 +672,7 @@ banAppeal:
     cooldown: You must wait {time} before submitting another appeal.
     maxReached: You have reached the maximum number of appeals allowed.
     error: An error occurred while submitting your appeal. Please try again later.
-  logChannel: null
+  logChannel: "1386404206281490552"
   enableLogging: true
 confess:
   enabled: true
@@ -655,7 +686,6 @@ confess:
   filterBannedWords: true
   bannedWords:
     - nigger
-    - nigga
     - faggot
     - fag
     - retard
@@ -699,11 +729,7 @@ snipe:
   logChannel: null
   ghostPing:
     enabled: true
-    dataFile: ghost_pings.json
-    maxPingsPerUser: 50
-    pingExpiry: 604800000
     ignoreBots: true
-    logChannel: null
     notifyOnGhostPing: true
 socialLookup:
   enabled: true
@@ -795,7 +821,7 @@ genderVerify:
     notifyOnSubmit: true
     notifyOnReview: true
     dmResults: true
-  logChannel: null
+  logChannel: "1386442742019788800"
   deleteDataAfterDays: 30
   requireAge18: true
   guilds:
@@ -841,7 +867,7 @@ friendGroup:
     notifyOnSubmit: true
     notifyOnReview: true
     dmResults: true
-  logChannel: null
+  logChannel: "1386442742019788800"
   deleteDataAfterDays: 30
   maxActiveGroups: 50
   maxActiveApplications: 20
@@ -863,7 +889,7 @@ giveaway:
   enabled: true
   dataFile: giveaways.json
   dmWinners: true
-  logChannel: null
+  logChannel: "1386404206281490552"
   stats:
     totalGiveaways: 0
     totalWinners: 0

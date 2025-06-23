@@ -151,21 +151,30 @@ const playCommand = {
         
         await interaction.editReply({ embeds: [embed] });
       } else {
-        const embed = embedLoader.createEmbed({
-          title: result.position > 0 ? 'Added to Queue' : 'Now Playing',
-          description: `[${result.title}](${result.url})`,
-          fields: [
-            { name: 'Artist', value: result.author, inline: true },
-            { name: 'Duration', value: result.duration, inline: true },
-            { name: 'Position', value: result.position > 0 ? `#${result.position + 1}` : 'Now Playing', inline: true }
-          ]
-        });
-        
-        if (result.thumbnail) {
-          embed.setThumbnail(result.thumbnail);
+        // Only show "Added to Queue" message if not playing immediately
+        // The "Now Playing" message will be handled by the playerStart event
+        if (result.position > 0) {
+          const embed = embedLoader.createEmbed({
+            title: 'Added to Queue',
+            description: `[${result.title}](${result.url})`,
+            fields: [
+              { name: 'Artist', value: result.author, inline: true },
+              { name: 'Duration', value: result.duration, inline: true },
+              { name: 'Position', value: `#${result.position + 1} in queue`, inline: true }
+            ]
+          });
+          
+          if (result.thumbnail) {
+            embed.setThumbnail(result.thumbnail);
+          }
+          
+          await interaction.editReply({ embeds: [embed] });
+        } else {
+          // For immediate playback, just acknowledge the command
+          // The playerStart event will show the "Now Playing" message
+          const embed = embedLoader.success(`Loading **${result.title}**...`);
+          await interaction.editReply({ embeds: [embed] });
         }
-        
-        await interaction.editReply({ embeds: [embed] });
       }
     } catch (error) {
       console.error('[Music] Play command error:', error);

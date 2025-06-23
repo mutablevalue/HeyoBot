@@ -44,12 +44,35 @@ export class FilterSystem {
         warningMessage: filterConfig.imageFilter?.warningMessage || 'Your image appears to contain NSFW content.'
       },
       
+      largeMessageFilter: {
+        enabled: filterConfig.largeMessageFilter?.enabled ?? false,
+        maxLength: filterConfig.largeMessageFilter?.maxLength || 2000,
+        exemptRoles: filterConfig.largeMessageFilter?.exemptRoles || [],
+        exemptChannels: filterConfig.largeMessageFilter?.exemptChannels || [],
+        action: filterConfig.largeMessageFilter?.action || 'delete',
+        warningMessage: filterConfig.largeMessageFilter?.warningMessage || 'Your message is too long. Maximum allowed length is {maxLength} characters.',
+        splitMessage: filterConfig.largeMessageFilter?.splitMessage ?? false,
+        // NEW: Space detection settings
+        detectSpaceAbuse: filterConfig.largeMessageFilter?.detectSpaceAbuse ?? true,
+        maxConsecutiveSpaces: filterConfig.largeMessageFilter?.maxConsecutiveSpaces || 5,
+        maxWhitespaceRatio: filterConfig.largeMessageFilter?.maxWhitespaceRatio || 0.5, // 50% of message
+        spaceAbuseMessage: filterConfig.largeMessageFilter?.spaceAbuseMessage || 'Your message contains excessive spacing.'
+      },
+      
       logChannel: filterConfig.logChannel || null,
       enableLogging: filterConfig.enableLogging ?? true
     };
 
     // Filter data - LIGHTWEIGHT: Only store what's absolutely necessary
     this.filteredWords = new Set();
+    
+    // Statistics
+    this.stats = {
+      wordFiltered: 0,
+      imageFiltered: 0,
+      largeMessageFiltered: 0,
+      spaceAbuseFiltered: 0
+    };
     
     // Load data
     this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
@@ -79,7 +102,7 @@ export class FilterSystem {
   }
 
   /**
-   * Load filter data from file (only custom words)
+   * Load filter data from file (only custom words and stats)
    */
   loadFilterData() {
     try {
@@ -90,6 +113,10 @@ export class FilterSystem {
           this.config.wordFilter.customWords = data.customWords;
         }
         
+        if (data.stats) {
+          this.stats = { ...this.stats, ...data.stats };
+        }
+        
         console.log(`[FilterSystem] Loaded filter data`);
       }
     } catch (error) {
@@ -98,12 +125,13 @@ export class FilterSystem {
   }
 
   /**
-   * Save filter data to file (only custom words)
+   * Save filter data to file (only custom words and stats)
    */
   saveFilterData() {
     try {
       const data = {
-        customWords: this.config.wordFilter.customWords
+        customWords: this.config.wordFilter.customWords,
+        stats: this.stats
       };
 
       const dir = path.dirname(this.dataPath);
@@ -144,6 +172,12 @@ export class FilterSystem {
       // Use centralized permission check if moderation system is available
       if (this.moderationSystem?.isGloballyExempt(message.member)) return;
       
+      // Check large message filter FIRST (including space abuse)
+      if (this.config.largeMessageFilter.enabled) {
+        const largeMessageHandled = await this.checkMessageLength(message);
+        if (largeMessageHandled) return; // If message was deleted for being too long/spaced, skip other checks
+      }
+      
       // Check word filter
       if (this.config.wordFilter.enabled) {
         await this.checkMessageContent(message);
@@ -161,11 +195,186 @@ export class FilterSystem {
       // Use centralized permission check
       if (this.moderationSystem?.isGloballyExempt(newMessage.member)) return;
       
+      // Check large message filter
+      if (this.config.largeMessageFilter.enabled) {
+        const largeMessageHandled = await this.checkMessageLength(newMessage);
+        if (largeMessageHandled) return;
+      }
+      
       // Check edited message content
       if (this.config.wordFilter.enabled) {
         await this.checkMessageContent(newMessage);
       }
     });
+  }
+
+  /**
+   * Check message length and space abuse
+   */
+  async checkMessageLength(message) {
+    // Check exemptions
+    if (this.isExempt(message, 'largeMessage')) return false;
+    
+    // Check for space abuse first
+    if (this.config.largeMessageFilter.detectSpaceAbuse) {
+      const spaceAbuse = this.detectSpaceAbuse(message.content);
+      if (spaceAbuse) {
+        await this.handleSpaceAbuseViolation(message, spaceAbuse);
+        
+        // Log violation if enabled
+        if (this.config.enableLogging) {
+          await this.logViolation(message, 'Space Abuse Filter', spaceAbuse.reason);
+        }
+        
+        this.stats.spaceAbuseFiltered++;
+        this.saveFilterData();
+        
+        return true; // Message was handled
+      }
+    }
+    
+    // Check regular length
+    if (message.content.length > this.config.largeMessageFilter.maxLength) {
+      // Handle large message violation
+      await this.handleLargeMessageViolation(message);
+      
+      // Log violation if enabled
+      if (this.config.enableLogging) {
+        await this.logViolation(message, 'Large Message Filter', 
+          `Message length: ${message.content.length} characters (max: ${this.config.largeMessageFilter.maxLength})`);
+      }
+      
+      this.stats.largeMessageFiltered++;
+      this.saveFilterData();
+      
+      return true; // Message was handled
+    }
+    
+    return false; // Message was not too large
+  }
+
+  /**
+   * Detect space abuse in message
+   */
+  detectSpaceAbuse(content) {
+    // Check for consecutive spaces
+    const consecutiveSpaceRegex = new RegExp(`\\s{${this.config.largeMessageFilter.maxConsecutiveSpaces + 1},}`, 'g');
+    const hasConsecutiveSpaces = consecutiveSpaceRegex.test(content);
+    
+    if (hasConsecutiveSpaces) {
+      const matches = content.match(consecutiveSpaceRegex);
+      const largestGap = Math.max(...matches.map(m => m.length));
+      return {
+        type: 'consecutive_spaces',
+        reason: `Message contains ${largestGap} consecutive spaces (max allowed: ${this.config.largeMessageFilter.maxConsecutiveSpaces})`
+      };
+    }
+    
+    // Check whitespace ratio
+    const whitespaceCount = (content.match(/\s/g) || []).length;
+    const totalLength = content.length;
+    const whitespaceRatio = totalLength > 0 ? whitespaceCount / totalLength : 0;
+    
+    if (whitespaceRatio > this.config.largeMessageFilter.maxWhitespaceRatio) {
+      return {
+        type: 'whitespace_ratio',
+        reason: `Message is ${Math.round(whitespaceRatio * 100)}% whitespace (max allowed: ${Math.round(this.config.largeMessageFilter.maxWhitespaceRatio * 100)}%)`
+      };
+    }
+    
+    // Check for Unicode space characters abuse
+    const unicodeSpaces = /[\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g;
+    const unicodeSpaceMatches = content.match(unicodeSpaces);
+    if (unicodeSpaceMatches && unicodeSpaceMatches.length > 10) {
+      return {
+        type: 'unicode_spaces',
+        reason: `Message contains ${unicodeSpaceMatches.length} special space characters`
+      };
+    }
+    
+    // Check for messages that are mostly newlines
+    const newlineCount = (content.match(/\n/g) || []).length;
+    if (newlineCount > 10) {
+      return {
+        type: 'excessive_newlines',
+        reason: `Message contains ${newlineCount} newlines`
+      };
+    }
+    
+    return null;
+  }
+
+  /**
+   * Handle space abuse violation
+   */
+  async handleSpaceAbuseViolation(message, spaceAbuse) {
+    const config = this.config.largeMessageFilter;
+    
+    try {
+      await message.delete();
+      const warning = await message.channel.send({
+        content: `${message.author} ${config.spaceAbuseMessage}`,
+        allowedMentions: { users: [message.author.id] }
+      });
+      setTimeout(() => warning.delete().catch(() => {}), 5000);
+    } catch (error) {
+      console.error('[FilterSystem] Error handling space abuse:', error);
+    }
+  }
+
+  /**
+   * Handle large message violation
+   */
+  async handleLargeMessageViolation(message) {
+    const config = this.config.largeMessageFilter;
+    
+    switch (config.action) {
+      case 'delete':
+        try {
+          await message.delete();
+          const warning = await message.channel.send({
+            content: `${message.author} ${config.warningMessage.replace('{maxLength}', config.maxLength)}`,
+            allowedMentions: { users: [message.author.id] }
+          });
+          setTimeout(() => warning.delete().catch(() => {}), 5000);
+          
+          // If split message is enabled, send a truncated version
+          if (config.splitMessage) {
+            const truncated = message.content.substring(0, config.maxLength - 50) + '... [Message truncated]';
+            await message.channel.send({
+              content: `${message.author}: ${truncated}`,
+              allowedMentions: { users: [] }
+            });
+          }
+        } catch (error) {
+          console.error('[FilterSystem] Error handling large message:', error);
+        }
+        break;
+        
+      case 'warn':
+        try {
+          await message.reply({
+            content: config.warningMessage.replace('{maxLength}', config.maxLength),
+            allowedMentions: { repliedUser: true }
+          });
+        } catch (error) {
+          console.error('[FilterSystem] Error warning user:', error);
+        }
+        break;
+        
+      case 'truncate':
+        try {
+          await message.delete();
+          const truncated = message.content.substring(0, config.maxLength);
+          await message.channel.send({
+            content: `${message.author}: ${truncated}`,
+            allowedMentions: { users: [] }
+          });
+        } catch (error) {
+          console.error('[FilterSystem] Error truncating message:', error);
+        }
+        break;
+    }
   }
 
   /**
@@ -185,6 +394,9 @@ export class FilterSystem {
       if (this.config.enableLogging) {
         await this.logViolation(message, 'Word Filter', detectedWords.join(', '));
       }
+      
+      this.stats.wordFiltered++;
+      this.saveFilterData();
     }
   }
 
@@ -201,9 +413,10 @@ export class FilterSystem {
     // For now, just check if it's an image
     const hasImage = message.attachments.some(att => att.contentType?.startsWith('image/'));
     
-    if (hasImage && this.config.imageFilter.action === 'delete') {
-      // Simplified - just warn about images in non-NSFW channels
-      // In production, you'd use a proper NSFW detection service
+    if (hasImage) {
+      this.stats.imageFiltered++;
+      this.saveFilterData();
+      // In production, you'd use a proper NSFW detection service here
     }
   }
 
@@ -264,10 +477,42 @@ export class FilterSystem {
    * Check if message is exempt from filtering
    */
   isExempt(message, type) {
-    // Use global exemption first
-    if (this.moderationSystem?.isGloballyExempt(message.member)) return true;
+    // Use global exemption first (if moderator or higher)
+    if (this.moderationSystem) {
+      const member = message.member || message.author;
+      // Check if user has moderator permissions or higher (permission level 1+)
+      if (member && member.guild) {
+        try {
+          const mockMember = {
+            id: member.id,
+            guild: member.guild,
+            roles: member.roles || { cache: new Map() }
+          };
+          // Get permission level if permission system is available
+          const modConfig = this.configLoader.get('moderation');
+          if (modConfig?.ownerBypass && member.id === member.guild.ownerId) {
+            return true;
+          }
+        } catch (error) {
+          // Continue with normal exemption checks
+        }
+      }
+    }
     
-    const config = type === 'word' ? this.config.wordFilter : this.config.imageFilter;
+    let config;
+    switch (type) {
+      case 'word':
+        config = this.config.wordFilter;
+        break;
+      case 'image':
+        config = this.config.imageFilter;
+        break;
+      case 'largeMessage':
+        config = this.config.largeMessageFilter;
+        break;
+      default:
+        return false;
+    }
     
     // Check exempt channels
     if (config.exemptChannels.includes(message.channel.id)) return true;
@@ -352,6 +597,17 @@ export class FilterSystem {
         censoredContent = censoredContent.replace(regex, '*'.repeat(word.length));
       }
       embed.addFields({ name: 'Message', value: censoredContent.slice(0, 1024), inline: false });
+    } else if (filterType === 'Large Message Filter' || filterType === 'Space Abuse Filter') {
+      // Show a preview with visible spaces
+      const preview = message.content
+        .replace(/ /g, '·') // Replace spaces with middle dots
+        .replace(/\n/g, '↵\n') // Show newlines
+        .slice(0, 500);
+      embed.addFields({ 
+        name: 'Message Preview (spaces shown as ·)', 
+        value: preview + (message.content.length > 500 ? '...' : ''), 
+        inline: false 
+      });
     }
     
     try {
@@ -397,7 +653,7 @@ export class FilterSystem {
   }
 
   /**
-   * Get filter statistics (simplified)
+   * Get filter statistics
    */
   getStats() {
     return {
@@ -405,10 +661,19 @@ export class FilterSystem {
       wordFilter: {
         enabled: this.config.wordFilter.enabled,
         totalWords: this.filteredWords.size,
-        customWords: this.config.wordFilter.customWords.length
+        customWords: this.config.wordFilter.customWords.length,
+        violations: this.stats.wordFiltered
       },
       imageFilter: {
-        enabled: this.config.imageFilter.enabled
+        enabled: this.config.imageFilter.enabled,
+        violations: this.stats.imageFiltered
+      },
+      largeMessageFilter: {
+        enabled: this.config.largeMessageFilter.enabled,
+        maxLength: this.config.largeMessageFilter.maxLength,
+        violations: this.stats.largeMessageFiltered,
+        spaceAbuseDetection: this.config.largeMessageFilter.detectSpaceAbuse,
+        spaceAbuseViolations: this.stats.spaceAbuseFiltered
       }
     };
   }

@@ -212,38 +212,8 @@ export class J2CManager extends EventEmitter {
       return;
     }
 
-    // Transfer ownership if owner left
-    if (channelInfo.ownerId === member.id) {
-      const newOwner = remaining.first();
-
-      // Grant new owner permissions
-      await channel.permissionOverwrites.edit(newOwner.id, {
-        Connect: true,
-        Speak: true,
-        MuteMembers: true,
-        DeafenMembers: true,
-        MoveMembers: true,
-        ManageChannels: true,
-        PrioritySpeaker: true
-      });
-
-      // Remove old owner permissions
-      await channel.permissionOverwrites.delete(member.id);
-
-      // Update records
-      channelInfo.ownerId = newOwner.id;
-      this.userChannels.delete(member.id);
-      this.userChannels.set(newOwner.id, channel.id);
-
-      // Rename channel
-      await channel.setName(`${newOwner.displayName}'s Channel`);
-
-      this.emit('ownershipTransferred', {
-        channel,
-        oldOwner: member,
-        newOwner
-      });
-    }
+    // Don't auto-transfer ownership when owner leaves
+    // They can reclaim it with /vc take when they return
   }
 
   /**
@@ -320,6 +290,75 @@ export class J2CManager extends EventEmitter {
 
   getUserChannel(userId) {
     return this.userChannels.get(userId);
+  }
+
+  async takeOwnership(channel, userId) {
+    // Check if this is a created channel
+    const channelInfo = this.createdChannels.get(channel.id);
+    if (!channelInfo) {
+      return { success: false, message: 'This is not a created voice channel' };
+    }
+    
+    // Check if user is in the channel
+    if (!channel.members.has(userId)) {
+      return { success: false, message: 'You must be in the voice channel to take ownership' };
+    }
+    
+    // Check if current owner is in the channel
+    const currentOwner = channelInfo.ownerId;
+    if (channel.members.has(currentOwner)) {
+      return { success: false, message: 'The owner is currently in the channel' };
+    }
+    
+    // Check if user already owns a channel
+    const existingChannel = this.getUserChannel(userId);
+    if (existingChannel && existingChannel !== channel.id) {
+      return { success: false, message: 'You already own another voice channel' };
+    }
+    
+    // Transfer ownership
+    try {
+      const member = channel.members.get(userId);
+      
+      // Grant new owner permissions
+      await channel.permissionOverwrites.edit(userId, {
+        Connect: true,
+        Speak: true,
+        MuteMembers: true,
+        DeafenMembers: true,
+        MoveMembers: true,
+        ManageChannels: true,
+        PrioritySpeaker: true
+      });
+      
+      // Remove old owner permissions (if they have overrides)
+      const oldOwnerOverwrite = channel.permissionOverwrites.cache.get(currentOwner);
+      if (oldOwnerOverwrite) {
+        await channel.permissionOverwrites.delete(currentOwner);
+      }
+      
+      // Update records
+      this.userChannels.delete(currentOwner);
+      this.userChannels.set(userId, channel.id);
+      channelInfo.ownerId = userId;
+      
+      // Rename channel
+      await channel.setName(`${member.displayName}'s Channel`);
+      
+      this.emit('ownershipTransferred', {
+        channel,
+        oldOwnerId: currentOwner,
+        newOwner: member
+      });
+      
+      return { 
+        success: true, 
+        message: `You have taken ownership of the voice channel` 
+      };
+    } catch (error) {
+      console.error('[J2C] Error taking ownership:', error);
+      return { success: false, message: 'Failed to take ownership of the channel' };
+    }
   }
 
   async lockChannel(channel, userId) {
