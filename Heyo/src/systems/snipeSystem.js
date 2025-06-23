@@ -20,12 +20,16 @@ export class SnipeSystem {
     // Track message creation times for ghost ping detection (temporary, not saved)
     this.messageTimestamps = new Map(); // messageId -> { createdAt, mentions, authorId, authorTag, content, channelId }
     
+    // Ghost ping cooldowns: userId -> lastNotificationTime
+    this.ghostPingCooldowns = new Map();
+    
     // Configure ghost ping settings
     this.ghostPingConfig = {
-      enabled: this.config.ghostPing?.enabled ?? true,
-      ignoreBots: this.config.ghostPing?.ignoreBots ?? true,
-      notifyOnGhostPing: this.config.ghostPing?.notifyOnGhostPing ?? true,
-      maxDeleteTime: 5000 // 5 seconds - message must be deleted within this time to count as ghost ping
+      enabled: this.config.ghostPing?.enabled,
+      ignoreBots: this.config.ghostPing?.ignoreBots,
+      notifyOnGhostPing: this.config.ghostPing?.notifyOnGhostPing,
+      maxDeleteTime: this.config.ghostPing?.maxDeleteTime,
+      cooldownDuration: this.config.ghostPing?.cooldownDuration
     };
     
     // Setup event listeners
@@ -34,7 +38,9 @@ export class SnipeSystem {
     }
     
     // Cleanup interval
-    setInterval(() => this.cleanup(), 60000); // Every minute
+    if (this.config.cleanupInterval) {
+      setInterval(() => this.cleanup(), this.config.cleanupInterval);
+    }
   }
   
   setupEventListeners() {
@@ -87,10 +93,12 @@ export class SnipeSystem {
               guildName: message.guild.name
             });
             
-            // Auto-cleanup after 10 seconds (no longer tracking after that)
-            setTimeout(() => {
-              this.messageTimestamps.delete(message.id);
-            }, 10000);
+            // Auto-cleanup after configured time
+            if (this.config.messageTrackingTimeout) {
+              setTimeout(() => {
+                this.messageTimestamps.delete(message.id);
+              }, this.config.messageTrackingTimeout);
+            }
           }
         }
       });
@@ -133,8 +141,8 @@ export class SnipeSystem {
           if (trackedInfo) {
             const deleteTime = Date.now() - trackedInfo.createdAt;
             
-            // Only notify if deleted within 5 seconds
-            if (deleteTime <= this.ghostPingConfig.maxDeleteTime) {
+            // Only notify if deleted within configured time
+            if (this.ghostPingConfig.maxDeleteTime && deleteTime <= this.ghostPingConfig.maxDeleteTime) {
               await this.notifyGhostPing(trackedInfo, deleteTime);
             }
             
@@ -159,8 +167,8 @@ export class SnipeSystem {
       if (trackedInfo) {
         const deleteTime = Date.now() - trackedInfo.createdAt;
         
-        // Only notify if deleted within 5 seconds
-        if (deleteTime <= this.ghostPingConfig.maxDeleteTime) {
+        // Only notify if configured and within time
+        if (this.ghostPingConfig.maxDeleteTime && deleteTime <= this.ghostPingConfig.maxDeleteTime) {
           await this.notifyGhostPing(trackedInfo, deleteTime);
         }
         
@@ -246,27 +254,44 @@ export class SnipeSystem {
   async notifyGhostPing(pingData, deleteTime) {
     if (!this.ghostPingConfig.notifyOnGhostPing) return;
     
+    // Check cooldown for the ghost pinger
+    const now = Date.now();
+    const lastNotification = this.ghostPingCooldowns.get(pingData.authorId);
+    
+    if (lastNotification && this.ghostPingConfig.cooldownDuration && (now - lastNotification) < this.ghostPingConfig.cooldownDuration) {
+      // User is on cooldown, don't notify
+      return;
+    }
+    
     try {
       const channel = this.client.channels.cache.get(pingData.channelId);
       if (!channel?.isTextBased()) return;
       
-      // Notify each mentioned user
-      for (const userId of pingData.mentions) {
-        const embed = this.embedLoader.createEmbed({
-          title: '👻 Ghost Ping!',
-          description: `<@${userId}> You were ghost pinged!`,
-          fields: [
-            { name: 'By', value: `${pingData.authorTag}`, inline: true },
-            { name: 'Deleted After', value: `${(deleteTime / 1000).toFixed(1)} seconds`, inline: true },
-            { name: 'Message', value: pingData.content.slice(0, 1024) || '[No content]' }
-          ]
-        });
-        
-        await channel.send({ embeds: [embed] });
-        break; // Only send one notification per ghost ping event
-      }
+      // Set cooldown
+      this.ghostPingCooldowns.set(pingData.authorId, now);
+      
+      // Notify only once for all mentioned users
+      const mentionCount = pingData.mentions.length;
+      const mentionPreview = mentionCount > 3 
+        ? `<@${pingData.mentions[0]}>, <@${pingData.mentions[1]}>, <@${pingData.mentions[2]}> and ${mentionCount - 3} others`
+        : pingData.mentions.map(id => `<@${id}>`).join(', ');
+      
+      const embed = this.embedLoader.createEmbed({
+        title: '👻 Ghost Ping!',
+        description: `${mentionPreview} ${mentionCount > 1 ? 'were' : 'was'} ghost pinged!`,
+        fields: [
+          { name: 'By', value: `${pingData.authorTag}`, inline: true },
+          { name: 'Deleted After', value: `${(deleteTime / 1000).toFixed(1)}s`, inline: true },
+          { name: 'Message', value: pingData.content.slice(0, 1024) || '[No content]' }
+        ]
+      });
+      
+      await channel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[SnipeSystem] Error notifying ghost ping:', error);
+      // Silently fail if rate limited
+      if (error.code !== 50013 && error.code !== 10008) {
+        console.error('[SnipeSystem] Error notifying ghost ping:', error);
+      }
     }
   }
   
@@ -361,9 +386,20 @@ export class SnipeSystem {
     }
     
     // Cleanup old message timestamps
-    for (const [messageId, info] of this.messageTimestamps) {
-      if (now - info.createdAt > 10000) { // 10 seconds
-        this.messageTimestamps.delete(messageId);
+    if (this.config.messageTrackingTimeout) {
+      for (const [messageId, info] of this.messageTimestamps) {
+        if (now - info.createdAt > this.config.messageTrackingTimeout) {
+          this.messageTimestamps.delete(messageId);
+        }
+      }
+    }
+    
+    // Cleanup old ghost ping cooldowns
+    if (this.ghostPingConfig.cooldownDuration) {
+      for (const [userId, lastNotification] of this.ghostPingCooldowns) {
+        if (now - lastNotification > this.ghostPingConfig.cooldownDuration) {
+          this.ghostPingCooldowns.delete(userId);
+        }
       }
     }
   }
@@ -392,7 +428,9 @@ export class SnipeSystem {
     try {
       await channel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[SnipeSystem] Error logging snipe:', error);
+      if (error.code !== 50013) {
+        console.error('[SnipeSystem] Error logging snipe:', error);
+      }
     }
   }
   
@@ -423,7 +461,9 @@ export class SnipeSystem {
     try {
       await channel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[SnipeSystem] Error logging reaction snipe:', error);
+      if (error.code !== 50013) {
+        console.error('[SnipeSystem] Error logging reaction snipe:', error);
+      }
     }
   }
   
@@ -627,7 +667,8 @@ export class SnipeSystem {
       messageSnipes: this.getTotalSnipeCount(),
       reactionSnipes: this.getTotalReactionSnipeCount(),
       ghostPings: {
-        enabled: this.ghostPingConfig.enabled
+        enabled: this.ghostPingConfig.enabled,
+        activeCooldowns: this.ghostPingCooldowns.size
       }
     };
   }

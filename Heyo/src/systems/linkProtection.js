@@ -13,6 +13,11 @@ export class LinkProtection {
     // Reference to unified permission system
     this.permissionSystem = null;
     
+    // Warning tracking to prevent spam
+    this.warningsSent = new Map(); // channelId -> lastWarningTime
+    this.userWarnings = new Map(); // userId -> { count, lastWarning }
+    this.logCooldowns = new Map(); // userId -> lastLogTime
+    
     const linkConfig = this.configLoader.get('linkProtection') || {};
     this.config = {
       enabled: linkConfig.enabled ?? true,
@@ -52,9 +57,23 @@ export class LinkProtection {
         'i.imgur.com'
       ]
     };
+    
+    // Get cooldown settings from config
+    this.cooldownConfig = {
+      warningCooldown: linkConfig.warningCooldown,
+      userViolationWindow: linkConfig.userViolationWindow,
+      userViolationThreshold: linkConfig.userViolationThreshold,
+      logCooldown: linkConfig.logCooldown,
+      warningDeleteAfter: linkConfig.warningDeleteAfter
+    };
 
     if (this.config.enabled) {
       this.setupEventListeners();
+    }
+    
+    // Cleanup interval - only if configured
+    if (linkConfig.cleanupInterval) {
+      setInterval(() => this.cleanup(), linkConfig.cleanupInterval);
     }
   }
 
@@ -181,6 +200,15 @@ export class LinkProtection {
    */
   async logDeletion(message, blockedUrls) {
     if (!this.config.logChannel) return;
+    
+    // Check if we should log for this user
+    if (this.cooldownConfig.logCooldown) {
+      const now = Date.now();
+      const lastLog = this.logCooldowns.get(message.author.id);
+      if (lastLog && (now - lastLog) < this.cooldownConfig.logCooldown) return;
+      
+      this.logCooldowns.set(message.author.id, now);
+    }
 
     const logChannel = message.guild.channels.cache.get(this.config.logChannel);
     if (!logChannel?.isTextBased()) return;
@@ -255,32 +283,69 @@ export class LinkProtection {
 
       if (this.canSendLinks(message.member, message.channel)) return;
 
-      // Only delete and warn, NO TIMEOUT
+      // DELETE MESSAGE INSTANTLY if configured
       if (this.config.deleteMessage) {
         try {
-          await message.delete();
+          await message.delete(); // INSTANT DELETE - NO DELAY
           await this.logDeletion(message, blockedUrls);
         } catch (error) {
           console.error('[LinkProtection] Failed to delete message:', error);
         }
       }
 
+      // Send warning if configured (rate limited to prevent spam)
       if (this.config.warningMessage) {
-        try {
-          const formattedWarning = this.embedLoader ? 
-            this.embedLoader.format(this.config.warningMessage, 'message') : 
-            this.config.warningMessage;
+        // Check if we should send a warning (prevent spam)
+        const now = Date.now();
+        const channelLastWarning = this.warningsSent.get(message.channel.id);
+        
+        // Only send warning if cooldown passed in this channel
+        if (!this.cooldownConfig.warningCooldown || !channelLastWarning || (now - channelLastWarning) > this.cooldownConfig.warningCooldown) {
+          // Check user warnings
+          const userWarning = this.userWarnings.get(message.author.id) || { count: 0, lastWarning: 0 };
           
-          const warning = await message.channel.send(formattedWarning);
-          setTimeout(() => warning.delete().catch(() => {}), 5000);
-        } catch (error) {
-          console.error('[LinkProtection] Failed to send warning:', error);
+          // If user has less than threshold warnings in the window, send warning
+          const shouldWarn = !this.cooldownConfig.userViolationThreshold || 
+                           !this.cooldownConfig.userViolationWindow ||
+                           userWarning.count < this.cooldownConfig.userViolationThreshold || 
+                           (now - userWarning.lastWarning) > this.cooldownConfig.userViolationWindow;
+          
+          if (shouldWarn) {
+            if (this.cooldownConfig.warningCooldown) {
+              this.warningsSent.set(message.channel.id, now);
+            }
+            
+            // Update user warnings
+            if (this.cooldownConfig.userViolationWindow && (now - userWarning.lastWarning) > this.cooldownConfig.userViolationWindow) {
+              userWarning.count = 1;
+            } else {
+              userWarning.count++;
+            }
+            userWarning.lastWarning = now;
+            this.userWarnings.set(message.author.id, userWarning);
+            
+            try {
+              const formattedWarning = this.embedLoader ? 
+                this.embedLoader.format(this.config.warningMessage, 'message') : 
+                this.config.warningMessage;
+              
+              const warning = await message.channel.send(formattedWarning);
+              if (this.cooldownConfig.warningDeleteAfter) {
+                setTimeout(() => warning.delete().catch(() => {}), this.cooldownConfig.warningDeleteAfter);
+              }
+            } catch (error) {
+              // Silently fail if rate limited
+              if (error.code !== 50013) {
+                console.error('[LinkProtection] Failed to send warning:', error);
+              }
+            }
+          }
         }
       }
     });
 
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-      if (!newMessage.guild || newMessage.author.bot) return;
+      if (!newMessage.guild || newMessage.author?.bot) return;
       
       const oldUrls = this.extractUrls(oldMessage.content || '');
       const newUrls = this.extractUrls(newMessage.content);
@@ -298,9 +363,10 @@ export class LinkProtection {
       if (blockedUrls.length === 0) return; // All new URLs are from allowed GIF services
       
       if (!this.canSendLinks(newMessage.member, newMessage.channel)) {
+        // DELETE EDITED MESSAGE INSTANTLY if it contains new blocked links
         if (this.config.deleteMessage) {
           try {
-            await newMessage.delete();
+            await newMessage.delete(); // INSTANT DELETE - NO DELAY
             await this.logDeletion(newMessage, blockedUrls);
           } catch (error) {
             console.error('[LinkProtection] Failed to delete edited message:', error);
@@ -391,5 +457,39 @@ export class LinkProtection {
   async saveConfig() {
     this.configLoader.set('linkProtection', this.config);
     await this.configLoader.save();
+  }
+  
+  /**
+   * Cleanup old tracking data
+   */
+  cleanup() {
+    const now = Date.now();
+    
+    // Clean warning cooldowns
+    if (this.cooldownConfig.warningCooldown) {
+      for (const [channelId, timestamp] of this.warningsSent) {
+        if (now - timestamp > this.cooldownConfig.warningCooldown * 2) {
+          this.warningsSent.delete(channelId);
+        }
+      }
+    }
+    
+    // Clean user warnings
+    if (this.cooldownConfig.userViolationWindow) {
+      for (const [userId, data] of this.userWarnings) {
+        if (now - data.lastWarning > this.cooldownConfig.userViolationWindow * 2) {
+          this.userWarnings.delete(userId);
+        }
+      }
+    }
+    
+    // Clean log cooldowns
+    if (this.cooldownConfig.logCooldown) {
+      for (const [userId, timestamp] of this.logCooldowns) {
+        if (now - timestamp > this.cooldownConfig.logCooldown) {
+          this.logCooldowns.delete(userId);
+        }
+      }
+    }
   }
 }

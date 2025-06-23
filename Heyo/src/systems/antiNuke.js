@@ -24,6 +24,17 @@ export default class AntiNuke {
     // Webhook spam tracking (temporary, in-memory only)
     this.webhookMessages = new Map(); // webhookId -> timestamp array
     
+    // Logging cooldowns to prevent spam
+    this.logCooldowns = new Map(); // userId + action -> lastLogTime
+    this.warningCooldowns = new Map(); // channelId + type -> lastWarningTime
+    
+    // Get cooldown settings from config
+    this.cooldownConfig = {
+      logCooldown: this.config.logCooldown,
+      warningCooldown: this.config.warningCooldown,
+      cleanupInterval: this.config.cleanupInterval
+    };
+    
     // High alert state from config
     this.highAlert = this.config.highAlert?.enabled || false;
     
@@ -54,6 +65,11 @@ export default class AntiNuke {
     
     this.setupEventListeners();
     console.log('[AntiNuke] System initialized with unified permissions, webhook & bot protection');
+    
+    // Setup cleanup interval if configured
+    if (this.cooldownConfig.cleanupInterval) {
+      setInterval(() => this.cleanup(), this.cooldownConfig.cleanupInterval);
+    }
   }
   
   /**
@@ -285,6 +301,9 @@ export default class AntiNuke {
   async checkWebhookSpam(message) {
     if (!message.webhookId) return false;
     
+    const webhookConfig = this.config.webhookProtection?.spamDetection;
+    if (!webhookConfig?.enabled) return false;
+    
     const now = Date.now();
     const webhookId = message.webhookId;
     
@@ -296,12 +315,16 @@ export default class AntiNuke {
     const timestamps = this.webhookMessages.get(webhookId);
     timestamps.push(now);
     
-    // Clean old timestamps (keep last 10 seconds)
-    const recentMessages = timestamps.filter(ts => now - ts < 10000);
+    // Clean old timestamps
+    const timeWindow = webhookConfig.timeWindowSeconds ? webhookConfig.timeWindowSeconds * 1000 : null;
+    if (!timeWindow) return false;
+    
+    const recentMessages = timestamps.filter(ts => now - ts < timeWindow);
     this.webhookMessages.set(webhookId, recentMessages);
     
-    // Check if it's spamming (10+ messages in 10 seconds)
-    if (recentMessages.length >= 10) {
+    // Check if it's spamming
+    const maxMessages = webhookConfig.maxMessages;
+    if (maxMessages && recentMessages.length >= maxMessages) {
       try {
         // Find and delete the webhook
         const webhooks = await message.channel.fetchWebhooks();
@@ -332,13 +355,16 @@ export default class AntiNuke {
           this.logSecurity(message.guild, 'Webhook Spam Detected', 
             `Webhook "${webhook.name}" deleted for spamming.\n` +
             `Creator: ${creatorId ? `<@${creatorId}>` : 'Unknown'}\n` +
-            `Messages sent: ${recentMessages.length} in 10 seconds`);
+            `Messages sent: ${recentMessages.length} in ${timeWindow/1000} seconds`);
           
           // Take action against creator if known
           if (creatorId) {
             const member = await message.guild.members.fetch(creatorId).catch(() => null);
             if (member && member.moderatable) {
-              await member.timeout(300000, 'AntiNuke: Created spamming webhook');
+              const timeoutDuration = this.config.contentModeration?.timeoutDuration;
+              if (timeoutDuration) {
+                await member.timeout(timeoutDuration, 'AntiNuke: Created spamming webhook');
+              }
             }
           }
           
@@ -379,9 +405,11 @@ export default class AntiNuke {
         case 'reactions':
           // Less severe - timeout
           if (member.moderatable) {
-            const duration = this.config.contentModeration?.timeoutDuration || 300000;
-            await member.timeout(duration, `AntiNuke: Exceeded ${action} threshold`);
-            this.logSecurity(guild, 'Member Timed Out', `${member.user.tag} exceeded ${action} threshold`);
+            const duration = this.config.contentModeration?.timeoutDuration;
+            if (duration) {
+              await member.timeout(duration, `AntiNuke: Exceeded ${action} threshold`);
+              this.logSecurity(guild, 'Member Timed Out', `${member.user.tag} exceeded ${action} threshold`);
+            }
           }
           break;
           
@@ -473,19 +501,24 @@ export default class AntiNuke {
       
       if (restrictions.includes('slowMode')) {
         // Enable slowmode in all channels
-        const channels = guild.channels.cache.filter(ch => ch.isTextBased());
-        for (const channel of channels.values()) {
-          await channel.setRateLimitPerUser(30, 'Raid mode: Slowmode enabled').catch(() => {});
+        const slowModeRate = this.config.raidMode?.slowModeRate;
+        if (slowModeRate) {
+          const channels = guild.channels.cache.filter(ch => ch.isTextBased());
+          for (const channel of channels.values()) {
+            await channel.setRateLimitPerUser(slowModeRate, 'Raid mode: Slowmode enabled').catch(() => {});
+          }
         }
       }
       
       // Auto-disable after configured time
-      const autoDisableTime = this.config.raidMode?.autoDisableAfter || 3600000;
-      setTimeout(() => {
-        if (this.raidMode.enabled) {
-          this.disableRaidMode(guild);
-        }
-      }, autoDisableTime);
+      const autoDisableTime = this.config.raidMode?.autoDisableAfter;
+      if (autoDisableTime) {
+        setTimeout(() => {
+          if (this.raidMode.enabled) {
+            this.disableRaidMode(guild);
+          }
+        }, autoDisableTime);
+      }
     } catch (error) {
       console.error('[AntiNuke] Error applying raid mode:', error);
     }
@@ -508,7 +541,10 @@ export default class AntiNuke {
     
     try {
       // Restore normal verification level
-      await guild.setVerificationLevel(2, 'Raid mode ended');
+      const normalLevel = this.config.raidMode?.normalVerificationLevel;
+      if (normalLevel !== undefined) {
+        await guild.setVerificationLevel(normalLevel, 'Raid mode ended');
+      }
       
       // Remove slowmode
       const channels = guild.channels.cache.filter(ch => ch.isTextBased());
@@ -527,6 +563,18 @@ export default class AntiNuke {
    */
   async logSecurity(guild, action, details) {
     if (!this.embedLoader || !guild) return;
+    
+    // Create a unique key for this log type
+    const logKey = `${guild.id}-${action}`;
+    const now = Date.now();
+    const lastLog = this.logCooldowns.get(logKey);
+    
+    // Only log if cooldown configured and passed
+    if (this.cooldownConfig.logCooldown && lastLog && (now - lastLog) < this.cooldownConfig.logCooldown) return;
+    
+    if (this.cooldownConfig.logCooldown) {
+      this.logCooldowns.set(logKey, now);
+    }
     
     const logChannel = guild.channels.cache.get(this.config.adminLogChannel);
     if (!logChannel) return;
@@ -552,7 +600,10 @@ export default class AntiNuke {
     try {
       await logChannel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[AntiNuke] Error logging security event:', error);
+      // Silently fail if rate limited
+      if (error.code !== 50013) {
+        console.error('[AntiNuke] Error logging security event:', error);
+      }
     }
   }
   
@@ -587,7 +638,7 @@ export default class AntiNuke {
       if (!logs) return;
       
       const kickLog = logs.entries.first();
-      if (!kickLog || Date.now() - kickLog.createdTimestamp > 5000) return;
+      if (!kickLog || Date.now() - kickLog.createdTimestamp > (this.config.limits?.kicks?.logTimeWindow || 5000)) return;
       
       const { executor } = kickLog;
       if (executor.bot) return;
@@ -687,7 +738,7 @@ export default class AntiNuke {
         if (!logs) return;
         
         const createLog = logs.entries.first();
-        if (!createLog || Date.now() - createLog.createdTimestamp > 5000) return;
+        if (!createLog || Date.now() - createLog.createdTimestamp > (this.config.webhookProtection?.logTimeWindow || 5000)) return;
         
         const { executor, target } = createLog;
         
@@ -706,7 +757,10 @@ export default class AntiNuke {
               `${executor.tag} tried to create webhook "${webhook.name}" without Administrator+ permissions`);
             
             if (member.moderatable) {
-              await member.timeout(300000, 'AntiNuke: Unauthorized webhook creation');
+              const timeoutDuration = this.config.contentModeration?.timeoutDuration;
+              if (timeoutDuration) {
+                await member.timeout(timeoutDuration, 'AntiNuke: Unauthorized webhook creation');
+              }
             }
           }
         }
@@ -741,7 +795,7 @@ export default class AntiNuke {
           if (logs) {
             const botAddLog = logs.entries.find(entry => 
               entry.target.id === member.id && 
-              Date.now() - entry.createdTimestamp < 10000
+              Date.now() - entry.createdTimestamp < (this.config.botProtection?.logTimeWindow || 10000)
             );
             
             if (botAddLog) {
@@ -779,7 +833,10 @@ export default class AntiNuke {
             if (inviter) {
               const inviterMember = await member.guild.members.fetch(inviter.id).catch(() => null);
               if (inviterMember && inviterMember.moderatable) {
-                await inviterMember.timeout(600000, 'AntiNuke: Invited unauthorized bot');
+                const inviterTimeout = this.config.botProtection?.inviterTimeout;
+                if (inviterTimeout) {
+                  await inviterMember.timeout(inviterTimeout, 'AntiNuke: Invited unauthorized bot');
+                }
               }
             }
           } else if (inviter) {
@@ -795,9 +852,6 @@ export default class AntiNuke {
       // Original raid detection
       await this.checkForRaid(member.guild);
     });
-    
-    // Setup cleanup interval
-    setInterval(() => this.cleanup(), 300000); // Clean every 5 minutes
   }
   
   /**
@@ -881,21 +935,38 @@ export default class AntiNuke {
           await message.delete();
         } else if (action === 'timeout' && message.member.moderatable) {
           await message.delete(); // Delete message when timing out
-          await message.member.timeout(
-            config.timeoutDuration || 300000,
-            `AntiNuke: ${violationType} violation`
-          );
+          const timeoutDuration = config.timeoutDuration;
+          if (timeoutDuration) {
+            await message.member.timeout(
+              timeoutDuration,
+              `AntiNuke: ${violationType} violation`
+            );
+          }
         } else if (action === 'warn') {
-          // Just warn, don't delete or timeout
-          await message.reply({
-            content: `Warning: Your message violates our ${violationType} policy.`,
-            allowedMentions: { repliedUser: true }
-          });
+          // Check warning cooldown
+          const warningKey = `${message.channel.id}-${violationType}`;
+          const now = Date.now();
+          const lastWarning = this.warningCooldowns.get(warningKey);
+          
+          // Only warn if cooldown passed
+          if (!this.cooldownConfig.warningCooldown || !lastWarning || (now - lastWarning) > this.cooldownConfig.warningCooldown) {
+            if (this.cooldownConfig.warningCooldown) {
+              this.warningCooldowns.set(warningKey, now);
+            }
+            
+            await message.reply({
+              content: `Warning: Your message violates our ${violationType} policy.`,
+              allowedMentions: { repliedUser: true }
+            }).catch(() => {}); // Silently fail if rate limited
+          }
         }
         
         this.logAbuse(message.guild, violationType, message.author);
       } catch (error) {
-        console.error('[AntiNuke] Error handling content violation:', error);
+        // Silently fail if rate limited
+        if (error.code !== 50013 && error.code !== 10008) {
+          console.error('[AntiNuke] Error handling content violation:', error);
+        }
       }
     }
   }
@@ -937,6 +1008,18 @@ export default class AntiNuke {
   async logAbuse(guild, type, user) {
     if (!this.embedLoader) return;
     
+    // Create a unique key for this user and type
+    const logKey = `${user.id}-${type}`;
+    const now = Date.now();
+    const lastLog = this.logCooldowns.get(logKey);
+    
+    // Only log if cooldown configured and passed
+    if (this.cooldownConfig.logCooldown && lastLog && (now - lastLog) < this.cooldownConfig.logCooldown) return;
+    
+    if (this.cooldownConfig.logCooldown) {
+      this.logCooldowns.set(logKey, now);
+    }
+    
     const logChannel = guild.channels.cache.get(this.config.abuseLogChannel);
     if (!logChannel) return;
     
@@ -949,7 +1032,10 @@ export default class AntiNuke {
     try {
       await logChannel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[AntiNuke] Error logging abuse:', error);
+      // Silently fail if rate limited
+      if (error.code !== 50013) {
+        console.error('[AntiNuke] Error logging abuse:', error);
+      }
     }
   }
   
@@ -958,7 +1044,8 @@ export default class AntiNuke {
    */
   cleanup() {
     const now = Date.now();
-    const maxAge = 3600000; // 1 hour
+    const maxAge = this.config.maxTrackingAge;
+    if (!maxAge) return; // No cleanup if not configured
     
     // Clean user actions
     for (const [userId, actions] of this.userActions) {
@@ -995,13 +1082,34 @@ export default class AntiNuke {
       }
     }
     
-    // Clean webhook message tracking
-    for (const [webhookId, timestamps] of this.webhookMessages) {
-      const valid = timestamps.filter(ts => now - ts < 60000); // Keep for 1 minute
-      if (valid.length === 0) {
-        this.webhookMessages.delete(webhookId);
-      } else {
-        this.webhookMessages.set(webhookId, valid);
+    // Clean webhook message tracking if configured
+    const webhookMaxAge = this.config.webhookProtection?.trackingMaxAge;
+    if (webhookMaxAge) {
+      for (const [webhookId, timestamps] of this.webhookMessages) {
+        const valid = timestamps.filter(ts => now - ts < webhookMaxAge);
+        if (valid.length === 0) {
+          this.webhookMessages.delete(webhookId);
+        } else {
+          this.webhookMessages.set(webhookId, valid);
+        }
+      }
+    }
+    
+    // Clean log cooldowns
+    if (this.cooldownConfig.logCooldown) {
+      for (const [key, timestamp] of this.logCooldowns) {
+        if (now - timestamp > this.cooldownConfig.logCooldown * 2) {
+          this.logCooldowns.delete(key);
+        }
+      }
+    }
+    
+    // Clean warning cooldowns
+    if (this.cooldownConfig.warningCooldown) {
+      for (const [key, timestamp] of this.warningCooldowns) {
+        if (now - timestamp > this.cooldownConfig.warningCooldown * 2) {
+          this.warningCooldowns.delete(key);
+        }
       }
     }
   }
@@ -1035,6 +1143,10 @@ export default class AntiNuke {
       protection: {
         webhookAbuses: this.stats.contentViolations.webhookAbuse,
         unauthorizedBots: this.stats.contentViolations.unauthorizedBots
+      },
+      activeCooldowns: {
+        logs: this.logCooldowns.size,
+        warnings: this.warningCooldowns.size
       }
     };
   }

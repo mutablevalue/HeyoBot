@@ -17,7 +17,23 @@ export class FilterSystem {
     this.moderationSystem = null;
     this.embedLoader = null;
     
+    // Warning and log tracking to prevent spam
+    this.warningCooldowns = new Map(); // channelId + type -> lastWarningTime
+    this.userWarnings = new Map(); // userId -> { count, lastWarning }
+    this.logCooldowns = new Map(); // userId + type -> lastLogTime
+    
     const filterConfig = this.configLoader.get('filter') || {};
+    
+    // Get cooldown settings from config
+    this.cooldownConfig = {
+      warningCooldown: filterConfig.warningCooldown,
+      userViolationWindow: filterConfig.userViolationWindow,
+      userViolationThreshold: filterConfig.userViolationThreshold,
+      logCooldown: filterConfig.logCooldown,
+      cleanupInterval: filterConfig.cleanupInterval,
+      warningDeleteAfter: filterConfig.warningDeleteAfter
+    };
+    
     this.config = {
       enabled: filterConfig.enabled ?? true,
       dataFile: filterConfig.dataFile || 'filter_data.json',
@@ -84,6 +100,11 @@ export class FilterSystem {
     // Setup event listeners
     if (this.config.enabled) {
       this.setupEventListeners();
+    }
+    
+    // Cleanup interval if configured
+    if (this.cooldownConfig.cleanupInterval) {
+      setInterval(() => this.cleanup(), this.cooldownConfig.cleanupInterval);
     }
   }
 
@@ -190,7 +211,7 @@ export class FilterSystem {
     });
 
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-      if (newMessage.author?.bot || !newMessage.guild) return;
+      if (!newMessage.guild || newMessage.author?.bot) return;
       
       // Use centralized permission check
       if (this.moderationSystem?.isGloballyExempt(newMessage.member)) return;
@@ -206,6 +227,43 @@ export class FilterSystem {
         await this.checkMessageContent(newMessage);
       }
     });
+  }
+
+  /**
+   * Should send warning helper
+   */
+  shouldSendWarning(channelId, userId, type) {
+    const now = Date.now();
+    const warningKey = `${channelId}-${type}`;
+    const lastChannelWarning = this.warningCooldowns.get(warningKey);
+    
+    // Check channel cooldown
+    if (this.cooldownConfig.warningCooldown && lastChannelWarning && (now - lastChannelWarning) < this.cooldownConfig.warningCooldown) {
+      return false;
+    }
+    
+    // Check user warnings
+    const userWarning = this.userWarnings.get(userId) || { count: 0, lastWarning: 0 };
+    
+    // Reset count if window passed
+    if (this.cooldownConfig.userViolationWindow && (now - userWarning.lastWarning) > this.cooldownConfig.userViolationWindow) {
+      userWarning.count = 0;
+    }
+    
+    // Don't warn if user exceeded threshold
+    if (this.cooldownConfig.userViolationThreshold && userWarning.count >= this.cooldownConfig.userViolationThreshold) {
+      return false;
+    }
+    
+    // Update tracking
+    if (this.cooldownConfig.warningCooldown) {
+      this.warningCooldowns.set(warningKey, now);
+    }
+    userWarning.count++;
+    userWarning.lastWarning = now;
+    this.userWarnings.set(userId, userWarning);
+    
+    return true;
   }
 
   /**
@@ -312,13 +370,22 @@ export class FilterSystem {
     
     try {
       await message.delete();
-      const warning = await message.channel.send({
-        content: `${message.author} ${config.spaceAbuseMessage}`,
-        allowedMentions: { users: [message.author.id] }
-      });
-      setTimeout(() => warning.delete().catch(() => {}), 5000);
+      
+      // Check if we should send a warning
+      if (this.shouldSendWarning(message.channel.id, message.author.id, 'spaceAbuse')) {
+        const warning = await message.channel.send({
+          content: `${message.author} ${config.spaceAbuseMessage}`,
+          allowedMentions: { users: [message.author.id] }
+        });
+        if (this.cooldownConfig.warningDeleteAfter) {
+          setTimeout(() => warning.delete().catch(() => {}), this.cooldownConfig.warningDeleteAfter);
+        }
+      }
     } catch (error) {
-      console.error('[FilterSystem] Error handling space abuse:', error);
+      // Silently fail if rate limited
+      if (error.code !== 50013 && error.code !== 10008) {
+        console.error('[FilterSystem] Error handling space abuse:', error);
+      }
     }
   }
 
@@ -332,33 +399,47 @@ export class FilterSystem {
       case 'delete':
         try {
           await message.delete();
-          const warning = await message.channel.send({
-            content: `${message.author} ${config.warningMessage.replace('{maxLength}', config.maxLength)}`,
-            allowedMentions: { users: [message.author.id] }
-          });
-          setTimeout(() => warning.delete().catch(() => {}), 5000);
           
-          // If split message is enabled, send a truncated version
-          if (config.splitMessage) {
-            const truncated = message.content.substring(0, config.maxLength - 50) + '... [Message truncated]';
-            await message.channel.send({
-              content: `${message.author}: ${truncated}`,
-              allowedMentions: { users: [] }
+          // Check if we should send a warning
+          if (this.shouldSendWarning(message.channel.id, message.author.id, 'largeMessage')) {
+            const warning = await message.channel.send({
+              content: `${message.author} ${config.warningMessage.replace('{maxLength}', config.maxLength)}`,
+              allowedMentions: { users: [message.author.id] }
             });
+            if (this.cooldownConfig.warningDeleteAfter) {
+              setTimeout(() => warning.delete().catch(() => {}), this.cooldownConfig.warningDeleteAfter);
+            }
+            
+            // If split message is enabled, send a truncated version
+            if (config.splitMessage) {
+              const truncated = message.content.substring(0, config.maxLength - 50) + '... [Message truncated]';
+              await message.channel.send({
+                content: `${message.author}: ${truncated}`,
+                allowedMentions: { users: [] }
+              });
+            }
           }
         } catch (error) {
-          console.error('[FilterSystem] Error handling large message:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error handling large message:', error);
+          }
         }
         break;
         
       case 'warn':
         try {
-          await message.reply({
-            content: config.warningMessage.replace('{maxLength}', config.maxLength),
-            allowedMentions: { repliedUser: true }
-          });
+          if (this.shouldSendWarning(message.channel.id, message.author.id, 'largeMessage')) {
+            await message.reply({
+              content: config.warningMessage.replace('{maxLength}', config.maxLength),
+              allowedMentions: { repliedUser: true }
+            });
+          }
         } catch (error) {
-          console.error('[FilterSystem] Error warning user:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error warning user:', error);
+          }
         }
         break;
         
@@ -371,7 +452,10 @@ export class FilterSystem {
             allowedMentions: { users: [] }
           });
         } catch (error) {
-          console.error('[FilterSystem] Error truncating message:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error truncating message:', error);
+          }
         }
         break;
     }
@@ -529,24 +613,38 @@ export class FilterSystem {
       case 'delete':
         try {
           await message.delete();
-          const warning = await message.channel.send({
-            content: `${message.author} ${this.config.wordFilter.warningMessage}`,
-            allowedMentions: { users: [message.author.id] }
-          });
-          setTimeout(() => warning.delete().catch(() => {}), 5000);
+          
+          // Check if we should send a warning
+          if (this.shouldSendWarning(message.channel.id, message.author.id, 'wordFilter')) {
+            const warning = await message.channel.send({
+              content: `${message.author} ${this.config.wordFilter.warningMessage}`,
+              allowedMentions: { users: [message.author.id] }
+            });
+            if (this.cooldownConfig.warningDeleteAfter) {
+              setTimeout(() => warning.delete().catch(() => {}), this.cooldownConfig.warningDeleteAfter);
+            }
+          }
         } catch (error) {
-          console.error('[FilterSystem] Error deleting message:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error deleting message:', error);
+          }
         }
         break;
         
       case 'warn':
         try {
-          await message.reply({
-            content: this.config.wordFilter.warningMessage,
-            allowedMentions: { repliedUser: true }
-          });
+          if (this.shouldSendWarning(message.channel.id, message.author.id, 'wordFilter')) {
+            await message.reply({
+              content: this.config.wordFilter.warningMessage,
+              allowedMentions: { repliedUser: true }
+            });
+          }
         } catch (error) {
-          console.error('[FilterSystem] Error warning user:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error warning user:', error);
+          }
         }
         break;
         
@@ -557,13 +655,22 @@ export class FilterSystem {
             this.config.wordFilter.timeoutDuration * 1000,
             `Word filter violation: ${detectedWords.join(', ')}`
           );
-          const notice = await message.channel.send({
-            content: `${message.author} has been timed out for using prohibited words.`,
-            allowedMentions: { users: [] }
-          });
-          setTimeout(() => notice.delete().catch(() => {}), 5000);
+          
+          // Only send notification if we haven't warned recently
+          if (this.shouldSendWarning(message.channel.id, message.author.id, 'wordFilter')) {
+            const notice = await message.channel.send({
+              content: `${message.author} has been timed out for using prohibited words.`,
+              allowedMentions: { users: [] }
+            });
+            if (this.cooldownConfig.warningDeleteAfter) {
+              setTimeout(() => notice.delete().catch(() => {}), this.cooldownConfig.warningDeleteAfter);
+            }
+          }
         } catch (error) {
-          console.error('[FilterSystem] Error timing out user:', error);
+          // Silently fail if rate limited
+          if (error.code !== 50013 && error.code !== 10008) {
+            console.error('[FilterSystem] Error timing out user:', error);
+          }
         }
         break;
     }
@@ -574,6 +681,17 @@ export class FilterSystem {
    */
   async logViolation(message, filterType, details) {
     if (!this.config.logChannel || !this.embedLoader) return;
+    
+    // Check log cooldown
+    const logKey = `${message.author.id}-${filterType}`;
+    const now = Date.now();
+    const lastLog = this.logCooldowns.get(logKey);
+    
+    if (this.cooldownConfig.logCooldown && lastLog && (now - lastLog) < this.cooldownConfig.logCooldown) return;
+    
+    if (this.cooldownConfig.logCooldown) {
+      this.logCooldowns.set(logKey, now);
+    }
     
     const channel = message.guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
@@ -613,7 +731,10 @@ export class FilterSystem {
     try {
       await channel.send({ embeds: [embed] });
     } catch (error) {
-      console.error('[FilterSystem] Failed to log violation:', error);
+      // Silently fail if rate limited
+      if (error.code !== 50013) {
+        console.error('[FilterSystem] Failed to log violation:', error);
+      }
     }
   }
 
@@ -653,6 +774,40 @@ export class FilterSystem {
   }
 
   /**
+   * Cleanup old tracking data
+   */
+  cleanup() {
+    const now = Date.now();
+    
+    // Clean warning cooldowns
+    if (this.cooldownConfig.warningCooldown) {
+      for (const [key, timestamp] of this.warningCooldowns) {
+        if (now - timestamp > this.cooldownConfig.warningCooldown * 2) {
+          this.warningCooldowns.delete(key);
+        }
+      }
+    }
+    
+    // Clean user warnings
+    if (this.cooldownConfig.userViolationWindow) {
+      for (const [userId, data] of this.userWarnings) {
+        if (now - data.lastWarning > this.cooldownConfig.userViolationWindow * 2) {
+          this.userWarnings.delete(userId);
+        }
+      }
+    }
+    
+    // Clean log cooldowns
+    if (this.cooldownConfig.logCooldown) {
+      for (const [key, timestamp] of this.logCooldowns) {
+        if (now - timestamp > this.cooldownConfig.logCooldown * 2) {
+          this.logCooldowns.delete(key);
+        }
+      }
+    }
+  }
+
+  /**
    * Get filter statistics
    */
   getStats() {
@@ -674,6 +829,11 @@ export class FilterSystem {
         violations: this.stats.largeMessageFiltered,
         spaceAbuseDetection: this.config.largeMessageFilter.detectSpaceAbuse,
         spaceAbuseViolations: this.stats.spaceAbuseFiltered
+      },
+      activeCooldowns: {
+        warnings: this.warningCooldowns.size,
+        users: this.userWarnings.size,
+        logs: this.logCooldowns.size
       }
     };
   }

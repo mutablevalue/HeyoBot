@@ -85,6 +85,13 @@ linkProtection:
     - giant.gfycat.com
     - i.giphy.com
     - i.imgur.com
+  # NEW RATE LIMITING SETTINGS:
+  warningCooldown: 30000 # 30 seconds between warnings in same channel
+  userViolationWindow: 60000 # Track violations within 1 minute
+  userViolationThreshold: 5 # After 5 violations, stop warning that user
+  logCooldown: 3600000 # 1 hour between logs for same user
+  cleanupInterval: 300000 # Clean tracking data every 5 minutes
+  warningDeleteAfter: 1000 # Delete warning messages after 5 seconds
 vanity:
   enabled: true
   checkIntervalSeconds: 1800
@@ -251,6 +258,7 @@ antiNuke:
       maxActions: 5
       timeWindowSeconds: 120
       highAlertMaxActions: 2
+      logTimeWindow: 5000 # 5 seconds to check audit logs
     messages:
       maxMessages: 8
       timeWindowSeconds: 10
@@ -285,6 +293,11 @@ antiNuke:
       highAlertMaxActions: 1
   adminLogChannel: "1376674252173873183"
   abuseLogChannel: "1376674252173873183"
+  # NEW RATE LIMITING SETTINGS:
+  logCooldown: 3600000 # 1 hour between same log types
+  warningCooldown: 30000 # 30 seconds between warnings
+  cleanupInterval: 300000 # Clean tracking data every 5 minutes  
+  maxTrackingAge: 3600000 # Keep tracking data for 1 hour
   highAlert:
     enabled: false
     thresholdReduction: 0.5
@@ -355,6 +368,9 @@ antiNuke:
       - limitChannelCreation
       - preventMentions
       - slowMode
+    # NEW SETTINGS:
+    slowModeRate: 30 # 30 second slowmode during raids
+    normalVerificationLevel: 2 # Normal verification level when raid ends
   webhookProtection:
     enabled: true
     minPermissionLevel: 3
@@ -365,6 +381,9 @@ antiNuke:
       action: delete
     trackCreators: true
     logWebhookEvents: true
+    # NEW SETTINGS:
+    trackingMaxAge: 600000 # Keep webhook tracking for 1 minute
+    logTimeWindow: 5000 # 5 seconds to check audit logs
   botProtection:
     enabled: true
     minPermissionLevel: 4
@@ -372,48 +391,8 @@ antiNuke:
     inviterTimeout: 600000
     logBotEvents: true
     whitelistedBots: []
-permissionHierarchy:
-  levels:
-    user: 0
-    moderator: 1
-    whitelisted: 2
-    administrator: 3
-    antiNukeAdmin: 4
-    owner: 5
-    botOwner: 6
-  inheritance: true
-  roleManagement:
-    moderator:
-      canAssign: []
-      canRemove: []
-    administrator:
-      canAssign:
-        - moderator
-      canRemove:
-        - moderator
-    antiNukeAdmin:
-      canAssign:
-        - moderator
-        - administrator
-      canRemove:
-        - moderator
-        - administrator
-      canWhitelist: true
-      canManagePermissions: true
-    owner:
-      canAssign:
-        - all
-      canRemove:
-        - all
-      canWhitelist: true
-      canManagePermissions: true
-    botOwner:
-      canAssign:
-        - all
-      canRemove:
-        - all
-      canWhitelist: true
-      canManagePermissions: true
+    # NEW SETTINGS:
+    logTimeWindow: 100000 # 10 seconds to check audit logs
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
@@ -607,6 +586,13 @@ filter:
   logChannel: null
   enableLogging: false
   trackStats: false
+  # NEW RATE LIMITING SETTINGS:
+  warningCooldown: 30000 # 30 seconds between warnings in same channel
+  userViolationWindow: 60000 # Track violations within 1 minute
+  userViolationThreshold: 1 # After 5 violations, stop warning that user
+  logCooldown: 3600000 # 1 hour between logs for same user
+  cleanupInterval: 300000 # Clean tracking data every 5 minutes
+  warningDeleteAfter: 5000 # Delete warning messages after 5 seconds
 embed:
   color: 8388608
   formatters:
@@ -732,6 +718,12 @@ snipe:
     enabled: true
     ignoreBots: true
     notifyOnGhostPing: true
+    # NEW SETTINGS:
+    maxDeleteTime: 5000 # 5 seconds - message must be deleted within this time
+    cooldownDuration: 3600000 # 1 hour cooldown per user
+  # NEW SETTINGS:
+  messageTrackingTimeout: 30000 # Track messages for 10 seconds
+  cleanupInterval: 60000 # Clean old data every minute
 socialLookup:
   enabled: true
   cacheExpiry: 3600
