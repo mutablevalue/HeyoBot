@@ -1230,13 +1230,16 @@ export async function executeForceNickname(interaction) {
       });
     }
 
-    // Use moderation system's canManageMember check
-    const canManage = moderationSystem.canManageMember(interaction.member, member);
-    if (!canManage.allowed) {
-      return interaction.reply({ 
-        content: embedLoader.format(canManage.reason, 'message'), 
-        ephemeral: true 
-      });
+    // Allow users to force nickname themselves, otherwise check permissions
+    if (user.id !== interaction.user.id) {
+      // Use moderation system's canManageMember check
+      const canManage = moderationSystem.canManageMember(interaction.member, member);
+      if (!canManage.allowed) {
+        return interaction.reply({ 
+          content: embedLoader.format(canManage.reason, 'message'), 
+          ephemeral: true 
+        });
+      }
     }
 
     const success = await moderationSystem.forceNickname(interaction.guild.id, user.id, nickname);
