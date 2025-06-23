@@ -67,8 +67,8 @@ linkProtection:
   deleteMessage: true
   warningMessage: Stop posting links.
   ephemeralWarning: true
-  allowGifServices: true  # Allow links from popular GIF services
-  gifServices:  # List of allowed GIF service domains
+  allowGifServices: true
+  gifServices:
     - tenor.com
     - giphy.com
     - gfycat.com
@@ -153,7 +153,9 @@ moderation:
         - djremove
     moderator:
       users: []
-      roles: []
+      roles:
+        - "1386505054676324454"
+        - "1386505053459845231"
       commands:
         - lockchannel
         - unlockchannel
@@ -250,7 +252,7 @@ antiNuke:
       timeWindowSeconds: 120
       highAlertMaxActions: 2
     messages:
-      maxMessages: 1
+      maxMessages: 8
       timeWindowSeconds: 10
       timeoutDuration: 60s
     channelCreate:
@@ -299,7 +301,7 @@ antiNuke:
       threshold: 5
       action: delete
     massEmoji:
-      enabled: true
+      enabled: false
       threshold: 10
       action: delete
     capsSpam:
@@ -575,7 +577,7 @@ filter:
     customWords: []
     exemptRoles: []
     exemptChannels: []
-    action: delete  # Options: delete, warn, timeout
+    action: delete
     timeoutDuration: 300
     warningMessage: Your message contains prohibited words.
     caseSensitive: false
@@ -592,17 +594,16 @@ filter:
     maxFileSize: 8388608
   largeMessageFilter:
     enabled: true
-    maxLength: 1000  # Maximum allowed message length in characters
-    exemptRoles: []  # Role IDs that can send large messages
-    exemptChannels: []  # Channel IDs where large messages are allowed
-    action: delete  # Options: delete, warn, truncate
-    warningMessage: "Your message is too long. Maximum allowed length is {maxLength} characters."
-    splitMessage: false  # If true, sends a truncated version after deletion
-    # NEW: Space abuse detection settings
-    detectSpaceAbuse: true  # Enable detection of excessive spacing
-    maxConsecutiveSpaces: 5  # Maximum allowed consecutive spaces
-    maxWhitespaceRatio: 0.5  # Maximum ratio of whitespace to total message (0.5 = 50%)
-    spaceAbuseMessage: "Your message contains excessive spacing."
+    maxLength: 1000
+    exemptRoles: []
+    exemptChannels: []
+    action: delete
+    warningMessage: Your message is too long. Maximum allowed length is {maxLength} characters.
+    splitMessage: false
+    detectSpaceAbuse: true
+    maxConsecutiveSpaces: 5
+    maxWhitespaceRatio: 0.5
+    spaceAbuseMessage: Your message contains excessive spacing.
   logChannel: null
   enableLogging: false
   trackStats: false
