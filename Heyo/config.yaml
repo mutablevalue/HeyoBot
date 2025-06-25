@@ -393,9 +393,9 @@ antiNuke:
   # Message spam detection
   messageSpam:
     enabled: true
-    maxMessages: 8
+    maxMessages: 5
     timeWindow: 10000
-    raidThreshold: 4
+    raidThreshold: 3
     action: timeout
     timeoutDuration: 300000
   # Enhanced selfbot detection
