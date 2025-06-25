@@ -1,13 +1,26 @@
-// src/systems/antiNuke.js - Main AntiNuke orchestrator
+// src/systems/antiNuke.js - Main Security System orchestrator
 import { Events } from 'discord.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
-// Import AntiNuke modules
+// Import AntiNuke protection modules
 import SpamDetection from './antinuke/spamDetection.js';
 import SelfbotDetection from './antinuke/selfbotDetection.js';
 import ThreatDetection from './antinuke/threatDetection.js';
 import ProtectionHandler from './antinuke/protectionHandler.js';
+
+// Import Permission modules
+import PermissionManager from './antinuke/permissions/permissionManager.js';
+import WhitelistManager from './antinuke/permissions/whitelistManager.js';
+
+// Import Moderation modules
+import ActionHandler from './antinuke/moderation/actionHandler.js';
+import CooldownManager from './antinuke/moderation/cooldownManager.js';
+import RoleManager from './antinuke/moderation/roleManager.js';
+import NicknameManager from './antinuke/moderation/nicknameManager.js';
+import LoggingHandler from './antinuke/moderation/loggingHandler.js';
+import LinkProtectionModule from './antinuke/moderation/linkProtection.js';
+import FilterSystemModule from './antinuke/moderation/filterSystem.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,13 +31,25 @@ export default class AntiNuke {
     this.config = config.get('antiNuke');
     this.fullConfig = config;
     this.embedLoader = null;
-    this.permissionSystem = null;
     
-    // Initialize modules
+    // Initialize protection modules
     this.spamDetection = new SpamDetection(this);
     this.selfbotDetection = new SelfbotDetection(this);
     this.threatDetection = new ThreatDetection(this);
     this.protectionHandler = new ProtectionHandler(this);
+    
+    // Initialize permission modules
+    this.permissions = new PermissionManager(this);
+    this.whitelist = new WhitelistManager(this);
+    
+    // Initialize moderation modules
+    this.actions = new ActionHandler(this);
+    this.cooldowns = new CooldownManager(this);
+    this.roles = new RoleManager(this);
+    this.nicknames = new NicknameManager(this);
+    this.logging = new LoggingHandler(this);
+    this.linkProtection = new LinkProtectionModule(this);
+    this.filterSystem = new FilterSystemModule(this);
     
     // Core tracking data
     this.suspiciousUsers = new Set();
@@ -65,7 +90,12 @@ export default class AntiNuke {
     };
     
     this.setupEventListeners();
-    console.log('[AntiNuke] System initialized with modular architecture');
+    console.log('[AntiNuke] Unified Security System initialized');
+    console.log('[AntiNuke] ├─ Protection modules loaded');
+    console.log('[AntiNuke] ├─ Permission system integrated');
+    console.log('[AntiNuke] ├─ Moderation system integrated');
+    console.log('[AntiNuke] ├─ Link protection integrated');
+    console.log('[AntiNuke] └─ Filter system integrated');
     
     // Setup cleanup interval
     if (this.cooldownConfig.cleanupInterval) {
@@ -74,90 +104,77 @@ export default class AntiNuke {
   }
   
   /**
-   * Set the unified permission system
-   */
-  setPermissionSystem(system) {
-    this.permissionSystem = system;
-  }
-  
-  /**
    * Set the embed loader
    */
   setEmbedLoader(loader) {
     this.embedLoader = loader;
+    // Pass to modules that need it
+    this.logging.setEmbedLoader(loader);
+  }
+  
+  /**
+   * Set external permission system (for backwards compatibility)
+   */
+  setPermissionSystem(system) {
+    // This is now internal, but kept for compatibility
+    console.log('[AntiNuke] External permission system ignored - using internal system');
+  }
+  
+  /**
+   * Get permission level of a member (for external access)
+   */
+  getPermissionLevel(member) {
+    return this.permissions.getPermissionLevel(member);
   }
   
   /**
    * Check if a user is whitelisted
    */
   isWhitelisted(userId) {
-    const whitelist = this.config.whitelist || { users: [], roles: [] };
-    return whitelist.users.includes(userId);
+    return this.whitelist.isUserWhitelisted(userId);
   }
   
   /**
    * Check if a member is whitelisted
    */
   isMemberWhitelisted(member) {
-    if (!member) return false;
-    
-    if (this.isWhitelisted(member.id)) return true;
-    
-    if (member.roles && member.roles.cache) {
-      const whitelist = this.config.whitelist || { users: [], roles: [] };
-      return member.roles.cache.some(role => whitelist.roles.includes(role.id));
-    }
-    
-    return false;
+    return this.whitelist.isMemberWhitelisted(member);
   }
   
   /**
    * Check if a user is an AntiNuke admin
    */
   isAntiNukeAdmin(userId) {
-    if (!this.permissionSystem) return false;
-    
-    const mockMember = {
-      id: userId,
-      guild: { id: 'check' },
-      roles: { cache: new Map() }
-    };
-    
-    return this.permissionSystem.getPermissionLevel(mockMember) >= this.permissionSystem.LEVELS.ANTINUKE_ADMIN;
+    return this.permissions.isAntiNukeAdmin({ id: userId });
   }
   
   /**
    * Check if a member is an AntiNuke admin
    */
   isMemberAntiNukeAdmin(member) {
-    if (!this.permissionSystem) return false;
-    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ANTINUKE_ADMIN;
+    return this.permissions.isAntiNukeAdmin(member);
   }
   
   /**
    * Check if member can create webhooks
    */
   canCreateWebhooks(member) {
-    if (!this.permissionSystem) return false;
-    
     if (this.fullConfig.get('moderation.ownerBypass') && member.id === member.guild.ownerId) {
       return true;
     }
     
-    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ADMINISTRATOR;
+    return this.permissions.getPermissionLevel(member) >= this.permissions.LEVELS.ADMINISTRATOR;
   }
   
   /**
    * Check if member can invite bots
    */
   canInviteBots(member) {
-    if (!this.permissionSystem) return false;
-    
     if (this.fullConfig.get('moderation.ownerBypass') && member.id === member.guild.ownerId) {
       return true;
     }
     
-    return this.permissionSystem.getPermissionLevel(member) >= this.permissionSystem.LEVELS.ANTINUKE_ADMIN;
+    return this.permissions.getPermissionLevel(member) >= this.permissions.LEVELS.ANTINUKE_ADMIN;
   }
   
   /**
@@ -277,34 +294,10 @@ export default class AntiNuke {
       this.logCooldowns.set(logKey, now);
     }
     
-    const logChannel = guild.channels.cache.get(this.config.adminLogChannel);
-    if (!logChannel) return;
-    
-    const embed = this.embedLoader.createEmbed({
-      title: `AntiNuke: ${action}`,
-      description: details,
-      timestamp: true,
-      fields: [
-        {
-          name: 'High Alert',
-          value: this.highAlert ? 'ENABLED' : 'Disabled',
-          inline: true
-        },
-        {
-          name: 'Raid Mode',
-          value: this.raidMode.enabled ? 'ACTIVE' : 'Inactive',
-          inline: true
-        }
-      ]
+    await this.logging.logSecurityEvent(guild, action, details, {
+      highAlert: this.highAlert,
+      raidMode: this.raidMode.enabled
     });
-    
-    try {
-      await logChannel.send({ embeds: [embed] });
-    } catch (error) {
-      if (error.code !== 50013) {
-        console.error('[AntiNuke] Error logging security event:', error);
-      }
-    }
   }
   
   /**
@@ -323,30 +316,25 @@ export default class AntiNuke {
       this.logCooldowns.set(logKey, now);
     }
     
-    const logChannel = guild.channels.cache.get(this.config.abuseLogChannel);
-    if (!logChannel) return;
-    
-    const embed = this.embedLoader.createEmbed({
-      title: 'Content Violation Detected',
-      description: `**User:** ${user}\n**Type:** ${type}`,
-      timestamp: true
-    });
-    
-    try {
-      await logChannel.send({ embeds: [embed] });
-    } catch (error) {
-      if (error.code !== 50013) {
-        console.error('[AntiNuke] Error logging abuse:', error);
-      }
-    }
+    await this.logging.logAbuseEvent(guild, type, user);
+  }
+  
+  /**
+   * Log moderation action
+   */
+  async logAction(guild, actionData) {
+    return await this.logging.logModerationAction(guild, actionData);
   }
   
   /**
    * Setup event listeners
    */
   setupEventListeners() {
-    // Delegate to threat detection module
+    // Delegate to modules
     this.threatDetection.setupEventListeners();
+    this.nicknames.setupEventListeners();
+    this.linkProtection.setupEventListeners();
+    this.filterSystem.setupEventListeners();
     
     // Message events
     this.client.on(Events.MessageCreate, async (message) => {
@@ -399,6 +387,10 @@ export default class AntiNuke {
     this.selfbotDetection.cleanup();
     this.threatDetection.cleanup();
     this.protectionHandler.cleanup();
+    this.permissions.cleanup();
+    this.cooldowns.cleanup();
+    this.linkProtection.cleanup();
+    this.filterSystem.cleanup();
     
     // Clean log cooldowns
     if (this.cooldownConfig.logCooldown) {
@@ -420,7 +412,7 @@ export default class AntiNuke {
   }
   
   /**
-   * Get statistics
+   * Get comprehensive statistics
    */
   getStats() {
     return {
@@ -441,10 +433,15 @@ export default class AntiNuke {
       },
       activeCooldowns: {
         logs: this.logCooldowns.size,
-        warnings: this.warningCooldowns.size
+        warnings: this.warningCooldowns.size,
+        commands: this.cooldowns.getActiveCooldowns()
       },
       selfbotDetection: this.selfbotDetection.getStats(),
-      messageSpam: this.spamDetection.getStats()
+      messageSpam: this.spamDetection.getStats(),
+      permissions: this.permissions.getStats(),
+      moderation: this.actions.getStats(),
+      linkProtection: this.linkProtection.getStats(),
+      filterSystem: this.filterSystem.getStats()
     };
   }
   
@@ -470,5 +467,206 @@ export default class AntiNuke {
     } catch (error) {
       console.error('[AntiNuke] Error saving config:', error);
     }
+  }
+  
+  // === MODERATION SYSTEM INTERFACE ===
+  // These methods provide the moderation interface for backwards compatibility
+  
+  /**
+   * Check permission for command
+   */
+  checkPermission(member, commandName) {
+    return this.actions.checkPermission(member, commandName);
+  }
+  
+  /**
+   * Check cooldown for a command
+   */
+  checkCooldown(userId, commandName) {
+    return this.cooldowns.checkCooldown(userId, commandName);
+  }
+  
+  /**
+   * Apply cooldown multiplier
+   */
+  applyCooldownMultiplier(userId, commandName, multiplier) {
+    return this.cooldowns.applyCooldownMultiplier(userId, commandName, multiplier);
+  }
+  
+  /**
+   * Get or create mute role
+   */
+  async getOrCreateMuteRole(guild) {
+    return await this.roles.getOrCreateMuteRole(guild);
+  }
+  
+  /**
+   * Force nickname
+   */
+  async forceNickname(guildId, userId, nickname) {
+    return await this.nicknames.forceNickname(guildId, userId, nickname);
+  }
+  
+  /**
+   * Remove forced nickname
+   */
+  async removeForcedNickname(guildId, userId) {
+    return await this.nicknames.removeForcedNickname(guildId, userId);
+  }
+  
+  /**
+   * Get forced nickname
+   */
+  getForcedNickname(userId) {
+    return this.nicknames.getForcedNickname(userId);
+  }
+  
+  /**
+   * Can manage member
+   */
+  canManageMember(executor, target) {
+    return this.actions.canManageMember(executor, target);
+  }
+  
+  /**
+   * Can manage role
+   */
+  canManageRole(executor, role) {
+    return this.actions.canManageRole(executor, role);
+  }
+  
+  /**
+   * Check if globally exempt
+   */
+  isGloballyExempt(member) {
+    return this.actions.isGloballyExempt(member);
+  }
+  
+  /**
+   * Has bypass permissions
+   */
+  hasBypassPermissions(member) {
+    return this.actions.hasBypassPermissions(member);
+  }
+  
+  // === PERMISSION SYSTEM INTERFACE ===
+  // These methods provide the permission interface for backwards compatibility
+  
+  /**
+   * Can execute command
+   */
+  canExecuteCommand(member, commandName) {
+    return this.permissions.canExecuteCommand(member, commandName);
+  }
+  
+  /**
+   * Add to whitelist
+   */
+  async addToWhitelist(userId) {
+    return await this.whitelist.addUser(userId);
+  }
+  
+  /**
+   * Remove from whitelist
+   */
+  async removeFromWhitelist(userId) {
+    return await this.whitelist.removeUser(userId);
+  }
+  
+  /**
+   * Add user to permission level
+   */
+  async addUserToLevel(userId, level) {
+    return await this.permissions.addUserToLevel(userId, level);
+  }
+  
+  /**
+   * Remove user from permission level
+   */
+  async removeUserFromLevel(userId, level) {
+    return await this.permissions.removeUserFromLevel(userId, level);
+  }
+  
+  // === LINK PROTECTION INTERFACE ===
+  // These methods provide the link protection interface
+  
+  /**
+   * Check if link protection is enabled
+   */
+  isLinkProtectionEnabled() {
+    return this.linkProtection.config.enabled;
+  }
+  
+  /**
+   * Add allowed user for links
+   */
+  async addLinkAllowedUser(userId) {
+    return await this.linkProtection.addAllowedUser(userId);
+  }
+  
+  /**
+   * Remove allowed user for links
+   */
+  async removeLinkAllowedUser(userId) {
+    return await this.linkProtection.removeAllowedUser(userId);
+  }
+  
+  /**
+   * Add allowed role for links
+   */
+  async addLinkAllowedRole(roleId) {
+    return await this.linkProtection.addAllowedRole(roleId);
+  }
+  
+  /**
+   * Remove allowed role for links
+   */
+  async removeLinkAllowedRole(roleId) {
+    return await this.linkProtection.removeAllowedRole(roleId);
+  }
+  
+  /**
+   * Add GIF service
+   */
+  async addGifService(domain) {
+    return await this.linkProtection.addGifService(domain);
+  }
+  
+  /**
+   * Remove GIF service
+   */
+  async removeGifService(domain) {
+    return await this.linkProtection.removeGifService(domain);
+  }
+  
+  // === FILTER SYSTEM INTERFACE ===
+  // These methods provide the filter system interface
+  
+  /**
+   * Check if filter system is enabled
+   */
+  isFilterSystemEnabled() {
+    return this.filterSystem.config.enabled;
+  }
+  
+  /**
+   * Add filtered word
+   */
+  addFilteredWord(word) {
+    return this.filterSystem.addFilteredWord(word);
+  }
+  
+  /**
+   * Remove filtered word
+   */
+  removeFilteredWord(word) {
+    return this.filterSystem.removeFilteredWord(word);
+  }
+  
+  /**
+   * Get filter statistics
+   */
+  getFilterStats() {
+    return this.filterSystem.getStats();
   }
 }

@@ -305,7 +305,7 @@ antiNuke:
       enabled: true
       triggers:
         suspiciousUsers: 5
-        trackedActions: 50
+        trackedActions: 15
         timeWindow: 300000
   contentModeration:
     enabled: true

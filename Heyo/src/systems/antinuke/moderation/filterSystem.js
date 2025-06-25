@@ -1,5 +1,4 @@
-// src/systems/filterSystem.js
-import { EmbedBuilder } from 'discord.js';
+// src/systems/antinuke/moderation/filterSystem.js
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -8,14 +7,11 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export class FilterSystem {
-  constructor(client, configLoader) {
-    this.client = client;
-    this.configLoader = configLoader;
-    
-    // Reference to moderation system (will be set by index.js)
-    this.moderationSystem = null;
-    this.embedLoader = null;
+export default class FilterSystem {
+  constructor(antiNuke) {
+    this.antiNuke = antiNuke;
+    this.client = antiNuke.client;
+    this.configLoader = antiNuke.fullConfig;
     
     // Warning and log tracking to prevent spam
     this.warningCooldowns = new Map(); // channelId + type -> lastWarningTime
@@ -68,7 +64,7 @@ export class FilterSystem {
         action: filterConfig.largeMessageFilter?.action || 'delete',
         warningMessage: filterConfig.largeMessageFilter?.warningMessage || 'Your message is too long. Maximum allowed length is {maxLength} characters.',
         splitMessage: filterConfig.largeMessageFilter?.splitMessage ?? false,
-        // NEW: Space detection settings
+        // Space detection settings
         detectSpaceAbuse: filterConfig.largeMessageFilter?.detectSpaceAbuse ?? true,
         maxConsecutiveSpaces: filterConfig.largeMessageFilter?.maxConsecutiveSpaces || 5,
         maxWhitespaceRatio: filterConfig.largeMessageFilter?.maxWhitespaceRatio || 0.5, // 50% of message
@@ -91,16 +87,11 @@ export class FilterSystem {
     };
     
     // Load data
-    this.dataPath = path.join(__dirname, '../../data', this.config.dataFile);
+    this.dataPath = path.join(__dirname, '../../../data', this.config.dataFile);
     this.loadFilterData();
     
     // Initialize word list
     this.initializeWordList();
-
-    // Setup event listeners
-    if (this.config.enabled) {
-      this.setupEventListeners();
-    }
     
     // Cleanup interval if configured
     if (this.cooldownConfig.cleanupInterval) {
@@ -109,17 +100,51 @@ export class FilterSystem {
   }
 
   /**
-   * Set moderation system reference
+   * Setup event listeners
    */
-  setModerationSystem(moderationSystem) {
-    this.moderationSystem = moderationSystem;
-  }
+  setupEventListeners() {
+    if (!this.config.enabled) return;
+    
+    this.client.on('messageCreate', async (message) => {
+      if (message.author.bot || !message.guild) return;
+      
+      // Use centralized permission check
+      if (this.antiNuke.actions.isGloballyExempt(message.member)) return;
+      
+      // Check large message filter FIRST (including space abuse)
+      if (this.config.largeMessageFilter.enabled) {
+        const largeMessageHandled = await this.checkMessageLength(message);
+        if (largeMessageHandled) return; // If message was deleted for being too long/spaced, skip other checks
+      }
+      
+      // Check word filter
+      if (this.config.wordFilter.enabled) {
+        await this.checkMessageContent(message);
+      }
+      
+      // Check image filter (simplified - no actual NSFW detection)
+      if (this.config.imageFilter.enabled && message.attachments.size > 0) {
+        await this.checkMessageAttachments(message);
+      }
+    });
 
-  /**
-   * Set embed loader reference
-   */
-  setEmbedLoader(embedLoader) {
-    this.embedLoader = embedLoader;
+    this.client.on('messageUpdate', async (oldMessage, newMessage) => {
+      if (!newMessage.guild || newMessage.author?.bot) return;
+      
+      // Use centralized permission check
+      if (this.antiNuke.actions.isGloballyExempt(newMessage.member)) return;
+      
+      // Check large message filter
+      if (this.config.largeMessageFilter.enabled) {
+        const largeMessageHandled = await this.checkMessageLength(newMessage);
+        if (largeMessageHandled) return;
+      }
+      
+      // Check edited message content
+      if (this.config.wordFilter.enabled) {
+        await this.checkMessageContent(newMessage);
+      }
+    });
   }
 
   /**
@@ -181,52 +206,6 @@ export class FilterSystem {
     for (const word of this.config.wordFilter.customWords) {
       this.filteredWords.add(word.toLowerCase());
     }
-  }
-
-  /**
-   * Setup event listeners
-   */
-  setupEventListeners() {
-    this.client.on('messageCreate', async (message) => {
-      if (message.author.bot || !message.guild) return;
-      
-      // Use centralized permission check if moderation system is available
-      if (this.moderationSystem?.isGloballyExempt(message.member)) return;
-      
-      // Check large message filter FIRST (including space abuse)
-      if (this.config.largeMessageFilter.enabled) {
-        const largeMessageHandled = await this.checkMessageLength(message);
-        if (largeMessageHandled) return; // If message was deleted for being too long/spaced, skip other checks
-      }
-      
-      // Check word filter
-      if (this.config.wordFilter.enabled) {
-        await this.checkMessageContent(message);
-      }
-      
-      // Check image filter (simplified - no actual NSFW detection)
-      if (this.config.imageFilter.enabled && message.attachments.size > 0) {
-        await this.checkMessageAttachments(message);
-      }
-    });
-
-    this.client.on('messageUpdate', async (oldMessage, newMessage) => {
-      if (!newMessage.guild || newMessage.author?.bot) return;
-      
-      // Use centralized permission check
-      if (this.moderationSystem?.isGloballyExempt(newMessage.member)) return;
-      
-      // Check large message filter
-      if (this.config.largeMessageFilter.enabled) {
-        const largeMessageHandled = await this.checkMessageLength(newMessage);
-        if (largeMessageHandled) return;
-      }
-      
-      // Check edited message content
-      if (this.config.wordFilter.enabled) {
-        await this.checkMessageContent(newMessage);
-      }
-    });
   }
 
   /**
@@ -561,25 +540,16 @@ export class FilterSystem {
    * Check if message is exempt from filtering
    */
   isExempt(message, type) {
-    // Use global exemption first (if moderator or higher)
-    if (this.moderationSystem) {
-      const member = message.member || message.author;
-      // Check if user has moderator permissions or higher (permission level 1+)
-      if (member && member.guild) {
-        try {
-          const mockMember = {
-            id: member.id,
-            guild: member.guild,
-            roles: member.roles || { cache: new Map() }
-          };
-          // Get permission level if permission system is available
-          const modConfig = this.configLoader.get('moderation');
-          if (modConfig?.ownerBypass && member.id === member.guild.ownerId) {
-            return true;
-          }
-        } catch (error) {
-          // Continue with normal exemption checks
-        }
+    // Use global exemption from AntiNuke's permission system
+    if (this.antiNuke.permissions) {
+      const permLevel = this.antiNuke.permissions.getPermissionLevel(message.member);
+      // Moderator level (1) or higher is exempt
+      if (permLevel >= 1) return true;
+      
+      // Check owner bypass
+      const modConfig = this.configLoader.get('moderation');
+      if (modConfig?.ownerBypass && message.member.id === message.guild.ownerId) {
+        return true;
       }
     }
     
@@ -680,7 +650,7 @@ export class FilterSystem {
    * Log filter violation
    */
   async logViolation(message, filterType, details) {
-    if (!this.config.logChannel || !this.embedLoader) return;
+    if (!this.config.logChannel || !this.antiNuke.embedLoader) return;
     
     // Check log cooldown
     const logKey = `${message.author.id}-${filterType}`;
@@ -696,7 +666,8 @@ export class FilterSystem {
     const channel = message.guild.channels.cache.get(this.config.logChannel);
     if (!channel?.isTextBased()) return;
     
-    const embed = this.embedLoader.createEmbed({
+    const embedLoader = this.antiNuke.embedLoader;
+    const embed = embedLoader.createEmbed({
       title: 'Filter System',
       description: 'Violation detected',
       fields: [

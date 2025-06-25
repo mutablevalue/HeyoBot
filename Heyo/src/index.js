@@ -1,6 +1,5 @@
 // src/index.js
-// Entry point for your Discord bot (ESM).
-// Complete file with unified permission system and music system
+// Entry point for your Discord bot (ESM) with unified AntiNuke system
 
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
@@ -10,19 +9,17 @@ import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import { EmbedLoader } from "./utils/embedLoader.js";
 import { RateLimiter } from "./utils/rateLimiter.js";
-import { UnifiedPermissionSystem } from "./systems/unifiedPermissions.js";
-import AntiNuke from "./systems/antiNuke.js";
+import AntiNuke from "./systems/antiNuke.js"; // Now includes permissions & moderation
 import { J2CManager } from "./systems/j2cManager.js";
-import { ModerationSystem } from "./systems/moderationSystem.js";
 import { VanityManager } from "./systems/vanityManager.js";
 import { AfkManager } from "./systems/afkManager.js";
-import { LinkProtection } from "./systems/linkProtection.js";
+// LinkProtection is now integrated into AntiNuke
 import { WelcomeSystem } from "./systems/welcomeSystem.js";
 import { RoleTracker } from "./systems/roleTracker.js";
 import { LeaderboardSystem } from "./systems/leaderboardSystem.js";
 import { EventHostingSystem } from "./systems/eventHostingSystem.js";
 import { BoosterSystem } from "./systems/boosterSystem.js";
-import { FilterSystem } from "./systems/filterSystem.js";
+// FilterSystem is now integrated into AntiNuke
 import { BanAppealSystem } from "./systems/banAppealSystem.js";
 import { TicketSystem } from "./systems/ticketSystem.js";
 import { ConfessSystem } from "./systems/confessSystem.js";
@@ -95,59 +92,47 @@ async function main() {
     ]
   });
 
-  // 3) Initialize systems with proper hierarchy
+  // 3) Initialize systems with unified security architecture
   console.log('\n=== Initializing Bot Systems ===');
   
   // First: Core utilities
   const embedLoader = new EmbedLoader(config);
   console.log('✓ EmbedLoader initialized');
   
-  // Second: Unified Permission System (manages all permissions)
-  const permissionSystem = new UnifiedPermissionSystem(config);
-  console.log('✓ Unified Permission System initialized');
+  // Second: Unified Security System (AntiNuke + Permissions + Moderation)
+  const antiNuke = new AntiNuke(client, config);
+  antiNuke.setEmbedLoader(embedLoader);
+  console.log('✓ Unified Security System initialized');
+  console.log('  ├─ AntiNuke Protection: Active');
+  console.log('  ├─ Permission Management: Integrated');
+  console.log('  └─ Moderation System: Integrated');
   
-  // Third: Rate Limiter (uses permission levels)
+  // Third: Rate Limiter (uses AntiNuke's permission system)
   const rateLimiterConfig = config.get("rateLimit");
   const rateLimiter = new RateLimiter(rateLimiterConfig);
-  rateLimiter.setPermissionSystem(permissionSystem); // Connect to permission system
+  // Connect to AntiNuke's internal permission system
+  rateLimiter.getPermissionLevel = (member) => antiNuke.getPermissionLevel(member);
   console.log('✓ Rate Limiter initialized');
   
-  // Fourth: AntiNuke (uses permission system)
-  const antiNuke = new AntiNuke(client, config);
-  antiNuke.embedLoader = embedLoader;
-  antiNuke.setPermissionSystem(permissionSystem);
-  console.log('✓ AntiNuke System initialized');
-  
-  // Fifth: ModerationSystem (uses permission system)
-  const moderationSystem = new ModerationSystem(client, config);
-  moderationSystem.setAntiNuke(antiNuke);
-  moderationSystem.setEmbedLoader(embedLoader);
-  moderationSystem.setPermissionSystem(permissionSystem);
-  console.log('✓ Moderation System initialized');
-  
-  // Sixth: All other systems
+  // Fourth: All other systems
   const j2cManager = new J2CManager(client, config);
   const vanityManager = new VanityManager(client, config);
   const afkManager = new AfkManager(client, config);
   afkManager.embedLoader = embedLoader;
   
-  const friendGroupSystem = new FriendGroupSystem(client, config, moderationSystem);
+  const friendGroupSystem = new FriendGroupSystem(client, config, antiNuke); // Uses antiNuke instead of moderationSystem
   friendGroupSystem.embedLoader = embedLoader;
   
-  const linkProtection = new LinkProtection(client, config);
-  linkProtection.setModerationSystem(moderationSystem);
-  linkProtection.setEmbedLoader(embedLoader);
+  // LinkProtection is now integrated into AntiNuke's moderation modules
   
   const welcomeSystem = new WelcomeSystem(client, config);
   const roleTracker = new RoleTracker(client, config, embedLoader);
   const leaderboardSystem = new LeaderboardSystem(client, config);
   const eventHostingSystem = new EventHostingSystem(client, config, leaderboardSystem);
-  const boosterSystem = new BoosterSystem(client, config, moderationSystem);
+  const boosterSystem = new BoosterSystem(client, config, antiNuke); // Pass antiNuke as moderationSystem
   boosterSystem.embedLoader = embedLoader;
   
-  const filterSystem = new FilterSystem(client, config);
-  filterSystem.setModerationSystem(moderationSystem);
-  filterSystem.setEmbedLoader(embedLoader);
+  // FilterSystem is now integrated into AntiNuke's moderation modules
   
   const banAppealSystem = new BanAppealSystem(client, config);
   banAppealSystem.embedLoader = embedLoader;
@@ -159,7 +144,7 @@ async function main() {
   const socialLookupSystem = new SocialLookupSystem(client, config);
   const entranceSystem = new EntranceSystem(client, config);
   entranceSystem.setEmbedLoader(embedLoader);
-  const genderVerifySystem = new GenderVerifySystem(client, config, moderationSystem);
+  const genderVerifySystem = new GenderVerifySystem(client, config, antiNuke); // Pass antiNuke as moderationSystem
   genderVerifySystem.embedLoader = embedLoader;
   const giveawaySystem = new GiveawaySystem(client, config, embedLoader);
   const birthdaySystem = new BirthdaySystem(client, config);
@@ -168,7 +153,7 @@ async function main() {
   // Initialize Music System
   const musicSystem = new MusicSystem(client, config);
   musicSystem.setEmbedLoader(embedLoader);
-  musicSystem.setPermissionSystem(permissionSystem);
+  musicSystem.setPermissionSystem(antiNuke); // Pass antiNuke as permissionSystem
   console.log('✓ Music System initialized');
   
   console.log('✓ All subsystems initialized');
@@ -176,24 +161,23 @@ async function main() {
 
   // 4) Pass systems into commands that need them
   
-  // Core permission commands
-  permissionsCommand.setPermissionSystem(permissionSystem);
-  permissionsCommand.setModerationSystem(moderationSystem);
+  // Core permission commands now use antiNuke
+  permissionsCommand.setPermissionSystem(antiNuke); // Use existing method name
+  permissionsCommand.setModerationSystem(antiNuke); // Use existing method name
   permissionsCommand.setEmbedLoader(embedLoader);
   
   antiNukeCommand.setAntiNuke(antiNuke);
   antiNukeCommand.setEmbedLoader(embedLoader);
-  antiNukeCommand.setPermissionSystem(permissionSystem);
   
-  // Moderation commands
-  moderationCommands.setModerationSystem(moderationSystem);
+  // Moderation commands now use antiNuke
+  moderationCommands.setModerationSystem(antiNuke); // Use existing method name
   moderationCommands.setEmbedLoader(embedLoader);
   moderationCommands.setAntiNukeInstance(antiNuke); // For multi-user detection
   
   // Music commands
   musicCommands.setMusicSystem(musicSystem);
   musicCommands.setEmbedLoader(embedLoader);
-  musicCommands.setPermissionSystem(permissionSystem);
+  musicCommands.setPermissionSystem(antiNuke); // Use existing method name
   
   // Other system commands
   setupJ2CCommand.setJ2CManager(j2cManager);
@@ -207,8 +191,8 @@ async function main() {
   giveawayCommands.setGiveawaySystem(giveawaySystem);
   giveawayCommands.setEmbedLoader(embedLoader);
   
-  // Channel commands need both ModerationSystem, RoleTracker, and EmbedLoader
-  channelCommands.setModerationSystem(moderationSystem);
+  // Channel commands need both AntiNuke, RoleTracker, and EmbedLoader
+  channelCommands.setModerationSystem(antiNuke); // Use existing method name
   channelCommands.setRoleTracker(roleTracker);
   channelCommands.setEmbedLoader(embedLoader);
   
@@ -219,7 +203,7 @@ async function main() {
   eventCommands.setEmbedLoader(embedLoader);
   boosterCommands.setBoosterSystem(boosterSystem);
   boosterCommands.setEmbedLoader(embedLoader);
-  filterCommands.setFilterSystem(filterSystem);
+  filterCommands.setFilterSystem(antiNuke.filterSystem); // Pass the filter module directly
   filterCommands.setEmbedLoader(embedLoader);
   banAppealCommands.setBanAppealSystem(banAppealSystem);
   banAppealCommands.setEmbedLoader(embedLoader);
@@ -229,7 +213,7 @@ async function main() {
   
   // Skullboard commands need all three systems
   skullboardCommands.setSkullboardSystem(skullboardSystem);
-  skullboardCommands.setModerationSystem(moderationSystem);
+  skullboardCommands.setModerationSystem(antiNuke); // Use existing method name
   skullboardCommands.setEmbedLoader(embedLoader);
   
   // Snipe commands need both SnipeSystem and EmbedLoader
@@ -240,26 +224,26 @@ async function main() {
   socialCommands.setEmbedLoader(embedLoader);
   setupEntranceCommand.setEntranceSystem(entranceSystem);
   setupEntranceCommand.setEmbedLoader(embedLoader);
-  emojiCommand.setModerationSystem(moderationSystem);
+  emojiCommand.setModerationSystem(antiNuke); // Use existing method name
   emojiCommand.setEmbedLoader(embedLoader);
   genderVerifyCommands.setGenderVerifySystem(genderVerifySystem);
-  genderVerifyCommands.setModerationSystem(moderationSystem);
-  messageCommand.setModerationSystem(moderationSystem);
-  messageCommand.setAntiNuke(antiNuke);
+  genderVerifyCommands.setModerationSystem(antiNuke); // Use existing method name
+  messageCommand.setModerationSystem(antiNuke); // Use existing method name
+  messageCommand.setAntiNuke(antiNuke); // Keep this one if it needs actual AntiNuke
   messageCommand.setEmbedLoader(embedLoader);
-  messageCommand.setPermissionSystem(permissionSystem);
+  messageCommand.setPermissionSystem(antiNuke); // Use existing method name
   friendGroupCommands.setFriendGroupSystem(friendGroupSystem);
-  friendGroupCommands.setModerationSystem(moderationSystem);
+  friendGroupCommands.setModerationSystem(antiNuke); // Use existing method name
   birthdayCommands.setBirthdaySystem(birthdaySystem);
   birthdayCommands.setEmbedLoader(embedLoader);
   ticketSystem.setEmbedLoader(embedLoader);
 
   activeWebhooksCommand.setEmbedLoader(embedLoader);
-activeWebhooksCommand.setPermissionSystem(permissionSystem);
+  activeWebhooksCommand.setPermissionSystem(antiNuke); // Use existing method name
 
-inviteLinksCommand.setEmbedLoader(embedLoader);
-inviteLinksCommand.setPermissionSystem(permissionSystem);
-linkProtection.setPermissionSystem(permissionSystem);
+  inviteLinksCommand.setEmbedLoader(embedLoader);
+  inviteLinksCommand.setPermissionSystem(antiNuke); // Use existing method name
+
   
   // Setup username tracking for fun commands
   funCommands.setupUsernameTracking(client);
@@ -329,7 +313,8 @@ linkProtection.setPermissionSystem(permissionSystem);
   }
 
   client.embedLoader = embedLoader;
-  client.permissionSystem = permissionSystem;
+  client.antiNuke = antiNuke; // Main reference
+  client.permissionSystem = antiNuke; // Backwards compatibility
 
   // 7) Initialize and start QueueManager
   const queueCfg     = config.get("queue") || {};
@@ -391,11 +376,8 @@ linkProtection.setPermissionSystem(permissionSystem);
 
     // Setup cleanup intervals
     setInterval(() => {
-      if (antiNuke.contentTracking) {
-        antiNuke.cleanup();
-      }
-      permissionSystem.clearCache();
-      moderationSystem.cleanupCooldowns();
+      antiNuke.cleanup(); // Now handles all cleanup (antinuke, permissions, moderation)
+      rateLimiter.cleanup();
       musicSystem.cleanup().catch(() => {}); // Refresh play-dl tokens
     }, 60000); // Run cleanup every minute
 
@@ -432,45 +414,50 @@ linkProtection.setPermissionSystem(permissionSystem);
     // Log system status
     console.log('\n=== System Status ===');
     console.log(`ENVIRONMENT: ${environment.toUpperCase()}`);
-    console.log('PERMISSION HIERARCHY:');
-    console.log('  Level 5: Server Owner (if bypass enabled)');
-    console.log('  Level 4: AntiNuke Admin (highest normal level)');
-    console.log('  Level 3: Administrator');
-    console.log('  Level 2: Whitelisted (auto for Moderator+)');
-    console.log('  Level 1: Moderator');
-    console.log('  Level 0: Regular User');
+    console.log('UNIFIED SECURITY SYSTEM:');
+    console.log('  Permission Hierarchy:');
+    console.log('    Level 6: Bot Owner (Highest)');
+    console.log('    Level 5: Server Owner (if bypass enabled)');
+    console.log('    Level 4: AntiNuke Admin');
+    console.log('    Level 3: Administrator');
+    console.log('    Level 2: Whitelisted');
+    console.log('    Level 1: Moderator');
+    console.log('    Level 0: Regular User');
     console.log('---');
     
-    const permStats = permissionSystem.getStats();
+    const stats = antiNuke.getStats();
     console.log(`Owner Bypass: ${config.get('moderation.ownerBypass') ? 'ENABLED' : 'DISABLED'}`);
-    console.log(`AntiNuke Admins: ${permStats.antiNukeAdmins}`);
-    console.log(`Administrators: ${permStats.administrators}`);
-    console.log(`Moderators: ${permStats.moderators}`);
-    console.log(`Total Whitelisted: ${permStats.whitelisted}`);
+    console.log(`High Alert: ${stats.highAlert ? 'ACTIVE' : 'Inactive'}`);
+    console.log(`AntiNuke Admins: ${stats.permissions.antiNukeAdmins}`);
+    console.log(`Administrators: ${stats.permissions.administrators}`);
+    console.log(`Moderators: ${stats.permissions.moderators}`);
+    console.log(`Total Whitelisted: ${stats.permissions.whitelisted}`);
+    console.log(`Active Cooldowns: ${stats.activeCooldowns.commands}`);
     console.log('---');
     
     console.log('CORE SYSTEMS:');
-    console.log('✓ Unified Permission System: Active');
+    console.log('✓ Unified Security System: Active');
+    console.log('  ├─ AntiNuke Protection: ' + 
+      (antiNuke.config.highAlert?.enabled ? '[HIGH ALERT] ' : '') +
+      (antiNuke.config.contentModeration?.enabled ? '+ Content Mod ' : '') + 
+      (antiNuke.config.multiUserDetection?.enabled ? '+ Multi-User' : ''));
+    console.log('  ├─ Permission Management: Integrated');
+    console.log('  └─ Moderation System: Integrated');
     console.log('✓ EmbedLoader: Active (Unified Visual System)');
     console.log(`✓ Rate Limiter: Active (Window: ${rateLimiterConfig.windowMs}ms)`);
-    console.log('✓ AntiNuke: Active' + 
-      (antiNuke.config.highAlert?.enabled ? ' [HIGH ALERT]' : '') +
-      (antiNuke.config.contentModeration?.enabled ? ' + Content Moderation' : '') + 
-      (antiNuke.config.multiUserDetection?.enabled ? ' + Multi-User Detection' : ''));
-    console.log('✓ Moderation System: Active (Using Unified Permissions)');
     console.log('---');
     
     console.log('SUBSYSTEMS:');
     console.log('✓ J2C Manager: Active');
     console.log(`✓ Vanity Manager: ${vanityManager.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ AFK Manager: ${afkManager.config.enabled ? 'Active' : 'Disabled'}`);
-    console.log(`✓ Link Protection: ${linkProtection.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`✓ Link Protection: ${antiNuke.linkProtection.config.enabled ? 'Active' : 'Disabled'} (Integrated in Security System)`);
     console.log(`✓ Welcome System: ${welcomeSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Role Tracker: ${roleTracker.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Leaderboard System: ${leaderboardSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Event Hosting: ${eventHostingSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Booster System: ${boosterSystem.config.enabled ? 'Active' : 'Disabled'}`);
-    console.log(`✓ Filter System: ${filterSystem.config.enabled ? 'Active' : 'Disabled'}`);
+    console.log(`✓ Filter System: ${antiNuke.filterSystem.config.enabled ? 'Active' : 'Disabled'} (Integrated in Security System)`);
     console.log(`✓ Ban Appeal System: ${banAppealSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Ticket System: ${ticketSystem.config.enabled ? 'Active' : 'Disabled'}`);
     console.log(`✓ Confess System: ${confessSystem.config.enabled ? 'Active' : 'Disabled'}`);
