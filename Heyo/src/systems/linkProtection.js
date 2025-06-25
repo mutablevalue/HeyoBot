@@ -1,4 +1,4 @@
-// src/systems/linkProtection.js
+// src/systems/linkProtection.js - Updated with URL whitelist
 export class LinkProtection {
   constructor(client, configLoader) {
     this.client = client;
@@ -21,11 +21,7 @@ export class LinkProtection {
     const linkConfig = this.configLoader.get('linkProtection') || {};
     this.config = {
       enabled: linkConfig.enabled ?? true,
-      patterns: linkConfig.patterns || [
-        /https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)/gi,
-        /discord\.gg\/[a-zA-Z0-9]+/gi,
-        /discordapp\.com\/invite\/[a-zA-Z0-9]+/gi
-      ],
+      patterns: linkConfig.patterns || [],
       allowed: {
         users: linkConfig.allowed?.users || [],
         roles: linkConfig.allowed?.roles || [],
@@ -38,24 +34,7 @@ export class LinkProtection {
       ephemeralWarning: linkConfig.ephemeralWarning ?? true,
       // GIF service settings
       allowGifServices: linkConfig.allowGifServices ?? true,
-      gifServices: linkConfig.gifServices || [
-        'tenor.com',
-        'giphy.com',
-        'gfycat.com',
-        'imgur.com',
-        'media.giphy.com',
-        'media.tenor.com',
-        'media0.giphy.com',
-        'media1.giphy.com', 
-        'media2.giphy.com',
-        'media3.giphy.com',
-        'media4.giphy.com',
-        'c.tenor.com',
-        'thumbs.gfycat.com',
-        'giant.gfycat.com',
-        'i.giphy.com',
-        'i.imgur.com'
-      ]
+      gifServices: linkConfig.gifServices || []
     };
     
     // Get cooldown settings from config
@@ -104,6 +83,7 @@ export class LinkProtection {
    */
   isGifServiceUrl(url) {
     if (!this.config.allowGifServices) return false;
+    if (!this.config.gifServices || this.config.gifServices.length === 0) return false;
     
     try {
       // Parse the URL to extract the hostname
@@ -134,6 +114,8 @@ export class LinkProtection {
    */
   extractUrls(content) {
     const urls = [];
+    if (!this.config.patterns || this.config.patterns.length === 0) return urls;
+    
     this.config.patterns.forEach(pattern => {
       const regex = typeof pattern === 'string' ? new RegExp(pattern, 'gi') : pattern;
       const matches = content.matchAll(regex);
@@ -145,22 +127,27 @@ export class LinkProtection {
   }
 
   /**
-   * Check if a message contains non-GIF links
+   * Check if a message contains non-allowed links
    */
-  containsNonGifLinks(content) {
+  containsNonAllowedLinks(content) {
     const urls = this.extractUrls(content);
     
     // If no URLs found, return false
     if (urls.length === 0) return false;
     
-    // If GIF services are allowed, check if all URLs are from GIF services
-    if (this.config.allowGifServices) {
-      const nonGifUrls = urls.filter(url => !this.isGifServiceUrl(url));
-      return nonGifUrls.length > 0;
-    }
+    // Filter out .gif files and GIF service URLs
+    const nonAllowedUrls = urls.filter(url => {
+      // Check if it's a .gif file (always allowed)
+      if (url.toLowerCase().includes('.gif')) return false;
+      
+      // Check if it's a GIF service URL (if enabled)
+      if (this.config.allowGifServices && this.isGifServiceUrl(url)) return false;
+      
+      // It's not allowed
+      return true;
+    });
     
-    // If GIF services are not allowed, any URL is considered a violation
-    return urls.length > 0;
+    return nonAllowedUrls.length > 0 ? nonAllowedUrls : false;
   }
 
   /**
@@ -198,7 +185,7 @@ export class LinkProtection {
   /**
    * Log link deletion
    */
-  async logDeletion(message, blockedUrls) {
+  async logDeletion(message, blockedUrls, allowedUrls) {
     if (!this.config.logChannel) return;
     
     // Check if we should log for this user
@@ -213,20 +200,16 @@ export class LinkProtection {
     const logChannel = message.guild.channels.cache.get(this.config.logChannel);
     if (!logChannel?.isTextBased()) return;
 
-    // Show which URLs were blocked and which were allowed
-    const allUrls = this.extractUrls(message.content);
-    const allowedGifUrls = allUrls.filter(url => this.isGifServiceUrl(url));
-
     const fields = [
       { name: 'User', value: `${message.author.tag} (${message.author.id})`, inline: true },
       { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
       { name: 'Blocked URLs', value: blockedUrls.join('\n').substring(0, 1024) || 'No URLs detected', inline: false },
     ];
 
-    if (allowedGifUrls.length > 0) {
+    if (allowedUrls.length > 0) {
       fields.push({ 
-        name: 'Allowed GIF URLs', 
-        value: allowedGifUrls.join('\n').substring(0, 1024), 
+        name: 'Allowed URLs (.gif/Services)', 
+        value: allowedUrls.join('\n').substring(0, 1024), 
         inline: false 
       });
     }
@@ -259,35 +242,42 @@ export class LinkProtection {
   setupEventListeners() {
     this.client.on('messageCreate', async (message) => {
       if (message.author.bot || !message.guild) return;
+      
+      // Skip if no patterns configured
+      if (!this.config.patterns || this.config.patterns.length === 0) return;
 
       const urls = this.extractUrls(message.content);
       if (urls.length === 0) return;
 
-      // Debug logging for GIF detection
-      if (this.config.allowGifServices) {
+      // Categorize URLs
+      const gifFileUrls = urls.filter(url => url.toLowerCase().includes('.gif'));
+      const gifServiceUrls = this.config.allowGifServices ? urls.filter(url => !url.toLowerCase().includes('.gif') && this.isGifServiceUrl(url)) : [];
+      const blockedUrls = urls.filter(url => !url.toLowerCase().includes('.gif') && (!this.config.allowGifServices || !this.isGifServiceUrl(url)));
+
+      // Debug logging
+      if (urls.length > 0) {
         console.log('[LinkProtection] URLs found:', urls);
-        urls.forEach(url => {
-          console.log(`[LinkProtection] URL: ${url} - Is GIF service: ${this.isGifServiceUrl(url)}`);
-        });
+        console.log('[LinkProtection] GIF files:', gifFileUrls);
+        console.log('[LinkProtection] GIF services:', gifServiceUrls);
+        console.log('[LinkProtection] Blocked:', blockedUrls);
+        console.log('[LinkProtection] URL contains .gif?', urls[0].toLowerCase().includes('.gif'));
       }
 
-      // Filter out allowed GIF service URLs
-      const blockedUrls = this.config.allowGifServices 
-        ? urls.filter(url => !this.isGifServiceUrl(url))
-        : urls;
-
+      // If all URLs are allowed (whitelisted or GIF services), return
       if (blockedUrls.length === 0) {
-        console.log('[LinkProtection] All URLs are from allowed GIF services, allowing message');
-        return; // All URLs are from allowed GIF services
+        console.log('[LinkProtection] All URLs are allowed, not taking action');
+        return;
       }
 
+      // Check if user has permission to send non-whitelisted links
       if (this.canSendLinks(message.member, message.channel)) return;
 
       // DELETE MESSAGE INSTANTLY if configured
       if (this.config.deleteMessage) {
         try {
           await message.delete(); // INSTANT DELETE - NO DELAY
-          await this.logDeletion(message, blockedUrls);
+          const allowedUrls = [...gifFileUrls, ...gifServiceUrls];
+          await this.logDeletion(message, blockedUrls, allowedUrls);
         } catch (error) {
           console.error('[LinkProtection] Failed to delete message:', error);
         }
@@ -347,6 +337,9 @@ export class LinkProtection {
     this.client.on('messageUpdate', async (oldMessage, newMessage) => {
       if (!newMessage.guild || newMessage.author?.bot) return;
       
+      // Skip if no patterns configured
+      if (!this.config.patterns || this.config.patterns.length === 0) return;
+      
       const oldUrls = this.extractUrls(oldMessage.content || '');
       const newUrls = this.extractUrls(newMessage.content);
       
@@ -355,19 +348,24 @@ export class LinkProtection {
       
       if (addedUrls.length === 0) return;
       
-      // Filter out allowed GIF service URLs
-      const blockedUrls = this.config.allowGifServices 
-        ? addedUrls.filter(url => !this.isGifServiceUrl(url))
-        : addedUrls;
+      // Filter out .gif files and GIF service URLs
+      const blockedUrls = addedUrls.filter(url => {
+        if (url.toLowerCase().includes('.gif')) return false;
+        if (this.config.allowGifServices && this.isGifServiceUrl(url)) return false;
+        return true;
+      });
       
-      if (blockedUrls.length === 0) return; // All new URLs are from allowed GIF services
+      if (blockedUrls.length === 0) return; // All new URLs are allowed
       
       if (!this.canSendLinks(newMessage.member, newMessage.channel)) {
         // DELETE EDITED MESSAGE INSTANTLY if it contains new blocked links
         if (this.config.deleteMessage) {
           try {
             await newMessage.delete(); // INSTANT DELETE - NO DELAY
-            await this.logDeletion(newMessage, blockedUrls);
+            const gifFileUrls = addedUrls.filter(url => url.toLowerCase().includes('.gif'));
+            const gifUrls = this.config.allowGifServices ? addedUrls.filter(url => !url.toLowerCase().includes('.gif') && this.isGifServiceUrl(url)) : [];
+            const allowedUrls = [...gifFileUrls, ...gifUrls];
+            await this.logDeletion(newMessage, blockedUrls, allowedUrls);
           } catch (error) {
             console.error('[LinkProtection] Failed to delete edited message:', error);
           }

@@ -12,7 +12,7 @@ bot:
     color: RED
   bio: I'm a multi-purpose Discord bot!
 developmentGuildId: "1379953422241103943"
-environment: production # or development  
+environment: production
 queue:
   maxSize: 100
   workerCount: 3
@@ -96,12 +96,12 @@ vanity:
   enabled: true
   checkIntervalSeconds: 1800
   vanityStrings:
-    - YourServer
-    - .gg/yourserver
+    - /pow
   roles:
     - "789012345678901234"
     - "890123456789012345"
     - "1380398417079046205"
+    - "1386756010282188922"
   logChannel: "1380422905191731210"
   enableLogging: false
   caseSensitive: false
@@ -131,7 +131,8 @@ moderation:
         - "1162730217895379025"
         - "825436754680348683"
         - "744763880093384756"
-      roles: []
+      roles:
+        - "1386505042970021899"
       commands:
         - ban
         - unban
@@ -389,6 +390,44 @@ antiNuke:
     logBotEvents: true
     whitelistedBots: []
     logTimeWindow: 100000
+  # Message spam detection
+  messageSpam:
+    enabled: true
+    maxMessages: 8
+    timeWindow: 10000
+    raidThreshold: 4
+    action: timeout
+    timeoutDuration: 300000
+  # Enhanced selfbot detection
+  selfbotDetection:
+    enabled: true
+    prefixes:
+      - "$"
+      - "."
+      - "!"
+    commands:
+      - uptime
+      - status
+      - help
+      - snipe
+      - ping
+      - eval
+      - exec
+      - say
+      - purge
+      - clear
+      - stats
+      - userinfo
+      - serverinfo
+      - avatar
+      - embed
+    action: warn
+    timeoutDuration: 600000
+    deleteMessages: true
+    message: "{user} dork detected ({pattern})"
+    forcedNickname: "dorkbot user"
+    detectDeletedCommands: true
+    deleteWarningAfter: 5000
 j2c:
   defaultChannelName: Join to Create
   logChannel: null
@@ -410,9 +449,9 @@ j2c:
       createdAt: 2025-06-23T15:42:01.039Z
 welcome:
   enabled: true
-  channel: "1386407475967824043"
+  channel: "1386505643992682567"
   message:
-    description: "yooo {user.mention} #{memberNumber}"
+    description: fedK
     thumbnail: true
     footer: null
     timestamp: true
@@ -483,12 +522,12 @@ ticketSystem:
       categoryId: "1379953422241103944"
       welcomeMessage: Welcome to your Text Channels ticket! A member of <@&1380398417079046205> will assist you shortly.
   panelEmbed:
-    title: 🎫 Support Tickets
+    title: Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
     color: 39423
     footer: We typically respond within 24 hours
     buttonLabel: Create Ticket
-    buttonEmoji: 🎫
+    buttonEmoji: null
   autoDelete:
     enabled: true
     timeout: 300000
@@ -609,7 +648,7 @@ embed:
       suffix: ""
   defaults:
     showFooter: true
-    footerText: ༒
+    footerText: "༒"
     inline: true
 banAppeal:
   enabled: true
@@ -687,13 +726,13 @@ confess:
 skullboard:
   enabled: true
   dataFile: skullboard_data.json
-  emoji: 💀
+  emoji: "💀"
   defaultThreshold: 5
   guilds:
     "1379953422241103943":
       channelId: "1380422918017650719"
       threshold: 2
-      emoji: 💀
+      emoji: "💀"
   excludedChannels: []
   allowSelfStar: false
   removeOnBelowThreshold: true
@@ -897,9 +936,9 @@ birthday:
   timezone: UTC
   checkTime: 00:00
   messages:
-    announcement: 🎉 Happy Birthday {user}! 🎂
-    dm: Happy Birthday! 🎉 Hope you have an amazing day!
-    firstMessage: 🎂 It's {user}'s birthday today! 🎉
+    announcement: Happy Birthday {user}!
+    dm: Happy Birthday! Hope you have an amazing day!
+    firstMessage: It's {user}'s birthday today!
   stats:
     totalBirthdays: 0
     birthdaysToday: 0
