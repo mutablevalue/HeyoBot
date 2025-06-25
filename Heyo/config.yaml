@@ -113,8 +113,16 @@ vanity:
     - "901234567890123456"
   removeOnVanityLoss: true
 moderation:
-  ownerBypass: true
+  ownerBypass: true                   # Server owner bypasses spam detection
   permissions:
+    # Bot owner - bypasses spam detection
+    botOwner:
+      users:
+        - "1235002473698299956"       # CHANGE THIS TO YOUR DISCORD ID
+      roles: []
+      commands:
+        - all
+    # AntiNuke admins - bypass spam detection
     antiNukeAdmin:
       users:
         - "1235002473698299956"
@@ -126,6 +134,7 @@ moderation:
       roles: []
       commands:
         - all
+    # Administrators - bypass spam detection
     administrator:
       users:
         - "1162730217895379025"
@@ -159,6 +168,7 @@ moderation:
         - setupdj
         - djadd
         - djremove
+    # Moderators - do NOT bypass spam detection
     moderator:
       users: []
       roles:
@@ -202,6 +212,9 @@ moderation:
     setupdj: 1000
     djadd: 5
     djremove: 5
+  # Performance optimization settings
+  cooldownCleanupInterval: 60000      # 1 minute - how often to clean expired cooldowns
+  maxCooldownEntries: 10000           # Maximum cooldown entries before emergency cleanup
   forcedNicknames:
     dataFile: forced_nicknames.json
     checkInterval: 5000
@@ -242,10 +255,13 @@ moderation:
       maxUsers: 20
       cooldownMultiplier: 1.5
 antiNuke:
+  # Whitelist - Users and roles that bypass spam detection (NOT selfbot detection)
   whitelist:
     users:
       - "1249300395600384025"
     roles: []
+  
+  # Action limits and thresholds
   limits:
     commands:
       maxActions: 5
@@ -292,119 +308,64 @@ antiNuke:
       maxActions: 1
       timeWindowSeconds: 60
       highAlertMaxActions: 1
+  
+  # Logging configuration
   adminLogChannel: "1376674252173873183"
   abuseLogChannel: "1376674252173873183"
-  logCooldown: 3600000
-  warningCooldown: 30000
-  cleanupInterval: 300000
-  maxTrackingAge: 3600000
+  logCooldown: 3600000              # 1 hour between similar logs
+  warningCooldown: 30000            # 30s between warnings
+  cleanupInterval: 300000           # 5 minutes
+  maxTrackingAge: 3600000           # 1 hour max tracking
+  
+  # High alert mode
   highAlert:
     enabled: false
-    thresholdReduction: 0.5
+    thresholdReduction: 0.5         # 50% reduction in thresholds
     autoEnable:
       enabled: true
       triggers:
         suspiciousUsers: 5
         trackedActions: 15
-        timeWindow: 300000
-  contentModeration:
-    enabled: true
-    massMention:
-      enabled: true
-      threshold: 5
-      action: delete
-    massEmoji:
-      enabled: false
-      threshold: 10
-      action: delete
-    capsSpam:
-      enabled: false
-      percentage: 70
-      minLength: 10
-      action: delete
-    duplicateMessages:
-      enabled: true
-      threshold: 3
-      timeWindow: 30000
-      action: delete
-    webhookSpam:
-      enabled: true
-      threshold: 10
-      timeWindow: 10000
-      action: delete
-    antiRaid:
-      enabled: true
-      joinThreshold: 10
-      timeWindow: 30000
-      lockdownEnabled: true
-      lockdownDuration: 600000
-    timeoutDuration: 300000
-    exemptRoles:
-      - "1235002473698299956"
-  reactionExemptRoles:
-    - "1235002473698299956"
-    - "456789012345678901"
-  multiUserDetection:
-    enabled: true
-    coordinationWindow: 10000
-    patternWindow: 30000
-    minUsersForRaid: 3
-    similarActionThreshold: 5
-    actionWeights:
-      bans: 10
-      kicks: 8
-      channelDelete: 9
-      roleDelete: 9
-      channelCreate: 6
-      roleCreate: 6
-      messages: 3
-      reactions: 2
-      massMention: 7
-  raidMode:
-    autoDisableAfter: 3600000
-    restrictions:
-      - disableInvites
-      - requireVerification
-      - limitChannelCreation
-      - preventMentions
-      - slowMode
-    slowModeRate: 30
-    normalVerificationLevel: 2
-  webhookProtection:
-    enabled: true
-    minPermissionLevel: 3
-    spamDetection:
-      enabled: true
-      maxMessages: 10
-      timeWindowSeconds: 10
-      action: delete
-    trackCreators: true
-    logWebhookEvents: true
-    trackingMaxAge: 600000
-    logTimeWindow: 5000
-  botProtection:
-    enabled: true
-    minPermissionLevel: 4
-    action: ban
-    inviterTimeout: 600000
-    logBotEvents: true
-    whitelistedBots: []
-    logTimeWindow: 100000
-  # Message spam detection
+        timeWindow: 300000          # 5 minutes
+  
+  # Message spam detection (RELAXED THRESHOLDS)
   messageSpam:
     enabled: true
-    maxMessages: 5
-    timeWindow: 10000
-    raidThreshold: 3
-    action: timeout
-    timeoutDuration: 300000
-  # Enhanced selfbot detection
+    
+    # Basic detection thresholds
+    maxMessages: 5                  # 8+ messages before spam detection
+    timeWindow: 10000               # 10 second window
+    
+    # Single spammer configuration
+    spamAction: timeout             # Action: timeout, kick, or ban
+    singleSpammerTimeout: 300000    # 5 minutes timeout
+    
+    # Raid detection configuration
+    minRaidSize: 2                  # Minimum users to classify as raid
+    raidAction: timeout             # Action for raiders
+    raidTimeoutDuration: 300000     # 5 minutes for raiders
+    raidSimilarityThreshold: 0.5    # 50% of users must have similar content
+    raidTimingWindow: 10000          # 5 seconds for coordinated detection
+    
+    # Session processing settings
+    sessionProcessDelay: 2000       # Wait 5s before processing session
+    sessionInactivityTimeout: 2000  # Process after 5s of inactivity
+    
+    # Content tracking
+    contentTrackingWindow: 30000    # Track message content for 30s
+    maxTrackedMessages: 150          # Max messages to track per user
+    trackingMaxAge: 45000           # Clean tracking data after 1 minute
+    
+    # Auto raid mode
+    autoRaidMode: true              # Enable Discord raid mode automatically
+    autoRaidModeThreshold: 3        # Users punished to trigger raid mode
+  
+  # Selfbot detection (NO BYPASSES - APPLIES TO EVERYONE)
   selfbotDetection:
     enabled: true
-    prefixes:
-      - "$"
-      - "."
-      - "!"
+    
+    # Detection patterns
+    prefixes: ["$", "."]
     commands:
       - uptime
       - status
@@ -421,13 +382,156 @@ antiNuke:
       - serverinfo
       - avatar
       - embed
-    action: warn
-    timeoutDuration: 600000
-    deleteMessages: true
+      - nitro
+      - token
+      - raid
+      - nuke
+      - spam
+    
+    # Detection settings
+    detectCurrentCommands: false      # Don't detect in normal messages
+    detectDeletedCommands: true       # Detect in deleted messages
+    strictMode: true                  # More strict detection
+    
+    # Single selfbot punishment
+    action: timeout                   # timeout, kick, ban, warn
+    timeoutDuration: 600000           # 10 minutes for single selfbot
+    
+    # Coordinated selfbot attack
+    coordinatedThreshold: 2           # Users to consider coordinated
+    coordinatedAction: timeout        # Action for coordinated attacks
+    coordinatedTimeoutDuration: 300000 # 5 minutes for coordinated
+    
+    # Session processing
+    sessionProcessDelay: 2000         # 1s delay before processing
+    sessionInactivityTimeout: 2000    # 2s inactivity before processing
+    
+    # Detection thresholds
+    quickDeleteThreshold: 3000        # 3s for quick delete pattern
+    formatChangeWindow: 5000          # 5s for format change detection
+    deletionTrackingWindow: 30000     # Track deletions for 30s
+    
+    # Message handling
+    deleteMessages: true              # Delete selfbot messages after punishment
+    forcedNickname: "dorkbot user"    # Force nickname ONLY FOR SELFBOTS
     message: "{user} dork detected ({pattern})"
-    forcedNickname: "dorkbot user"
-    detectDeletedCommands: true
-    deleteWarningAfter: 5000
+    deleteWarningAfter: 5000          # Delete warning after 5s
+    
+    # Tracking
+    trackingMaxAge: 300000            # 5 minutes max tracking
+  
+  # Content moderation
+  contentModeration:
+    enabled: true
+    
+    # Mass mentions
+    massMention:
+      enabled: true
+      threshold: 5                    # 5+ mentions = violation
+      action: delete                  # Action handled by spam detection
+    
+    # Mass emojis
+    massEmoji:
+      enabled: false
+      threshold: 10
+      action: delete
+    
+    # Caps spam
+    capsSpam:
+      enabled: false
+      percentage: 70                  # 70% caps
+      minLength: 10                   # Min 10 characters
+      action: delete
+    
+    # Duplicate messages (INTEGRATED WITH SPAM DETECTION)
+    duplicateMessages:
+      enabled: true
+      threshold: 3                    # 3 identical messages
+      timeWindow: 30000               # Within 30 seconds
+      action: delete                  # Handled by spam detection system
+    
+    # Webhook spam protection
+    webhookSpam:
+      enabled: true
+      threshold: 10                   # 10 messages
+      timeWindow: 10000               # In 10 seconds
+      action: delete
+    
+    # Anti-raid (JOIN detection, not message spam)
+    antiRaid:
+      enabled: true
+      joinThreshold: 10               # 10 users joining
+      timeWindow: 30000               # Within 30 seconds
+      lockdownEnabled: true
+      lockdownDuration: 600000        # 10 minute lockdown
+      minUsersForRaid: 3              # Alternative to messageSpam.minRaidSize
+    
+    # General timeout duration for content violations
+    timeoutDuration: 300000           # 5 minutes
+    
+    # Exempt roles from content moderation
+    exemptRoles:
+      - "1235002473698299956"
+  
+  # Reaction spam protection
+  reactionExemptRoles:
+    - "1235002473698299956"
+    - "456789012345678901"
+  
+  # Multi-user detection
+  multiUserDetection:
+    enabled: true
+    coordinationWindow: 10000         # 10s window for coordination
+    patternWindow: 30000              # 30s pattern detection
+    minUsersForRaid: 3                # Minimum for raid classification
+    similarActionThreshold: 5         # Similar actions threshold
+    actionWeights:
+      bans: 10
+      kicks: 8
+      channelDelete: 9
+      roleDelete: 9
+      channelCreate: 6
+      roleCreate: 6
+      messages: 3
+      reactions: 2
+      massMention: 7
+  
+  # Raid mode settings
+  raidMode:
+    autoDisableAfter: 3600000         # 1 hour auto-disable
+    restrictions:
+      - disableInvites
+      - requireVerification
+      - limitChannelCreation
+      - preventMentions
+      - slowMode
+    slowModeRate: 30                  # 30 second slowmode
+    normalVerificationLevel: 2         # Normal verification level
+  
+  # Webhook protection
+  webhookProtection:
+    enabled: true
+    minPermissionLevel: 3             # Administrator+ can create webhooks
+    spamDetection:
+      enabled: true
+      maxMessages: 10
+      timeWindowSeconds: 10
+      action: delete
+    trackCreators: true
+    logWebhookEvents: true
+    trackingMaxAge: 600000            # 10 minutes
+    logTimeWindow: 5000               # 5 seconds
+  
+  # Bot protection
+  botProtection:
+    enabled: true
+    minPermissionLevel: 4             # AntiNuke Admin+ can invite bots
+    action: ban
+    inviterTimeout: 600000            # 10 minute timeout for inviter
+    logBotEvents: true
+    whitelistedBots: []               # Bot IDs that bypass protection
+    logTimeWindow: 10000        
+
 j2c:
   defaultChannelName: Join to Create
   logChannel: null

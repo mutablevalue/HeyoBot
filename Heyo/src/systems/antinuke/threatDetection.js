@@ -1,4 +1,4 @@
-// src/systems/antiNuke/threatDetection.js - Threat detection module
+// src/systems/antinuke/threatDetection.js - Threat detection module
 import { Events, AuditLogEvent, PermissionFlagsBits } from 'discord.js';
 
 export default class ThreatDetection {
@@ -157,7 +157,7 @@ export default class ThreatDetection {
   }
   
   /**
-   * Check for raid patterns
+   * Check for raid patterns (member joins, not message spam)
    */
   async checkForRaid(guild) {
     const config = this.config.contentModeration?.antiRaid;
@@ -188,6 +188,7 @@ export default class ThreatDetection {
   
   /**
    * Check message content for violations
+   * NOTE: Duplicate messages are now handled by SpamDetection
    */
   async checkMessageContent(message) {
     const config = this.config.contentModeration;
@@ -206,8 +207,8 @@ export default class ThreatDetection {
       }
     }
     
-    // Check mass emojis
-    if (config.massEmoji?.enabled) {
+    // Check mass emojis (only if not already violated)
+    if (!violated && config.massEmoji?.enabled) {
       const emojiCount = (message.content.match(/<a?:\w+:\d+>/g) || []).length;
       if (emojiCount >= config.massEmoji.threshold) {
         violated = true;
@@ -216,8 +217,8 @@ export default class ThreatDetection {
       }
     }
     
-    // Check caps spam
-    if (config.capsSpam?.enabled && message.content.length >= config.capsSpam.minLength) {
+    // Check caps spam (only if not already violated)
+    if (!violated && config.capsSpam?.enabled && message.content.length >= config.capsSpam.minLength) {
       const capsCount = (message.content.match(/[A-Z]/g) || []).length;
       const capsPercentage = (capsCount / message.content.length) * 100;
       if (capsPercentage >= config.capsSpam.percentage) {
@@ -227,10 +228,24 @@ export default class ThreatDetection {
       }
     }
     
+    // REMOVED: Duplicate message checking - now handled by SpamDetection
+    // This prevents double processing and ensures proper order of operations
+    
     if (violated) {
       try {
         const action = config[violationType]?.action;
         
+        // For delete actions, check if spam detection is already handling this user
+        // If so, let spam detection handle everything to maintain proper order
+        if (action === 'delete' && this.antiNuke.spamDetection.activeSpamSessions.has(message.guild.id)) {
+          const session = this.antiNuke.spamDetection.activeSpamSessions.get(message.guild.id);
+          if (session.spammers.has(message.author.id)) {
+            // Spam detection is already handling this user, skip
+            return;
+          }
+        }
+        
+        // Handle the violation
         if (action === 'delete') {
           await message.delete();
         } else if (action === 'timeout' && message.member.moderatable) {
@@ -416,7 +431,7 @@ export default class ThreatDetection {
       }
     }
     
-    // Clean multi-user tracking
+    // Clean multi-user tracking (for join raids)
     for (const [key, timestamps] of this.multiUserTracking) {
       const valid = timestamps.filter(ts => now - ts < maxAge);
       if (valid.length === 0) {

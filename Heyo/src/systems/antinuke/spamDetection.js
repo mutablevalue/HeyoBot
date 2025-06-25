@@ -1,145 +1,217 @@
-// src/systems/antinuke/spamDetection.js - Enhanced spam detection with raid similarity detection
+// src/systems/antinuke/spamDetection.js - Simplified with integrated detection
 export default class SpamDetection {
   constructor(antiNuke) {
     this.antiNuke = antiNuke;
     this.config = antiNuke.config;
     
-    // Spam tracking
-    this.messageSpamTracking = new Map(); // userId -> timestamp array
-    this.messageContentTracking = new Map(); // guildId -> { userId -> recent messages }
+    // Unified tracking
+    this.userMessageTracking = new Map(); // userId -> { messages: [], messageFrequency: Map() }
     this.activeSpamSessions = new Map(); // guildId -> spam session data
+    this.processingUsers = new Set(); // Track users being processed
+    
+    // Message queue for bulk operations
+    this.messageQueue = new Map(); // guildId -> Set of message IDs
+    this.bulkDeleteTimer = new Map(); // guildId -> timeout ID
   }
   
   /**
    * Check if a message is spam - MAIN ENTRY POINT
    */
   async checkMessage(message) {
-    const spamData = await this.detectSpam(message);
-    if (!spamData) return;
+    // Skip if already processing this user
+    if (this.processingUsers.has(message.author.id)) return;
     
-    // Add to active spam session
-    this.addToSpamSession(message, spamData);
+    // Check if user should bypass spam detection
+    if (await this.shouldBypassSpamDetection(message)) return;
     
-    // Check if we should process this spam session
-    const session = this.activeSpamSessions.get(message.guild.id);
-    if (session && this.shouldProcessSession(session)) {
-      await this.processSpamSession(message.guild, session);
+    console.log(`[SpamDetection] Checking message from ${message.author.tag}: "${message.content.substring(0, 50)}..."`);
+    
+    // Track the message
+    this.trackMessage(message);
+    
+    // Check if user is spamming
+    const spamData = this.analyzeSpam(message);
+    
+    if (spamData.isSpam) {
+      console.log(`[SpamDetection] SPAM DETECTED - User: ${message.author.tag}, Reason: ${spamData.reason}`);
+      
+      // Add to processing set
+      this.processingUsers.add(message.author.id);
+      
+      // Queue message for deletion
+      this.queueMessageDeletion(message);
+      
+      // Add to spam session
+      this.addToSpamSession(message, spamData);
+      
+      // Check if we should process the session
+      const session = this.activeSpamSessions.get(message.guild.id);
+      if (session && this.shouldProcessSession(session)) {
+        await this.processSpamSession(message.guild, session);
+      }
+      
+      // Remove from processing set
+      this.processingUsers.delete(message.author.id);
     }
   }
   
   /**
-   * Detect if message is spam
+   * Track a message
    */
-  async detectSpam(message) {
-    const spamConfig = this.config.messageSpam;
-    if (!spamConfig?.enabled) return null;
-    
+  trackMessage(message) {
     const userId = message.author.id;
     const now = Date.now();
     
-    // Track message content for similarity detection
-    this.trackMessageContent(message);
-    
-    // Check rate-based spam
-    if (!this.messageSpamTracking.has(userId)) {
-      this.messageSpamTracking.set(userId, []);
+    if (!this.userMessageTracking.has(userId)) {
+      this.userMessageTracking.set(userId, {
+        messages: [],
+        messageFrequency: new Map()
+      });
     }
     
-    const timestamps = this.messageSpamTracking.get(userId);
-    timestamps.push(now);
+    const tracking = this.userMessageTracking.get(userId);
     
-    // Clean old timestamps
-    const timeWindow = spamConfig.timeWindow || 10000;
-    const recentMessages = timestamps.filter(ts => now - ts < timeWindow);
-    this.messageSpamTracking.set(userId, recentMessages);
-    
-    // Check if spam threshold exceeded
-    const maxMessages = spamConfig.maxMessages || 5;
-    if (recentMessages.length >= maxMessages) {
-      return {
-        type: 'rate',
-        userId,
-        messageCount: recentMessages.length
-      };
-    }
-    
-    // Check duplicate content spam
-    const duplicateData = this.checkDuplicateSpam(message);
-    if (duplicateData) {
-      return duplicateData;
-    }
-    
-    return null;
-  }
-  
-  /**
-   * Track message content for similarity detection
-   */
-  trackMessageContent(message) {
-    const guildId = message.guild.id;
-    
-    if (!this.messageContentTracking.has(guildId)) {
-      this.messageContentTracking.set(guildId, new Map());
-    }
-    
-    const guildTracking = this.messageContentTracking.get(guildId);
-    if (!guildTracking.has(message.author.id)) {
-      guildTracking.set(message.author.id, []);
-    }
-    
-    const userMessages = guildTracking.get(message.author.id);
-    const now = Date.now();
-    
-    // Keep only recent messages
-    const maxAge = this.config.messageSpam?.contentTrackingWindow || 30000;
-    const recentMessages = userMessages.filter(m => now - m.timestamp < maxAge);
-    
-    // Add current message
-    recentMessages.push({
+    // Add to messages array
+    tracking.messages.push({
       id: message.id,
       content: message.content,
-      mentions: Array.from(message.mentions.users.keys()),
       timestamp: now,
-      channel: message.channel.id
+      channel: message.channel.id,
+      mentions: message.mentions.users.size + message.mentions.roles.size
     });
     
-    // Limit stored messages per user
-    const maxTracked = this.config.messageSpam?.maxTrackedMessages || 50;
-    if (recentMessages.length > maxTracked) {
-      recentMessages.splice(0, recentMessages.length - maxTracked);
+    // Track message frequency
+    const content = message.content.toLowerCase().trim();
+    if (!tracking.messageFrequency.has(content)) {
+      tracking.messageFrequency.set(content, []);
     }
+    tracking.messageFrequency.get(content).push(now);
     
-    guildTracking.set(message.author.id, recentMessages);
+    // Clean old data
+    const maxAge = this.config.messageSpam?.trackingMaxAge || 45000;
+    tracking.messages = tracking.messages.filter(m => now - m.timestamp < maxAge);
+    
+    // Clean frequency tracking
+    for (const [msg, timestamps] of tracking.messageFrequency) {
+      const valid = timestamps.filter(ts => now - ts < maxAge);
+      if (valid.length === 0) {
+        tracking.messageFrequency.delete(msg);
+      } else {
+        tracking.messageFrequency.set(msg, valid);
+      }
+    }
   }
   
   /**
-   * Check for duplicate content spam
+   * Analyze if user is spamming
    */
-  checkDuplicateSpam(message) {
-    const config = this.config.contentModeration?.duplicateMessages;
-    if (!config?.enabled) return null;
+  analyzeSpam(message) {
+    const userId = message.author.id;
+    const tracking = this.userMessageTracking.get(userId);
+    if (!tracking) return { isSpam: false };
     
-    const guildTracking = this.messageContentTracking.get(message.guild.id);
-    if (!guildTracking) return null;
-    
-    const userMessages = guildTracking.get(message.author.id) || [];
     const now = Date.now();
+    const config = this.config.messageSpam;
     
-    // Count duplicates in time window
-    const duplicates = userMessages.filter(m => 
-      m.content === message.content && 
-      now - m.timestamp < config.timeWindow
-    ).length;
-    
-    if (duplicates >= config.threshold - 1) {
-      return {
-        type: 'duplicate',
-        userId: message.author.id,
-        duplicateCount: duplicates + 1
+    // 1. Rate spam check (X messages in Y time)
+    const timeWindow = config.timeWindow || 10000;
+    const recentMessages = tracking.messages.filter(m => now - m.timestamp < timeWindow);
+    if (recentMessages.length >= (config.maxMessages || 5)) {
+      return { 
+        isSpam: true, 
+        reason: `${recentMessages.length} messages in ${timeWindow/1000}s`,
+        type: 'rate'
       };
     }
     
-    return null;
+    // 2. Frequency check (same message 3 times in 5 seconds)
+    for (const [content, timestamps] of tracking.messageFrequency) {
+      const recentOccurrences = timestamps.filter(ts => now - ts < 5000);
+      if (recentOccurrences.length >= 3) {
+        return { 
+          isSpam: true, 
+          reason: `"${content}" sent ${recentOccurrences.length} times in 5s`,
+          type: 'frequency'
+        };
+      }
+    }
+    
+    // 3. Duplicate check (3 identical messages in 30s)
+    const duplicateWindow = this.config.contentModeration?.duplicateMessages?.timeWindow || 30000;
+    const duplicateThreshold = this.config.contentModeration?.duplicateMessages?.threshold || 3;
+    for (const [content, timestamps] of tracking.messageFrequency) {
+      const duplicates = timestamps.filter(ts => now - ts < duplicateWindow);
+      if (duplicates.length >= duplicateThreshold) {
+        return { 
+          isSpam: true, 
+          reason: `${duplicates.length} duplicate messages in ${duplicateWindow/1000}s`,
+          type: 'duplicate'
+        };
+      }
+    }
+    
+    // 4. Mention spam check
+    const mentionWindow = 10000; // 10 seconds
+    const recentMentions = tracking.messages
+      .filter(m => now - m.timestamp < mentionWindow)
+      .reduce((sum, m) => sum + m.mentions, 0);
+    
+    if (recentMentions >= 5) {
+      return { 
+        isSpam: true, 
+        reason: `${recentMentions} mentions in ${mentionWindow/1000}s`,
+        type: 'mention'
+      };
+    }
+    
+    // Single message with too many mentions
+    if (message.mentions.users.size + message.mentions.roles.size >= 3) {
+      return { 
+        isSpam: true, 
+        reason: `${message.mentions.users.size + message.mentions.roles.size} mentions in one message`,
+        type: 'mention'
+      };
+    }
+    
+    return { isSpam: false };
+  }
+  
+  /**
+   * Check if user should bypass spam detection
+   */
+  async shouldBypassSpamDetection(message) {
+    // Check if member exists
+    if (!message.member) return false;
+    
+    // Check if whitelisted
+    if (this.antiNuke.isMemberWhitelisted(message.member)) {
+      return true;
+    }
+    
+    // Check if AntiNuke admin
+    if (this.antiNuke.isMemberAntiNukeAdmin(message.member)) {
+      return true;
+    }
+    
+    // Check if server owner (with bypass enabled)
+    if (this.antiNuke.fullConfig.get('moderation.ownerBypass') && 
+        message.member.id === message.guild.ownerId) {
+      return true;
+    }
+    
+    // Check if bot owner
+    const botOwnerConfig = this.antiNuke.fullConfig.get('moderation.permissions.botOwner');
+    if (botOwnerConfig?.users?.includes(message.author.id)) {
+      return true;
+    }
+    
+    // Check permission level (Administrator or higher)
+    const permLevel = this.antiNuke.getPermissionLevel(message.member);
+    if (permLevel >= this.antiNuke.permissions.LEVELS.ADMINISTRATOR) {
+      return true;
+    }
+    
+    return false;
   }
   
   /**
@@ -150,6 +222,7 @@ export default class SpamDetection {
     const now = Date.now();
     
     if (!this.activeSpamSessions.has(guildId)) {
+      console.log(`[SpamDetection] Creating new spam session for guild ${message.guild.name}`);
       this.activeSpamSessions.set(guildId, {
         startTime: now,
         lastActivity: now,
@@ -191,8 +264,8 @@ export default class SpamDetection {
     const inactivity = now - session.lastActivity;
     
     // Process if session is old enough or inactive
-    const maxSessionAge = this.config.messageSpam?.sessionProcessDelay || 1000; // 1 second
-    const maxInactivity = this.config.messageSpam?.sessionInactivityTimeout || 2000; // 2 seconds
+    const maxSessionAge = this.config.messageSpam?.sessionProcessDelay || 2000;
+    const maxInactivity = this.config.messageSpam?.sessionInactivityTimeout || 2000;
     
     return sessionAge >= maxSessionAge || inactivity >= maxInactivity;
   }
@@ -201,6 +274,8 @@ export default class SpamDetection {
    * Process a spam session - determine if raid and take action
    */
   async processSpamSession(guild, session) {
+    console.log(`[SpamDetection] Detection started - ${session.spammers.size} user(s) detected`);
+    
     // Remove session immediately to prevent reprocessing
     this.activeSpamSessions.delete(guild.id);
     
@@ -213,15 +288,18 @@ export default class SpamDetection {
     let actionReason;
     
     if (raidAnalysis.isRaid) {
-      timeoutDuration = spamConfig.raidTimeoutDuration || 3600000; // 1 hour default
+      timeoutDuration = spamConfig.raidTimeoutDuration || 300000; // 5 minutes default
       actionReason = `AntiNuke: Raid spam detected (${raidAnalysis.reason})`;
       this.antiNuke.stats.contentViolations.raidsDetected++;
+      console.log(`[SpamDetection] RAID CONFIRMED - ${raidAnalysis.reason}`);
     } else {
       timeoutDuration = spamConfig.singleSpammerTimeout || 300000; // 5 minutes default
       actionReason = 'AntiNuke: Message spam';
+      console.log(`[SpamDetection] Single spammer confirmed`);
     }
     
     // STEP 1: Timeout/punish all spammers FIRST
+    console.log(`[SpamDetection] Users timed out - Starting punishments...`);
     const punishmentResults = await this.punishSpammers(
       guild, 
       session.spammers, 
@@ -230,11 +308,15 @@ export default class SpamDetection {
       raidAnalysis.isRaid
     );
     
+    const successCount = punishmentResults.filter(r => r.success).length;
+    console.log(`[SpamDetection] Users timed out - ${successCount}/${session.spammers.size} users punished`);
+    
     // STEP 2: Delete all messages AFTER punishments
+    console.log(`[SpamDetection] Deleting messages - ${session.messages.length} messages queued`);
     await this.deleteSpamMessages(guild, session.messages);
+    console.log(`[SpamDetection] Messages deleted - Cleanup complete`);
     
     // Log the action
-    const successCount = punishmentResults.filter(r => r.success).length;
     if (raidAnalysis.isRaid) {
       this.antiNuke.logSecurity(guild, 'Raid Spam Neutralized', 
         `${successCount}/${session.spammers.size} raiders punished\n` +
@@ -258,6 +340,90 @@ export default class SpamDetection {
     
     // Update stats
     this.antiNuke.stats.contentViolations.messageSpam += session.spammers.size;
+  }
+  
+  /**
+   * Queue message for bulk deletion
+   */
+  queueMessageDeletion(message) {
+    const guildId = message.guild.id;
+    
+    if (!this.messageQueue.has(guildId)) {
+      this.messageQueue.set(guildId, new Set());
+    }
+    
+    this.messageQueue.get(guildId).add(message);
+    
+    // Clear existing timer
+    if (this.bulkDeleteTimer.has(guildId)) {
+      clearTimeout(this.bulkDeleteTimer.get(guildId));
+    }
+    
+    // Set new timer for bulk delete
+    const bulkDeleteDelay = this.config.messageSpam?.bulkDeleteDelay || 100; // ms
+    const timer = setTimeout(() => {
+      this.executeBulkDelete(guildId);
+    }, bulkDeleteDelay);
+    
+    this.bulkDeleteTimer.set(guildId, timer);
+  }
+  
+  /**
+   * Execute bulk delete for queued messages
+   */
+  async executeBulkDelete(guildId) {
+    const messages = this.messageQueue.get(guildId);
+    if (!messages || messages.size === 0) return;
+    
+    // Group messages by channel
+    const channelGroups = new Map();
+    for (const msg of messages) {
+      if (!channelGroups.has(msg.channel.id)) {
+        channelGroups.set(msg.channel.id, []);
+      }
+      channelGroups.get(msg.channel.id).push(msg);
+    }
+    
+    // Delete messages in parallel for each channel
+    const deletePromises = [];
+    
+    for (const [channelId, channelMessages] of channelGroups) {
+      const channel = this.antiNuke.client.channels.cache.get(channelId);
+      if (!channel) continue;
+      
+      // Discord allows bulk delete of up to 100 messages
+      const chunks = this.chunkArray(channelMessages, 100);
+      
+      for (const chunk of chunks) {
+        deletePromises.push(
+          channel.bulkDelete(chunk, true).catch(err => {
+            console.error(`[SpamDetection] Bulk delete error in ${channelId}:`, err);
+            // Fallback to individual deletes
+            return Promise.allSettled(
+              chunk.map(msg => msg.delete().catch(() => {}))
+            );
+          })
+        );
+      }
+    }
+    
+    // Execute all deletes in parallel
+    await Promise.allSettled(deletePromises);
+    
+    // Clear the queue
+    this.messageQueue.delete(guildId);
+    this.bulkDeleteTimer.delete(guildId);
+  }
+  
+  /**
+   * Chunk array into smaller arrays
+   */
+  chunkArray(array, size) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
   }
   
   /**
@@ -296,7 +462,7 @@ export default class SpamDetection {
     }
     
     // Check for coordinated patterns
-    const similarContentThreshold = this.config.messageSpam?.raidSimilarityThreshold || 0.5; // 50% of raiders
+    const similarContentThreshold = this.config.messageSpam?.raidSimilarityThreshold || 0.5;
     const requiredSimilarUsers = Math.ceil(spammerCount * similarContentThreshold);
     
     // Check exact content matches
@@ -319,8 +485,8 @@ export default class SpamDetection {
       }
     }
     
-    // Check timing patterns - all started within a short window
-    const timingWindow = this.config.messageSpam?.raidTimingWindow || 5000; // 5 seconds
+    // Check timing patterns
+    const timingWindow = this.config.messageSpam?.raidTimingWindow || 10000;
     const firstDetection = Math.min(...Array.from(session.spammers.values()).map(d => d.firstDetection));
     const lastDetection = Math.max(...Array.from(session.spammers.values()).map(d => d.firstDetection));
     
@@ -353,6 +519,7 @@ export default class SpamDetection {
             }
             
             try {
+              // NO NICKNAME CHANGES FOR SPAM - Only timeout/kick/ban
               switch (action) {
                 case 'timeout':
                   await member.timeout(timeoutDuration, reason);
@@ -422,34 +589,52 @@ export default class SpamDetection {
   }
   
   /**
+   * Check if a user is currently being tracked for spam
+   */
+  isTrackingUser(userId) {
+    // Check if user is in any active spam session
+    for (const [guildId, session] of this.activeSpamSessions) {
+      if (session.spammers.has(userId)) {
+        return true;
+      }
+    }
+    
+    // Check if user has recent activity
+    if (this.userMessageTracking.has(userId)) {
+      const tracking = this.userMessageTracking.get(userId);
+      const now = Date.now();
+      const hasRecentMessages = tracking.messages.some(m => now - m.timestamp < 5000);
+      return hasRecentMessages;
+    }
+    
+    return false;
+  }
+  
+  /**
    * Cleanup old tracking data
    */
   cleanup() {
     const now = Date.now();
-    const maxAge = this.config.messageSpam?.trackingMaxAge || 60000;
+    const maxAge = this.config.messageSpam?.trackingMaxAge || 45000;
     
-    // Clean spam tracking
-    for (const [userId, timestamps] of this.messageSpamTracking) {
-      const valid = timestamps.filter(ts => now - ts < maxAge);
-      if (valid.length === 0) {
-        this.messageSpamTracking.delete(userId);
-      } else {
-        this.messageSpamTracking.set(userId, valid);
-      }
-    }
-    
-    // Clean content tracking
-    for (const [guildId, guildTracking] of this.messageContentTracking) {
-      for (const [userId, messages] of guildTracking) {
-        const valid = messages.filter(m => now - m.timestamp < maxAge);
+    // Clean user tracking
+    for (const [userId, tracking] of this.userMessageTracking) {
+      // Clean messages
+      tracking.messages = tracking.messages.filter(m => now - m.timestamp < maxAge);
+      
+      // Clean frequency tracking
+      for (const [content, timestamps] of tracking.messageFrequency) {
+        const valid = timestamps.filter(ts => now - ts < maxAge);
         if (valid.length === 0) {
-          guildTracking.delete(userId);
+          tracking.messageFrequency.delete(content);
         } else {
-          guildTracking.set(userId, valid);
+          tracking.messageFrequency.set(content, valid);
         }
       }
-      if (guildTracking.size === 0) {
-        this.messageContentTracking.delete(guildId);
+      
+      // Remove user if no data
+      if (tracking.messages.length === 0 && tracking.messageFrequency.size === 0) {
+        this.userMessageTracking.delete(userId);
       }
     }
     
@@ -467,8 +652,7 @@ export default class SpamDetection {
   getStats() {
     return {
       enabled: this.config.messageSpam?.enabled ?? false,
-      tracking: this.messageSpamTracking.size,
-      contentTracking: this.messageContentTracking.size,
+      tracking: this.userMessageTracking.size,
       activeSessions: this.activeSpamSessions.size
     };
   }
