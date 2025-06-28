@@ -334,7 +334,7 @@ antiNuke:
     
     # Basic detection thresholds
     maxMessages: 5                  # 8+ messages before spam detection
-    timeWindow: 10000               # 10 second window
+    timeWindow: 3500               # 10 second window
     
     # Single spammer configuration
     spamAction: timeout             # Action: timeout, kick, or ban
@@ -348,7 +348,7 @@ antiNuke:
     raidTimingWindow: 10000          # 5 seconds for coordinated detection
     
     # Session processing settings
-    sessionProcessDelay: 2000       # Wait 5s before processing session
+    sessionProcessDelay: 3000       # Wait 5s before processing session
     sessionInactivityTimeout: 2000  # Process after 5s of inactivity
     
     # Content tracking
@@ -403,7 +403,7 @@ antiNuke:
     coordinatedTimeoutDuration: 300000 # 5 minutes for coordinated
     
     # Session processing
-    sessionProcessDelay: 2000         # 1s delay before processing
+    sessionProcessDelay: 3000         # 1s delay before processing
     sessionInactivityTimeout: 2000    # 2s inactivity before processing
     
     # Detection thresholds

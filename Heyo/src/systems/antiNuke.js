@@ -121,7 +121,7 @@ export default class AntiNuke {
   }
   
   /**
-   * Get permission level of a member (for external access)
+   * Get permission level of a member
    */
   getPermissionLevel(member) {
     return this.permissions.getPermissionLevel(member);
@@ -340,16 +340,24 @@ export default class AntiNuke {
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guild || message.author.bot) return;
       
-      if (message.member && this.isMemberWhitelisted(message.member)) return;
+      // NOTE: Whitelist checking is now handled individually by each module
+      // - Spam detection: Bypassed for whitelisted/admin users
+      // - Selfbot detection: NO bypasses (applies to everyone)
+      // - Other content violations: Check whitelist individually
       
-      // Check spam
+      // IMPORTANT: Spam detection handles ALL message-based spam/duplicate violations first
+      // This includes rate spam, duplicate messages, and coordinated attacks
+      // Spam detection will handle punishment THEN deletion in the correct order
       await this.spamDetection.checkMessage(message);
       
-      // Check selfbot patterns
+      // Check selfbot patterns (NO BYPASSES - applies to everyone including admins)
       await this.selfbotDetection.checkMessage(message);
       
-      // Check content violations
-      await this.threatDetection.checkMessageContent(message);
+      // Check OTHER content violations (NOT duplicates - those are handled by spam)
+      // This includes mass mentions, mass emojis, caps spam
+      if (message.member && !this.isMemberWhitelisted(message.member)) {
+        await this.threatDetection.checkMessageContent(message);
+      }
       
       // Check webhook spam
       if (message.webhookId) {

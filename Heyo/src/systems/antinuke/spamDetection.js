@@ -24,8 +24,6 @@ export default class SpamDetection {
     // Check if user should bypass spam detection
     if (await this.shouldBypassSpamDetection(message)) return;
     
-    console.log(`[SpamDetection] Checking message from ${message.author.tag}: "${message.content.substring(0, 50)}..."`);
-    
     // Track the message
     this.trackMessage(message);
     

@@ -57,9 +57,9 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   // Check permissions using unified system
-  if (permissionSystem) {
-    const level = permissionSystem.getPermissionLevel(interaction.member);
-    if (level < permissionSystem.LEVELS.ADMINISTRATOR) {
+  if (antiNuke) {
+    const level = antiNuke.getPermissionLevel(interaction.member);
+    if (level < antiNuke.permissions.LEVELS.ADMINISTRATOR) {
       return interaction.reply({
         content: embedLoader.format('You need Administrator permissions to use this command.', 'message'),
         ephemeral: true
@@ -136,7 +136,7 @@ export async function execute(interaction) {
     if (mentionEveryone) {
       const canMention = interaction.member.permissions.has(PermissionFlagsBits.MentionEveryone) || 
                         interaction.member.id === interaction.guild.ownerId ||
-                        (permissionSystem && permissionSystem.getPermissionLevel(interaction.member) >= permissionSystem.LEVELS.ANTINUKE_ADMIN);
+                        (antiNuke && antiNuke.getPermissionLevel(interaction.member) >= antiNuke.permissions.LEVELS.ANTINUKE_ADMIN);
       
       if (canMention) {
         messageOptions.content = '@everyone';
