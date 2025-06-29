@@ -11,8 +11,8 @@ bot:
     url: null
     color: RED
   bio: I'm a multi-purpose Discord bot!
-developmentGuildId: "1379953422241103943"
-environment: production
+developmentGuildId: "1375334842434060318"
+environment: development
 queue:
   maxSize: 100
   workerCount: 3

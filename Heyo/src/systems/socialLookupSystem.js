@@ -458,6 +458,268 @@ export class SocialLookupSystem {
     }
   }
   
+  async lookupRoblox(username) {
+    // Check cache first
+    const cacheKey = `roblox:${username}`;
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < this.config.cacheExpiry * 1000) {
+      console.log(`[SocialLookupSystem] Using cached Roblox data for ${username}`);
+      return cached.data;
+    }
+    
+    try {
+      console.log(`[SocialLookupSystem] Fetching Roblox data for ${username}`);
+      
+      // Use Roblox API to search for user
+      const searchResponse = await fetch(`https://users.roblox.com/v1/usernames/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          usernames: [username],
+          excludeBannedUsers: true
+        })
+      });
+      
+      if (!searchResponse.ok) {
+        console.error(`[SocialLookupSystem] Roblox API error: ${searchResponse.status}`);
+        throw new Error('Failed to search for user');
+      }
+      
+      const searchData = await searchResponse.json();
+      
+      if (!searchData.data || searchData.data.length === 0) {
+        console.log(`[SocialLookupSystem] Roblox user ${username} not found`);
+        return null;
+      }
+      
+      // Find exact match (case insensitive)
+      const userMatch = searchData.data.find(user => 
+        user.name.toLowerCase() === username.toLowerCase()
+      );
+      
+      if (!userMatch) {
+        console.log(`[SocialLookupSystem] No exact match for Roblox user ${username}`);
+        return null;
+      }
+      
+      const userId = userMatch.id;
+      
+      // Fetch detailed user info
+      const [userInfoResponse, presenceResponse, avatarResponse] = await Promise.all([
+        fetch(`https://users.roblox.com/v1/users/${userId}`),
+        fetch(`https://presence.roblox.com/v1/presence/users`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            userIds: [userId]
+          })
+        }),
+        fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=420x420&format=Png&isCircular=false`)
+      ]);
+      
+      if (!userInfoResponse.ok) {
+        throw new Error('Failed to fetch user info');
+      }
+      
+      const userInfo = await userInfoResponse.json();
+      
+      // Get presence data
+      let presenceData = null;
+      if (presenceResponse.ok) {
+        const presenceJson = await presenceResponse.json();
+        presenceData = presenceJson.userPresences?.[0];
+      }
+      
+      // Get avatar URL
+      let avatarUrl = null;
+      if (avatarResponse.ok) {
+        const avatarJson = await avatarResponse.json();
+        avatarUrl = avatarJson.data?.[0]?.imageUrl;
+      }
+      
+      // Get friends count
+      let friendsCount = 0;
+      try {
+        const friendsResponse = await fetch(`https://friends.roblox.com/v1/users/${userId}/friends/count`);
+        if (friendsResponse.ok) {
+          const friendsData = await friendsResponse.json();
+          friendsCount = friendsData.count || 0;
+        }
+      } catch (e) {
+        console.log('[SocialLookupSystem] Could not fetch friends count');
+      }
+      
+      // Get followers count
+      let followersCount = 0;
+      try {
+        const followersResponse = await fetch(`https://friends.roblox.com/v1/users/${userId}/followers/count`);
+        if (followersResponse.ok) {
+          const followersData = await followersResponse.json();
+          followersCount = followersData.count || 0;
+        }
+      } catch (e) {
+        console.log('[SocialLookupSystem] Could not fetch followers count');
+      }
+      
+      // Get following count
+      let followingCount = 0;
+      try {
+        const followingResponse = await fetch(`https://friends.roblox.com/v1/users/${userId}/followings/count`);
+        if (followingResponse.ok) {
+          const followingData = await followingResponse.json();
+          followingCount = followingData.count || 0;
+        }
+      } catch (e) {
+        console.log('[SocialLookupSystem] Could not fetch following count');
+      }
+      
+      // Format join date
+      let joinDate = null;
+      if (userInfo.created) {
+        const date = new Date(userInfo.created);
+        joinDate = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+      }
+      
+      // Determine online status
+      const isOnline = presenceData?.userPresenceType === 2; // 2 = InGame, 1 = Online, 0 = Offline
+      const lastOnline = presenceData?.lastOnline ? new Date(presenceData.lastOnline) : null;
+      
+      // Format the data
+      const formattedData = {
+        username: userInfo.name,
+        displayName: userInfo.displayName || userInfo.name,
+        bio: userInfo.description || 'No description available',
+        verified: userInfo.hasVerifiedBadge || false,
+        avatar: avatarUrl,
+        url: `https://www.roblox.com/users/${userId}/profile`,
+        friends: this.formatNumber(friendsCount),
+        followers: this.formatNumber(followersCount),
+        following: this.formatNumber(followingCount),
+        isOnline: isOnline,
+        joinDate: joinDate,
+        userId: userId.toString(),
+        isBanned: userInfo.isBanned || false,
+        lastOnline: lastOnline
+      };
+      
+      // Cache the result
+      this.cache.set(cacheKey, {
+        data: formattedData,
+        timestamp: Date.now()
+      });
+      
+      console.log(`[SocialLookupSystem] Successfully fetched Roblox data for ${username}`);
+      return formattedData;
+      
+    } catch (error) {
+      console.error(`[SocialLookupSystem] Roblox lookup error for ${username}:`, error.message);
+      
+      // Try fallback with Puppeteer if API fails
+      console.log(`[SocialLookupSystem] Attempting Puppeteer fallback for ${username}`);
+      return this.lookupRobloxFallback(username);
+    }
+  }
+  
+  async lookupRobloxFallback(username) {
+    await this.ensureBrowser();
+    const page = await this.browser.newPage();
+    
+    try {
+      console.log(`[SocialLookupSystem] Using Puppeteer fallback for Roblox user ${username}`);
+      
+      // Set viewport and user agent
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent(this.config.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+      
+      // Try direct profile URL with username
+      const profileUrl = `https://www.roblox.com/users/profile?username=${encodeURIComponent(username)}`;
+      const response = await page.goto(profileUrl, {
+        waitUntil: 'networkidle2',
+        timeout: this.config.timeout || 30000
+      });
+      
+      // Check if redirected to a valid profile
+      const currentUrl = page.url();
+      const userIdMatch = currentUrl.match(/\/users\/(\d+)/);
+      
+      if (!userIdMatch) {
+        console.log(`[SocialLookupSystem] Could not find Roblox user ${username}`);
+        return null;
+      }
+      
+      const userId = userIdMatch[1];
+      
+      // Wait for profile elements
+      await page.waitForSelector('[class*="profile-header"], [class*="header-title"], h1', { timeout: 10000 });
+      
+      // Extract basic data from page
+      const data = await page.evaluate(() => {
+        // Get display name and username
+        const headerEl = document.querySelector('h1, [class*="header-title"] h1');
+        const displayName = headerEl ? headerEl.textContent.trim() : null;
+        
+        const usernameEl = document.querySelector('[class*="header-title"] [class*="text-label"], [class*="profile-name"]');
+        const username = usernameEl ? usernameEl.textContent.replace('@', '').trim() : null;
+        
+        // Get description
+        let bio = 'No description available';
+        const bioEl = document.querySelector('[class*="profile-about"], [class*="about"]');
+        if (bioEl && bioEl.textContent) {
+          bio = bioEl.textContent.trim();
+        }
+        
+        // Get avatar
+        const avatarEl = document.querySelector('[class*="avatar"] img, img[alt*="avatar"]');
+        const avatar = avatarEl ? avatarEl.src : null;
+        
+        return {
+          username,
+          displayName,
+          bio,
+          avatar,
+          found: !!(username || displayName)
+        };
+      });
+      
+      if (!data.found) {
+        return null;
+      }
+      
+      // Format basic data
+      const formattedData = {
+        username: data.username || username,
+        displayName: data.displayName || data.username || username,
+        bio: data.bio,
+        verified: false, // Can't easily determine from page
+        avatar: data.avatar,
+        url: `https://www.roblox.com/users/${userId}/profile`,
+        friends: '?',
+        followers: '?',
+        following: '?',
+        isOnline: false,
+        joinDate: null,
+        userId: userId
+      };
+      
+      // Don't cache fallback data as it's incomplete
+      console.log(`[SocialLookupSystem] Fetched basic Roblox data for ${username} via fallback`);
+      return formattedData;
+      
+    } catch (error) {
+      console.error(`[SocialLookupSystem] Roblox fallback error for ${username}:`, error.message);
+      return null;
+    } finally {
+      await page.close();
+    }
+  }
+  
   formatNumber(num) {
     if (!num || isNaN(num)) return '0';
     
@@ -552,6 +814,50 @@ export class SocialLookupSystem {
     embed.setAuthor({
       name: 'Instagram',
       iconURL: 'https://www.instagram.com/favicon.ico'
+    });
+    
+    return embed;
+  }
+  
+  async createRobloxEmbed(data) {
+    if (!data) {
+      return this.client.embedLoader.error(
+        'Roblox User Not Found',
+        'Could not find this Roblox user. Please check the username and try again.'
+      );
+    }
+    
+    const fields = [
+      { name: 'Username', value: data.username, inline: true },
+      { name: 'Display Name', value: data.displayName, inline: true },
+      { name: 'User ID', value: data.userId, inline: true },
+      { name: 'Friends', value: data.friends, inline: true },
+      { name: 'Followers', value: data.followers, inline: true },
+      { name: 'Following', value: data.following, inline: true },
+      { name: 'Verified', value: data.verified ? 'Yes' : 'No', inline: true },
+      { name: 'Status', value: data.isOnline ? '🟢 Online' : '⚪ Offline', inline: true }
+    ];
+    
+    if (data.joinDate) {
+      fields.push({ name: 'Join Date', value: data.joinDate, inline: true });
+    }
+    
+    const embed = this.client.embedLoader.createEmbed({
+      title: 'Roblox Profile Lookup',
+      description: `**${data.displayName}${data.verified ? ' ✓' : ''}**\n[View Profile](${data.url})\n\n${data.bio || 'No description available'}`,
+      fields: fields,
+      footer: `Roblox • ${data.username}`,
+      formatDescription: false
+    });
+    
+    if (data.avatar) {
+      embed.setThumbnail(data.avatar);
+    }
+    
+    // Add branding
+    embed.setAuthor({
+      name: 'Roblox',
+      iconURL: 'https://www.roblox.com/favicon.ico'
     });
     
     return embed;
