@@ -4,7 +4,7 @@
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
 import fs from "fs";
-import { Client, Collection, Events, ActivityType, Partials } from "discord.js";
+import { Client, Collection, Events, ActivityType, Partials, PermissionsBitField } from "discord.js";
 import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import { EmbedLoader } from "./utils/embedLoader.js";
@@ -537,24 +537,293 @@ async function main() {
     }
   });
 
-  // 10) Example prefix-based "enqueue" listener
+  // 10) Message-based commands handler - allows slash commands to work as chat commands
   client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
-    const prefix = config.get("prefix");
+    
+    const prefix = config.get("prefix") || ",";
     if (!message.content.startsWith(prefix)) return;
-
+    
     const args = message.content.slice(prefix.length).trim().split(/ +/);
-    const cmd  = args.shift()?.toLowerCase();
-    if (cmd === "enqueue") {
-      const item = args.join(" ");
-      if (item) {
-        const success = queueManager.enqueue(item);
-        if (success) {
-          await message.reply(`Enqueued: ${item}`);
-        } else {
-          await message.reply("Queue is full.");
+    const commandName = args.shift()?.toLowerCase();
+    
+    // Check if this is a registered slash command
+    const command = client.commands.get(commandName);
+    if (!command) {
+      // Handle the original enqueue command
+      if (commandName === "enqueue") {
+        const item = args.join(" ");
+        if (item) {
+          const success = queueManager.enqueue(item);
+          if (success) {
+            await message.reply(`Enqueued: ${item}`);
+          } else {
+            await message.reply("Queue is full.");
+          }
         }
       }
+      return;
+    }
+    
+    // Create an interaction-like adapter for the message
+    const adapter = {
+      // Core properties
+      commandName,
+      user: message.author,
+      member: message.member,
+      guild: message.guild,
+      channel: message.channel,
+      client: message.client,
+      guildId: message.guild?.id,
+      channelId: message.channel.id,
+      
+      // State tracking
+      replied: false,
+      deferred: false,
+      lastReply: null,
+      
+      // Reply methods
+      async reply(options) {
+        if (this.replied) {
+          return this.editReply(options);
+        }
+        this.replied = true;
+        
+        if (typeof options === 'string') {
+          this.lastReply = await message.reply(options);
+          return this.lastReply;
+        }
+        
+        const replyOptions = { ...options };
+        if (options.ephemeral) {
+          // Can't do ephemeral in regular messages, so delete after a delay
+          const sent = await message.reply(replyOptions);
+          setTimeout(() => sent.delete().catch(() => {}), 10000);
+          this.lastReply = sent;
+          return sent;
+        }
+        
+        this.lastReply = await message.reply(replyOptions);
+        return this.lastReply;
+      },
+      
+      async editReply(options) {
+        if (!this.lastReply) return;
+        
+        if (typeof options === 'string') {
+          return await this.lastReply.edit(options);
+        }
+        
+        return await this.lastReply.edit(options);
+      },
+      
+      async deferReply(options = {}) {
+        if (this.deferred || this.replied) return;
+        this.deferred = true;
+        
+        // Send a "thinking" message
+        this.lastReply = await message.reply({
+          embeds: [embedLoader.info("Processing command...")]
+        });
+        
+        return this.lastReply;
+      },
+      
+      async followUp(options) {
+        if (typeof options === 'string') {
+          return await message.channel.send(options);
+        }
+        return await message.channel.send(options);
+      },
+      
+      async deleteReply() {
+        if (this.lastReply) {
+          return await this.lastReply.delete();
+        }
+      },
+      
+      // Permission checking
+      memberPermissions: message.member?.permissions || new PermissionsBitField(),
+      
+      // Option parsing for slash command arguments
+      options: {
+        data: new Map(),
+        
+        getString(name, required = false) {
+          const commandDef = command.data.toJSON ? command.data.toJSON() : command.data;
+          const optionDefs = commandDef.options || [];
+          
+          // Find the option index
+          let optionIndex = optionDefs.findIndex(opt => opt.name === name);
+          
+          // Handle subcommands and subcommand groups
+          if (optionIndex === -1) {
+            // Check if first arg is a subcommand
+            const firstArg = args[0];
+            const subcommand = optionDefs.find(opt => 
+              opt.type === 1 && opt.name === firstArg
+            );
+            
+            if (subcommand) {
+              // Remove subcommand from args temporarily for parsing
+              const subcommandName = args[0];
+              const subArgs = args.slice(1);
+              const subOptions = subcommand.options || [];
+              optionIndex = subOptions.findIndex(opt => opt.name === name);
+              
+              if (optionIndex !== -1) {
+                const value = subArgs[optionIndex];
+                if (!value && required) throw new Error(`Option ${name} is required`);
+                return value || null;
+              }
+            }
+          }
+          
+          const value = args[optionIndex];
+          if (!value && required) throw new Error(`Option ${name} is required`);
+          return value || null;
+        },
+        
+        getUser(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          
+          // Parse user mention or ID
+          const match = value.match(/^<@!?(\d+)>$/) || value.match(/^(\d+)$/);
+          if (match) {
+            return message.client.users.cache.get(match[1]) || null;
+          }
+          return null;
+        },
+        
+        getMember(name, required = false) {
+          const user = this.getUser(name, required);
+          if (!user) return null;
+          return message.guild?.members.cache.get(user.id) || null;
+        },
+        
+        getChannel(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          
+          // Parse channel mention or ID
+          const match = value.match(/^<#(\d+)>$/) || value.match(/^(\d+)$/);
+          if (match) {
+            return message.guild?.channels.cache.get(match[1]) || null;
+          }
+          return null;
+        },
+        
+        getRole(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          
+          // Parse role mention or ID
+          const match = value.match(/^<@&(\d+)>$/) || value.match(/^(\d+)$/);
+          if (match) {
+            return message.guild?.roles.cache.get(match[1]) || null;
+          }
+          
+          // Try to find by name
+          return message.guild?.roles.cache.find(r => 
+            r.name.toLowerCase() === value.toLowerCase()
+          ) || null;
+        },
+        
+        getInteger(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          const parsed = parseInt(value);
+          return isNaN(parsed) ? null : parsed;
+        },
+        
+        getNumber(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          const parsed = parseFloat(value);
+          return isNaN(parsed) ? null : parsed;
+        },
+        
+        getBoolean(name, required = false) {
+          const value = this.getString(name, required);
+          if (!value) return null;
+          return ['true', 'yes', '1', 'on'].includes(value.toLowerCase());
+        },
+        
+        getSubcommand() {
+          const commandDef = command.data.toJSON ? command.data.toJSON() : command.data;
+          const optionDefs = commandDef.options || [];
+          
+          // Check if first arg matches a subcommand
+          const firstArg = args[0];
+          const subcommand = optionDefs.find(opt => 
+            opt.type === 1 && opt.name === firstArg
+          );
+          
+          return subcommand ? subcommand.name : null;
+        },
+        
+        getSubcommandGroup() {
+          const commandDef = command.data.toJSON ? command.data.toJSON() : command.data;
+          const optionDefs = commandDef.options || [];
+          
+          // Check if first arg matches a subcommand group
+          const firstArg = args[0];
+          const subGroup = optionDefs.find(opt => 
+            opt.type === 2 && opt.name === firstArg
+          );
+          
+          if (subGroup && args[1]) {
+            // Store subcommand for later retrieval
+            this._subcommandFromGroup = args[1];
+            return subGroup.name;
+          }
+          
+          return null;
+        },
+        
+        // Additional helper for getting attachment URLs from messages
+        getAttachment(name, required = false) {
+          // In messages, attachments come from message.attachments
+          const attachment = message.attachments.first();
+          if (!attachment && required) throw new Error(`Attachment ${name} is required`);
+          return attachment || null;
+        }
+      },
+      
+      // Additional properties that might be needed
+      isCommand: () => true,
+      isChatInputCommand: () => true,
+      isContextMenuCommand: () => false,
+      isMessageContextMenuCommand: () => false,
+      isUserContextMenuCommand: () => false,
+      isButton: () => false,
+      isModalSubmit: () => false,
+      isSelectMenu: () => false,
+      isRepliable: () => true,
+      
+      // Support for showing modals (won't work in messages)
+      async showModal() {
+        throw new Error("Modals are not supported in message commands. Use slash commands for this feature.");
+      }
+    };
+    
+    // Check rate limit using permission-based limits
+    if (message.member && rateLimiter) {
+      const rateLimitCheck = await rateLimiter.checkLimit(message.member);
+      if (!rateLimitCheck.allowed) {
+        const cooldownMessage = rateLimiter.getCooldownMessage(rateLimitCheck.timeLeft);
+        const embed = embedLoader.error(cooldownMessage);
+        return message.reply({ embeds: [embed] });
+      }
+    }
+    
+    try {
+      await command.execute(adapter);
+    } catch (err) {
+      console.error(`Error executing ${prefix}${commandName}:`, err);
+      const errorEmbed = embedLoader.error("There was an error while executing this command.");
+      await message.reply({ embeds: [errorEmbed] });
     }
   });
 

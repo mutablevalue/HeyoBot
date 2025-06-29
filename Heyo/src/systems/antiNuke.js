@@ -86,7 +86,8 @@ export default class AntiNuke {
         unauthorizedBots: 0,
         selfbotsDetected: 0,
         messageSpam: 0
-      }
+      },
+      unauthorizedAttempts: new Map()
     };
     
     this.setupEventListeners();
@@ -175,6 +176,92 @@ export default class AntiNuke {
     }
     
     return this.permissions.getPermissionLevel(member) >= this.permissions.LEVELS.ANTINUKE_ADMIN;
+  }
+  
+  /**
+   * Check if a member can perform admin actions
+   * @param {GuildMember} member 
+   * @param {string} action - The type of action (e.g., 'channelCreate', 'roleCreate')
+   * @returns {{allowed: boolean, level: number, reason?: string}}
+   */
+  canPerformAdminAction(member, action) {
+    const permLevel = this.getPermissionLevel(member);
+    
+    // Define which actions require which permission levels
+    const actionRequirements = {
+      // Basic admin actions require at least WHITELISTED
+      channelCreate: this.permissions.LEVELS.WHITELISTED,
+      channelDelete: this.permissions.LEVELS.WHITELISTED,
+      channelUpdate: this.permissions.LEVELS.WHITELISTED,
+      roleCreate: this.permissions.LEVELS.WHITELISTED,
+      roleDelete: this.permissions.LEVELS.WHITELISTED,
+      roleUpdate: this.permissions.LEVELS.WHITELISTED,
+      serverUpdate: this.permissions.LEVELS.WHITELISTED,
+      
+      // Webhook actions require ADMINISTRATOR or higher
+      webhookCreate: this.permissions.LEVELS.ADMINISTRATOR,
+      webhookDelete: this.permissions.LEVELS.ADMINISTRATOR,
+      
+      // Bot invites require ANTINUKE_ADMIN or higher
+      botInvite: this.permissions.LEVELS.ANTINUKE_ADMIN,
+      
+      // Mass actions require higher permissions
+      massBan: this.permissions.LEVELS.ADMINISTRATOR,
+      massKick: this.permissions.LEVELS.ADMINISTRATOR
+    };
+    
+    const requiredLevel = actionRequirements[action] || this.permissions.LEVELS.WHITELISTED;
+    
+    if (permLevel < requiredLevel) {
+      let reason = 'Insufficient permissions.';
+      
+      if (permLevel === 0) {
+        reason = 'You must be whitelisted to perform admin actions.';
+      } else if (requiredLevel === this.permissions.LEVELS.ADMINISTRATOR) {
+        reason = 'This action requires Administrator permissions.';
+      } else if (requiredLevel === this.permissions.LEVELS.ANTINUKE_ADMIN) {
+        reason = 'This action requires AntiNuke Admin permissions.';
+      }
+      
+      return {
+        allowed: false,
+        level: permLevel,
+        reason
+      };
+    }
+    
+    return {
+      allowed: true,
+      level: permLevel
+    };
+  }
+  
+  /**
+   * Log unauthorized admin action attempt
+   * @param {Guild} guild 
+   * @param {User} user 
+   * @param {string} action 
+   * @param {string} details 
+   */
+  async logUnauthorizedAction(guild, user, action, details = '') {
+    const member = await guild.members.fetch(user.id).catch(() => null);
+    const permLevel = member ? this.getPermissionLevel(member) : 0;
+    const levelName = this.permissions.getLevelName ? this.permissions.getLevelName(permLevel) : `Level ${permLevel}`;
+    
+    await this.logSecurity(guild, 'Unauthorized Action Attempt', 
+      `User: ${user.tag} (${user.id})\n` +
+      `Action: ${action}\n` +
+      `Permission Level: ${permLevel} (${levelName})\n` +
+      `Required: Whitelisted or higher\n` +
+      (details ? `Details: ${details}` : '')
+    );
+    
+    // Track as suspicious
+    this.suspiciousUsers.add(user.id);
+    
+    // Update stats
+    const attempts = this.stats.unauthorizedAttempts.get(user.id) || 0;
+    this.stats.unauthorizedAttempts.set(user.id, attempts + 1);
   }
   
   /**
@@ -417,6 +504,13 @@ export default class AntiNuke {
         }
       }
     }
+    
+    // Clean unauthorized attempts older than 1 hour
+    for (const [userId, attempts] of this.stats.unauthorizedAttempts) {
+      if (attempts === 0) {
+        this.stats.unauthorizedAttempts.delete(userId);
+      }
+    }
   }
   
   /**
@@ -428,6 +522,7 @@ export default class AntiNuke {
       trackedUsers: this.threatDetection.getTrackedUserCount(),
       suspiciousUsers: this.suspiciousUsers.size,
       trackedActions: Object.fromEntries(this.stats.trackedActions),
+      unauthorizedAttempts: Object.fromEntries(this.stats.unauthorizedAttempts),
       contentModeration: {
         enabled: this.config.contentModeration?.enabled || false,
         violations: this.stats.contentViolations,
@@ -506,6 +601,21 @@ export default class AntiNuke {
    */
   async getOrCreateMuteRole(guild) {
     return await this.roles.getOrCreateMuteRole(guild);
+  }
+  
+  /**
+   * Get mute roles map (for backwards compatibility)
+   */
+  get muteRoles() {
+    return this.roles.muteRoles;
+  }
+  
+  /**
+   * Update permission roles in config
+   * @param {Object} roles - Object with role IDs { vc: roleId, pic: roleId, link: roleId }
+   */
+  async updatePermRoles(roles) {
+    return await this.actions.updatePermRoles(roles);
   }
   
   /**

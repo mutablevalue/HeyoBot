@@ -18,11 +18,18 @@ export default class ThreatDetection {
    * Track user action
    */
   async trackAction(userId, action, guild) {
-    if (this.antiNuke.isWhitelisted(userId)) return false;
+    // Only AntiNuke admins and higher bypass tracking
+    if (this.antiNuke.isAntiNukeAdmin(userId)) return false;
     
     try {
       const member = await guild.members.fetch(userId).catch(() => null);
-      if (member && this.antiNuke.isMemberWhitelisted(member)) return false;
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        // Only ANTINUKE_ADMIN (4) and above bypass limits
+        if (permLevel >= this.antiNuke.permissions.LEVELS.ANTINUKE_ADMIN) {
+          return false;
+        }
+      }
     } catch (error) {
       // Continue with tracking
     }
@@ -66,6 +73,36 @@ export default class ThreatDetection {
     }
     
     return false;
+  }
+  
+  /**
+   * Handle unauthorized action
+   */
+  async handleUnauthorizedAction(member, action, guild, target = null) {
+    console.log(`[ThreatDetection] Unauthorized action blocked: ${member.user.tag} - ${action}`);
+    
+    try {
+      // Punish the user
+      if (member.moderatable) {
+        const timeoutDuration = this.config.contentModeration?.timeoutDuration;
+        if (timeoutDuration) {
+          await member.timeout(timeoutDuration, `AntiNuke: Attempted unauthorized ${action}`);
+        }
+      } else if (member.kickable) {
+        await member.kick(`AntiNuke: Attempted unauthorized ${action}`);
+      }
+      
+      // Log the event
+      this.antiNuke.logSecurity(guild, 'Unauthorized Action Blocked', 
+        `${member.user.tag} attempted ${action} without required permissions\n` +
+        `Permission Level: ${this.antiNuke.getPermissionLevel(member)} (Whitelisted required)\n` +
+        (target ? `Target: ${target}` : ''));
+      
+      // Track as suspicious
+      this.antiNuke.suspiciousUsers.add(member.id);
+    } catch (error) {
+      console.error(`[ThreatDetection] Error handling unauthorized action:`, error);
+    }
   }
   
   /**
@@ -228,15 +265,11 @@ export default class ThreatDetection {
       }
     }
     
-    // REMOVED: Duplicate message checking - now handled by SpamDetection
-    // This prevents double processing and ensures proper order of operations
-    
     if (violated) {
       try {
         const action = config[violationType]?.action;
         
         // For delete actions, check if spam detection is already handling this user
-        // If so, let spam detection handle everything to maintain proper order
         if (action === 'delete' && this.antiNuke.spamDetection.activeSpamSessions.has(message.guild.id)) {
           const session = this.antiNuke.spamDetection.activeSpamSessions.get(message.guild.id);
           if (session.spammers.has(message.author.id)) {
@@ -329,7 +362,7 @@ export default class ThreatDetection {
       }
     });
     
-    // Channel events
+    // Channel events with permission checks
     this.client.on(Events.ChannelCreate, async (channel) => {
       if (!channel.guild) return;
       
@@ -342,9 +375,24 @@ export default class ThreatDetection {
       const { executor } = createLog;
       if (executor.bot) return;
       
-      if (await this.trackAction(executor.id, 'channelCreate', channel.guild)) {
-        const member = await channel.guild.members.fetch(executor.id).catch(() => null);
-        if (member) {
+      // Check if user is allowed to create channels
+      const member = await channel.guild.members.fetch(executor.id).catch(() => null);
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        
+        // If not whitelisted (level 0), delete the channel immediately
+        if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+          try {
+            await channel.delete('AntiNuke: Unauthorized channel creation - not whitelisted');
+            await this.handleUnauthorizedAction(member, 'channel creation', channel.guild, `#${channel.name}`);
+            return;
+          } catch (error) {
+            console.error('[ThreatDetection] Error handling unauthorized channel creation:', error);
+          }
+        }
+        
+        // For whitelisted users and above, track the action
+        if (await this.trackAction(executor.id, 'channelCreate', channel.guild)) {
           await this.handleThresholdExceeded(member, 'channelCreate', channel.guild);
         }
       }
@@ -362,15 +410,25 @@ export default class ThreatDetection {
       const { executor } = deleteLog;
       if (executor.bot) return;
       
-      if (await this.trackAction(executor.id, 'channelDelete', channel.guild)) {
-        const member = await channel.guild.members.fetch(executor.id).catch(() => null);
-        if (member) {
+      // Check if user is allowed to delete channels
+      const member = await channel.guild.members.fetch(executor.id).catch(() => null);
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        
+        // If not whitelisted, this is a serious violation
+        if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+          await this.handleUnauthorizedAction(member, 'channel deletion', channel.guild, `#${channel.name}`);
+          return;
+        }
+        
+        // For whitelisted users and above, track the action
+        if (await this.trackAction(executor.id, 'channelDelete', channel.guild)) {
           await this.handleThresholdExceeded(member, 'channelDelete', channel.guild);
         }
       }
     });
     
-    // Role events
+    // Role events with permission checks
     this.client.on(Events.GuildRoleCreate, async (role) => {
       const logs = await this.antiNuke.fetchAuditLogs(role.guild, AuditLogEvent.RoleCreate);
       if (!logs) return;
@@ -381,9 +439,24 @@ export default class ThreatDetection {
       const { executor } = createLog;
       if (executor.bot) return;
       
-      if (await this.trackAction(executor.id, 'roleCreate', role.guild)) {
-        const member = await role.guild.members.fetch(executor.id).catch(() => null);
-        if (member) {
+      // Check if user is allowed to create roles
+      const member = await role.guild.members.fetch(executor.id).catch(() => null);
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        
+        // If not whitelisted, delete the role immediately
+        if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+          try {
+            await role.delete('AntiNuke: Unauthorized role creation - not whitelisted');
+            await this.handleUnauthorizedAction(member, 'role creation', role.guild, `@${role.name}`);
+            return;
+          } catch (error) {
+            console.error('[ThreatDetection] Error handling unauthorized role creation:', error);
+          }
+        }
+        
+        // For whitelisted users and above, track the action
+        if (await this.trackAction(executor.id, 'roleCreate', role.guild)) {
           await this.handleThresholdExceeded(member, 'roleCreate', role.guild);
         }
       }
@@ -399,10 +472,61 @@ export default class ThreatDetection {
       const { executor } = deleteLog;
       if (executor.bot) return;
       
-      if (await this.trackAction(executor.id, 'roleDelete', role.guild)) {
-        const member = await role.guild.members.fetch(executor.id).catch(() => null);
-        if (member) {
+      // Check if user is allowed to delete roles
+      const member = await role.guild.members.fetch(executor.id).catch(() => null);
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        
+        // If not whitelisted, this is a serious violation
+        if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+          await this.handleUnauthorizedAction(member, 'role deletion', role.guild, `@${role.name}`);
+          return;
+        }
+        
+        // For whitelisted users and above, track the action
+        if (await this.trackAction(executor.id, 'roleDelete', role.guild)) {
           await this.handleThresholdExceeded(member, 'roleDelete', role.guild);
+        }
+      }
+    });
+    
+    // Server update events (settings changes)
+    this.client.on(Events.GuildUpdate, async (oldGuild, newGuild) => {
+      const logs = await this.antiNuke.fetchAuditLogs(newGuild, AuditLogEvent.GuildUpdate);
+      if (!logs) return;
+      
+      const updateLog = logs.entries.first();
+      if (!updateLog || Date.now() - updateLog.createdTimestamp > 5000) return;
+      
+      const { executor } = updateLog;
+      if (executor.bot) return;
+      
+      // Check if user is allowed to update server settings
+      const member = await newGuild.members.fetch(executor.id).catch(() => null);
+      if (member) {
+        const permLevel = this.antiNuke.getPermissionLevel(member);
+        
+        // If not whitelisted, revert changes if possible
+        if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+          // Try to revert critical changes
+          const criticalChanges = [];
+          
+          if (oldGuild.name !== newGuild.name) {
+            criticalChanges.push(`Name: ${oldGuild.name} → ${newGuild.name}`);
+            try {
+              await newGuild.setName(oldGuild.name, 'AntiNuke: Reverted unauthorized change');
+            } catch (e) {}
+          }
+          
+          if (oldGuild.verificationLevel !== newGuild.verificationLevel) {
+            criticalChanges.push(`Verification: ${oldGuild.verificationLevel} → ${newGuild.verificationLevel}`);
+            try {
+              await newGuild.setVerificationLevel(oldGuild.verificationLevel, 'AntiNuke: Reverted unauthorized change');
+            } catch (e) {}
+          }
+          
+          await this.handleUnauthorizedAction(member, 'server settings update', newGuild, 
+            criticalChanges.length > 0 ? criticalChanges.join(', ') : 'Various settings');
         }
       }
     });

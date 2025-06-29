@@ -1333,6 +1333,7 @@ export async function executeSetupPerms(interaction) {
     const guild = interaction.guild;
     const createdRoles = [];
 
+    // Create VC Perms role
     const vcRole = await guild.roles.create({
       name: 'VC Perms',
       color: 0x000000,
@@ -1345,6 +1346,7 @@ export async function executeSetupPerms(interaction) {
     });
     createdRoles.push(vcRole);
 
+    // Create Pic Perms role
     const picRole = await guild.roles.create({
       name: 'Pic Perms',
       color: 0x000000,
@@ -1356,6 +1358,7 @@ export async function executeSetupPerms(interaction) {
     });
     createdRoles.push(picRole);
 
+    // Create Link Perms role
     const linkRole = await guild.roles.create({
       name: 'Link Perms',
       color: 0x000000,
@@ -1366,15 +1369,61 @@ export async function executeSetupPerms(interaction) {
     });
     createdRoles.push(linkRole);
 
+    // Update config with role IDs
     await moderationSystem.updatePermRoles({
       vc: vcRole.id,
       pic: picRole.id,
       link: linkRole.id
     });
 
+    // Setup channel permissions
+    const channelUpdates = {
+      text: 0,
+      voice: 0,
+      failed: 0
+    };
+
+    // First, set up @everyone restrictions and role permissions
+    for (const channel of guild.channels.cache.values()) {
+      try {
+        if (channel.isTextBased() && !channel.isThread()) {
+          // Restrict @everyone from sending attachments and links
+          await channel.permissionOverwrites.edit(guild.roles.everyone, {
+            AttachFiles: false,
+            EmbedLinks: false
+          }, { reason: 'Setup moderation permissions' });
+
+          // Allow Pic Perms role to send attachments and embeds
+          await channel.permissionOverwrites.create(picRole, {
+            AttachFiles: true,
+            EmbedLinks: true
+          }, { reason: 'Setup pic permissions' });
+
+          // Allow Link Perms role to send links (but not necessarily attachments)
+          await channel.permissionOverwrites.create(linkRole, {
+            EmbedLinks: true
+          }, { reason: 'Setup link permissions' });
+
+          channelUpdates.text++;
+        } else if (channel.isVoiceBased()) {
+          // Set up voice channel permissions for VC Perms role
+          await channel.permissionOverwrites.create(vcRole, {
+            MuteMembers: true,
+            DeafenMembers: true,
+            MoveMembers: true
+          }, { reason: 'Setup VC permissions' });
+
+          channelUpdates.voice++;
+        }
+      } catch (error) {
+        console.error(`[SetupPerms] Error updating channel ${channel.name}:`, error);
+        channelUpdates.failed++;
+      }
+    }
+
     const embed = embedLoader.createEmbed({
       title: 'Moderation System',
-      description: 'Successfully created moderation permission roles',
+      description: 'Successfully created moderation permission roles and updated channels',
       fields: [
         { 
           name: 'VC Perms', 
@@ -1390,6 +1439,16 @@ export async function executeSetupPerms(interaction) {
           name: 'Link Perms', 
           value: `${linkRole}\nSend Links`, 
           inline: true 
+        },
+        {
+          name: 'Channel Updates',
+          value: `Text Channels: ${channelUpdates.text}\nVoice Channels: ${channelUpdates.voice}\nFailed: ${channelUpdates.failed}`,
+          inline: false
+        },
+        {
+          name: 'Important Notes',
+          value: '• @everyone can no longer send images/links in text channels\n• Users need Pic Perms role to send images\n• Users need Link Perms role to send links\n• Users with VC Perms can moderate voice channels',
+          inline: false
         }
       ],
       footer: 'Assign these roles to users who need the permissions'
@@ -1400,8 +1459,8 @@ export async function executeSetupPerms(interaction) {
     await moderationSystem.logAction(interaction.guild, {
       action: 'Setup Permissions',
       moderator: interaction.user,
-      target: 'Created permission roles',
-      additional: `VC: ${vcRole.id}, Pic: ${picRole.id}, Link: ${linkRole.id}`
+      target: 'Created permission roles and updated channels',
+      additional: `VC: ${vcRole.id}, Pic: ${picRole.id}, Link: ${linkRole.id} | Updated ${channelUpdates.text + channelUpdates.voice} channels`
     });
   } catch (error) {
     console.error('Error setting up permission roles:', error);

@@ -86,7 +86,7 @@ export default class ProtectionHandler {
   }
   
   /**
-   * Handle webhook update
+   * Handle webhook update/creation
    */
   async handleWebhookUpdate(channel) {
     if (!channel.guild) return;
@@ -104,12 +104,34 @@ export default class ProtectionHandler {
       const member = await channel.guild.members.fetch(executor.id).catch(() => null);
       if (!member) return;
       
-      if (!this.antiNuke.canCreateWebhooks(member)) {
+      // Check permission level - webhooks require whitelisted or higher
+      const permLevel = this.antiNuke.getPermissionLevel(member);
+      
+      if (permLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+        // Not whitelisted - delete webhook immediately
         const webhooks = await channel.fetchWebhooks();
         const webhook = webhooks.find(w => w.id === target.id);
         
         if (webhook) {
-          await webhook.delete('AntiNuke: Unauthorized webhook creation');
+          await webhook.delete('AntiNuke: Unauthorized webhook creation - not whitelisted');
+          this.antiNuke.logSecurity(channel.guild, 'Unauthorized Webhook Blocked', 
+            `${executor.tag} tried to create webhook "${webhook.name}" without whitelist permissions\n` +
+            `Permission Level: ${permLevel} (Whitelisted required)`);
+          
+          if (member.moderatable) {
+            const timeoutDuration = this.config.contentModeration?.timeoutDuration;
+            if (timeoutDuration) {
+              await member.timeout(timeoutDuration, 'AntiNuke: Unauthorized webhook creation');
+            }
+          }
+        }
+      } else if (!this.antiNuke.canCreateWebhooks(member)) {
+        // Whitelisted but not admin+ - check specific webhook permissions
+        const webhooks = await channel.fetchWebhooks();
+        const webhook = webhooks.find(w => w.id === target.id);
+        
+        if (webhook) {
+          await webhook.delete('AntiNuke: Unauthorized webhook creation - requires Administrator+');
           this.antiNuke.logSecurity(channel.guild, 'Unauthorized Webhook Blocked', 
             `${executor.tag} tried to create webhook "${webhook.name}" without Administrator+ permissions`);
           
@@ -127,7 +149,7 @@ export default class ProtectionHandler {
   }
   
   /**
-   * Handle member join
+   * Handle member join (especially bot joins)
    */
   async handleMemberJoin(member) {
     if (member.user.bot) {
@@ -147,27 +169,43 @@ export default class ProtectionHandler {
         }
         
         let hasPermission = false;
+        let permissionLevel = 0;
         
         if (inviter) {
           const inviterMember = await member.guild.members.fetch(inviter.id).catch(() => null);
           if (inviterMember) {
+            permissionLevel = this.antiNuke.getPermissionLevel(inviterMember);
             hasPermission = this.antiNuke.canInviteBots(inviterMember);
           }
         }
         
+        // Check whitelisted bots
         const whitelistedBots = this.config.botProtection?.whitelistedBots || [];
         if (whitelistedBots.includes(member.id)) {
           hasPermission = true;
         }
         
         if (!hasPermission) {
-          await member.ban({ reason: 'AntiNuke: Unauthorized bot (requires AntiNuke Admin+)' });
+          // Determine the reason
+          let reason = 'AntiNuke: Unauthorized bot';
+          let details = '';
+          
+          if (permissionLevel < this.antiNuke.permissions.LEVELS.WHITELISTED) {
+            reason += ' (requires whitelist)';
+            details = 'User is not whitelisted. Only whitelisted users can invite bots.';
+          } else {
+            reason += ' (requires AntiNuke Admin+)';
+            details = 'User is whitelisted but needs AntiNuke Admin permissions to invite bots.';
+          }
+          
+          await member.ban({ reason });
           this.antiNuke.stats.contentViolations.unauthorizedBots++;
           
           this.antiNuke.logSecurity(member.guild, 'Unauthorized Bot Banned', 
             `Bot: ${member.user.tag} (${member.id})\n` +
             `Invited by: ${inviter ? `${inviter.tag} (${inviter.id})` : 'Unknown'}\n` +
-            `Only AntiNuke Admins or the server owner can invite bots.`);
+            `Permission Level: ${permissionLevel}\n` +
+            `Reason: ${details}`);
           
           if (inviter) {
             const inviterMember = await member.guild.members.fetch(inviter.id).catch(() => null);
@@ -180,7 +218,7 @@ export default class ProtectionHandler {
           }
         } else if (inviter) {
           this.antiNuke.logSecurity(member.guild, 'Bot Added', 
-            `Bot: ${member.user.tag}\nAuthorized by: ${inviter.tag}`);
+            `Bot: ${member.user.tag}\nAuthorized by: ${inviter.tag}\nPermission Level: ${permissionLevel}`);
         }
       } catch (error) {
         console.error('[ProtectionHandler] Error handling bot join:', error);
