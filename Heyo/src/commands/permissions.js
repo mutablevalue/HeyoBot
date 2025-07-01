@@ -4,20 +4,24 @@ import {
   PermissionFlagsBits
 } from 'discord.js';
 
-let permissionSystem = null;
-let moderationSystem = null;
+let antiNukeInstance = null;
 let embedLoader = null;
 
-export function setPermissionSystem(system) {
-  permissionSystem = system;
-}
-
-export function setModerationSystem(system) {
-  moderationSystem = system;
+export function setAntiNukeInstance(instance) {
+  antiNukeInstance = instance;
 }
 
 export function setEmbedLoader(loader) {
   embedLoader = loader;
+}
+
+// For backwards compatibility - these all set the same antiNuke instance
+export function setPermissionSystem(system) {
+  antiNukeInstance = system;
+}
+
+export function setModerationSystem(system) {
+  antiNukeInstance = system;
 }
 
 export const data = new SlashCommandBuilder()
@@ -62,7 +66,8 @@ export const data = new SlashCommandBuilder()
           .setRequired(false)
           .addChoices(
             { name: 'Moderator', value: 'moderator' },
-            { name: 'Administrator', value: 'administrator' }
+            { name: 'Administrator', value: 'administrator' },
+            { name: 'AntiNuke Admin', value: 'antiNukeAdmin' }
           )
       )
   )
@@ -93,13 +98,14 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)
           .addChoices(
             { name: 'Moderator', value: 'moderator' },
-            { name: 'Administrator', value: 'administrator' }
+            { name: 'Administrator', value: 'administrator' },
+            { name: 'AntiNuke Admin', value: 'antiNukeAdmin' }
           )
       )
   );
 
 export async function execute(interaction) {
-  if (!permissionSystem || !moderationSystem) {
+  if (!antiNukeInstance || !embedLoader) {
     const errorEmbed = embedLoader 
       ? embedLoader.error('Permission system not loaded.')
       : null;
@@ -125,6 +131,7 @@ export async function execute(interaction) {
 
 async function executeView(interaction) {
   const targetUser = interaction.options.getUser('user');
+  const permissionManager = antiNukeInstance.permissions;
   
   if (targetUser) {
     // Show specific user's permissions
@@ -134,8 +141,8 @@ async function executeView(interaction) {
       return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
     
-    const level = permissionSystem.getPermissionLevel(member);
-    const levelName = permissionSystem.getLevelName(level);
+    const level = antiNukeInstance.getPermissionLevel(member);
+    const levelName = permissionManager.getLevelName(level);
     
     const fields = [
       { name: 'User', value: `${targetUser}`, inline: true },
@@ -144,11 +151,14 @@ async function executeView(interaction) {
     
     // Add special badges
     const badges = [];
-    if (targetUser.id === permissionSystem.BOT_OWNER_ID) {
-      badges.push('Bot Owner');
+    if (targetUser.id === permissionManager.BOT_OWNER_ID) {
+      badges.push('🔴 Bot Owner');
     }
     if (member.id === member.guild.ownerId) {
-      badges.push('Server Owner');
+      badges.push('👑 Server Owner');
+    }
+    if (antiNukeInstance.isWhitelisted(targetUser.id)) {
+      badges.push('✅ Whitelisted');
     }
     
     if (badges.length > 0) {
@@ -162,7 +172,7 @@ async function executeView(interaction) {
     // Show what commands they can use
     const sampleCommands = ['ban', 'kick', 'mute', 'purge', 'nuke', 'setupperms'];
     const allowedCommands = sampleCommands.filter(cmd => 
-      permissionSystem.canExecuteCommand(member, cmd).allowed
+      antiNukeInstance.canExecuteCommand(member, cmd).allowed
     );
     
     if (allowedCommands.length > 0) {
@@ -182,25 +192,25 @@ async function executeView(interaction) {
     await interaction.reply({ embeds: [embed] });
   } else {
     // Show overall permission hierarchy
-    const stats = permissionSystem.getStats();
-    const config = moderationSystem.config;
+    const stats = antiNukeInstance.permissions.getStats();
+    const config = antiNukeInstance.fullConfig.get('moderation');
     
     const fields = [
       {
-        name: 'Bot Owner',
-        value: `<@${permissionSystem.BOT_OWNER_ID}>\n` +
+        name: '🔴 Bot Owner',
+        value: `<@${permissionManager.BOT_OWNER_ID}>\n` +
                `Has **absolute control** over all systems`,
         inline: false
       },
       {
-        name: 'Server Owner',
+        name: '👑 Server Owner',
         value: config.ownerBypass ? 
           'Has **all permissions** (bypass enabled)' : 
           'Treated as **AntiNuke Admin** (bypass disabled)',
         inline: false
       },
       {
-        name: 'AntiNuke Admins',
+        name: '🛡️ AntiNuke Admins',
         value: `**${stats.antiNukeAdmins} users**\n` +
                `Manage all permissions\n` +
                `Bypass AntiNuke checks\n` +
@@ -208,21 +218,21 @@ async function executeView(interaction) {
         inline: false
       },
       {
-        name: 'Administrators',
+        name: '⚡ Administrators',
         value: `**${stats.administrators} users**\n` +
                `Advanced moderation\n` +
                `Commands: ban, kick, nuke, etc.`,
         inline: false
       },
       {
-        name: 'Whitelisted',
+        name: '✅ Whitelisted',
         value: `**${stats.antiNukeWhitelist} users**\n` +
                `Bypass AntiNuke tracking\n` +
                `Trusted by the system`,
         inline: false
       },
       {
-        name: 'Moderators',
+        name: '🔨 Moderators',
         value: `**${stats.moderators} users**\n` +
                `Basic moderation\n` +
                `Commands: mute, purge, lock`,
@@ -245,9 +255,10 @@ async function executeUser(interaction) {
   const action = interaction.options.getString('action');
   const user = interaction.options.getUser('target');
   const level = interaction.options.getString('level');
+  const permissionManager = antiNukeInstance.permissions;
   
   // Check permissions
-  const executorLevel = permissionSystem.getPermissionLevel(interaction.member);
+  const executorLevel = antiNukeInstance.getPermissionLevel(interaction.member);
   
   if (action === 'assign') {
     if (!level) {
@@ -256,14 +267,14 @@ async function executeUser(interaction) {
     }
     
     // Check if executor can assign this level
-    const canAssign = permissionSystem.canAssignPermissionRole(interaction.member, level);
+    const canAssign = permissionManager.canAssignPermissionRole(interaction.member, level);
     if (!canAssign.allowed) {
       const errorEmbed = embedLoader.error(canAssign.reason);
       return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
     
     // Check if trying to assign to self
-    if (user.id === interaction.user.id && executorLevel < permissionSystem.LEVELS.OWNER) {
+    if (user.id === interaction.user.id && executorLevel < permissionManager.LEVELS.OWNER) {
       const errorEmbed = embedLoader.error('You cannot modify your own permissions.');
       return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
@@ -271,49 +282,39 @@ async function executeUser(interaction) {
     // Check if target has higher permissions
     const targetMember = await interaction.guild.members.fetch(user.id).catch(() => null);
     if (targetMember) {
-      const canManage = permissionSystem.canManageMember(interaction.member, targetMember, 'permissions');
+      const canManage = permissionManager.canManageMember(interaction.member, targetMember, 'permissions');
       if (!canManage.allowed) {
         const errorEmbed = embedLoader.error(canManage.reason);
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
     }
     
-    // Update config directly
-    const config = moderationSystem.config;
+    // Add user to level
+    const success = await permissionManager.addUserToLevel(user.id, level);
     
-    // Remove from all levels first
-    for (const lvl of ['moderator', 'administrator']) {
-      const idx = config.permissions[lvl].users.indexOf(user.id);
-      if (idx > -1) {
-        config.permissions[lvl].users.splice(idx, 1);
-      }
+    if (!success) {
+      const errorEmbed = embedLoader.error('Failed to assign permission level.');
+      return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
-    
-    // Add to new level
-    if (!config.permissions[level].users.includes(user.id)) {
-      config.permissions[level].users.push(user.id);
-    }
-    
-    // Save config
-    await moderationSystem.saveConfig();
     
     // Clear permission cache
-    permissionSystem.clearUserCache(interaction.guild.id, user.id);
+    permissionManager.clearUserCache(interaction.guild.id, user.id);
     
-    const levelName = level.charAt(0).toUpperCase() + level.slice(1);
+    const levelName = level === 'antiNukeAdmin' ? 'AntiNuke Admin' : 
+                      level.charAt(0).toUpperCase() + level.slice(1);
     const embed = embedLoader.success(`Assigned ${user} to **${levelName}** level.`);
     
     await interaction.reply({ embeds: [embed] });
     
     // Log the action
-    await moderationSystem.logAction(interaction.guild, {
+    await antiNukeInstance.logAction(interaction.guild, {
       action: 'Permission Update',
       moderator: interaction.user,
       target: `Assigned ${user.tag} to ${levelName}`
     });
   } else if (action === 'remove') {
     // Check if trying to remove from self
-    if (user.id === interaction.user.id && executorLevel < permissionSystem.LEVELS.OWNER) {
+    if (user.id === interaction.user.id && executorLevel < permissionManager.LEVELS.OWNER) {
       const errorEmbed = embedLoader.error('You cannot remove your own permissions.');
       return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
@@ -321,34 +322,24 @@ async function executeUser(interaction) {
     // Check if target has higher permissions
     const targetMember = await interaction.guild.members.fetch(user.id).catch(() => null);
     if (targetMember) {
-      const canManage = permissionSystem.canManageMember(interaction.member, targetMember, 'permissions');
+      const canManage = permissionManager.canManageMember(interaction.member, targetMember, 'permissions');
       if (!canManage.allowed) {
         const errorEmbed = embedLoader.error(canManage.reason);
         return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
       }
     }
     
-    // Remove from all permission levels in config
-    const config = moderationSystem.config;
-    
-    for (const lvl of ['moderator', 'administrator']) {
-      const idx = config.permissions[lvl].users.indexOf(user.id);
-      if (idx > -1) {
-        config.permissions[lvl].users.splice(idx, 1);
-      }
-    }
-    
-    // Save config
-    await moderationSystem.saveConfig();
+    // Remove from all permission levels
+    await permissionManager.removeUserFromAllLevels(user.id);
     
     // Clear permission cache
-    permissionSystem.clearUserCache(interaction.guild.id, user.id);
+    permissionManager.clearUserCache(interaction.guild.id, user.id);
     
     const embed = embedLoader.success(`Removed all permissions from ${user}.`);
     await interaction.reply({ embeds: [embed] });
     
     // Log the action
-    await moderationSystem.logAction(interaction.guild, {
+    await antiNukeInstance.logAction(interaction.guild, {
       action: 'Permission Update',
       moderator: interaction.user,
       target: `Removed all permissions from ${user.tag}`
@@ -360,33 +351,36 @@ async function executeRole(interaction) {
   const action = interaction.options.getString('action');
   const role = interaction.options.getRole('target');
   const level = interaction.options.getString('level');
+  const permissionManager = antiNukeInstance.permissions;
   
   // Check if executor can assign this level
-  const canAssign = permissionSystem.canAssignPermissionRole(interaction.member, level);
+  const canAssign = permissionManager.canAssignPermissionRole(interaction.member, level);
   if (!canAssign.allowed) {
     const errorEmbed = embedLoader.error(canAssign.reason);
     return interaction.reply({ embeds: [errorEmbed], ephemeral: true });
   }
   
-  const config = moderationSystem.config;
+  const config = antiNukeInstance.fullConfig.get('moderation');
+  const permissions = config.permissions;
   
   if (action === 'add') {
-    if (!config.permissions[level].roles.includes(role.id)) {
-      config.permissions[level].roles.push(role.id);
+    if (!permissions[level].roles.includes(role.id)) {
+      permissions[level].roles.push(role.id);
       
-      await moderationSystem.saveConfig();
+      await antiNukeInstance.saveConfig();
       
       // Clear cache for all members with this role
       for (const member of role.members.values()) {
-        permissionSystem.clearUserCache(interaction.guild.id, member.id);
+        permissionManager.clearUserCache(interaction.guild.id, member.id);
       }
       
-      const levelName = level.charAt(0).toUpperCase() + level.slice(1);
+      const levelName = level === 'antiNukeAdmin' ? 'AntiNuke Admin' : 
+                        level.charAt(0).toUpperCase() + level.slice(1);
       const embed = embedLoader.success(`Added ${role} to **${levelName}** level.`);
       
       await interaction.reply({ embeds: [embed] });
       
-      await moderationSystem.logAction(interaction.guild, {
+      await antiNukeInstance.logAction(interaction.guild, {
         action: 'Permission Update',
         moderator: interaction.user,
         target: `Added role ${role.name} to ${levelName}`
@@ -396,24 +390,25 @@ async function executeRole(interaction) {
       await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
     }
   } else if (action === 'remove') {
-    const index = config.permissions[level].roles.indexOf(role.id);
+    const index = permissions[level].roles.indexOf(role.id);
     
     if (index > -1) {
-      config.permissions[level].roles.splice(index, 1);
+      permissions[level].roles.splice(index, 1);
       
-      await moderationSystem.saveConfig();
+      await antiNukeInstance.saveConfig();
       
       // Clear cache for all members with this role
       for (const member of role.members.values()) {
-        permissionSystem.clearUserCache(interaction.guild.id, member.id);
+        permissionManager.clearUserCache(interaction.guild.id, member.id);
       }
       
-      const levelName = level.charAt(0).toUpperCase() + level.slice(1);
+      const levelName = level === 'antiNukeAdmin' ? 'AntiNuke Admin' : 
+                        level.charAt(0).toUpperCase() + level.slice(1);
       const embed = embedLoader.success(`Removed ${role} from **${levelName}** level.`);
       
       await interaction.reply({ embeds: [embed] });
       
-      await moderationSystem.logAction(interaction.guild, {
+      await antiNukeInstance.logAction(interaction.guild, {
         action: 'Permission Update',
         moderator: interaction.user,
         target: `Removed role ${role.name} from ${levelName}`

@@ -124,8 +124,6 @@ moderation:
     antiNukeAdmin:
       users:
         - "1235002473698299956"
-        - "987654321098765432"
-        - "234567890123456789"
         - "1135418923572023317"
         - "766136631370711042"
         - "1162730217895379025"
@@ -139,6 +137,8 @@ moderation:
         - "744763880093384756"
       roles:
         - "1386505042970021899"
+        - "1386505052285304856"
+        - "1386505045226291352"
       commands:
         - ban
         - unban
@@ -170,6 +170,7 @@ moderation:
       roles:
         - "1386505054676324454"
         - "1386505053459845231"
+        - "1386505056014303382"
       commands:
         - lockchannel
         - unlockchannel
@@ -181,9 +182,9 @@ moderation:
         - verifylist
         - verifystatus
   permRoles:
-    vc: "1388957108590084187"
-    pic: "1388957109684670516"
-    link: "1388957110578057429"
+    vc: "1389287021758906549"
+    pic: "1389287023386558718"
+    link: "1389287024065773740"
   logChannel: "1376674252173873183"
   cooldowns:
     default: 3
@@ -477,9 +478,9 @@ j2c:
       categoryId: "1386382293706342601"
       createdAt: 2025-06-22T16:29:17.463Z
     "1375334842434060318":
-      j2cChannelId: "1386732785028431943"
-      categoryId: "1386732783011102811"
-      createdAt: 2025-06-23T15:42:01.039Z
+      j2cChannelId: "1389287452807663707"
+      categoryId: "1389287451406762034"
+      createdAt: 2025-06-30T16:53:23.472Z
 welcome:
   enabled: true
   channel: "1386505643992682567"
@@ -569,7 +570,7 @@ ticketSystem:
   enableLogging: true
   stats:
     totalTickets: 6
-    totalClosed: 5
+    totalClosed: 6
     averageResponseTime: 0
     averageResolutionTime: 0
   defaultCategoryId: "1379953422241103944"
