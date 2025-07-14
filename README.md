@@ -56,14 +56,11 @@ Join to Create - Dynamic voice channel creation
 
 Booster Perks - Custom voice channels for boosters
 
-🚀 Setup
+Setup
 Prerequisites
 
 Node.js 18.0.0 or higher
 Discord Bot Token
 Required bot permissions
 
-Installation
-
-Clone the repository:
 
