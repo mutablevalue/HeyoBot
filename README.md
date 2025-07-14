@@ -1,7 +1,7 @@
-Multi-Purpose Discord Bot
+#Multi-Purpose Discord Bot#
   A comprehensive Discord bot featuring moderation, music, utilities, and advanced server protection systems.
 
-Core Features
+#Core Features#
 
   Music System - Play music with DJ controls, queue management, and voting
 
