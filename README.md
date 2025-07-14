@@ -1,58 +1,59 @@
-#Multi-Purpose Discord Bot#
+# Multi-Purpose Discord Bot
+
   A comprehensive Discord bot featuring moderation, music, utilities, and advanced server protection systems.
 
-#Core Features#
+## Core Features
 
-  Music System - Play music with DJ controls, queue management, and voting
+  - Music System - Play music with DJ controls, queue management, and voting
 
-  Advanced Moderation - Comprehensive mod tools with multi-user command support
+  - Advanced Moderation - Comprehensive mod tools with multi-user command support
 
-  Anti-Nuke Protection - Real-time threat detection and automatic response
+  - Anti-Nuke Protection - Real-time threat detection and automatic response
 
-  Ticket System - Support ticket management with transcripts
+  - Ticket System - Support ticket management with transcripts
 
-  Welcome System - Customizable welcome messages
+  - Welcome System - Customizable welcome messages
 
-  Role Management - Role tracking and history
+  - Role Management - Role tracking and history
 
 
-Utility Features
+## Utility Features
 
-  AFK System - Automatic AFK status management
+  - AFK System - Automatic AFK status management
 
-  Leaderboard - Message and voice activity tracking
+  - Leaderboard - Message and voice activity tracking
 
-  Birthday Tracker - Automatic birthday announcements and roles
+  - Birthday Tracker - Automatic birthday announcements and roles
 
-  Giveaway System - Create and manage giveaways
+  - Giveaway System - Create and manage giveaways
 
-  Event Management - Schedule and manage server events
+  - Event Management - Schedule and manage server events
 
-  Protection Features
+  - Protection Features
 
-  Link Protection - Advanced link filtering with whitelist support
+  - Link Protection - Advanced link filtering with whitelist support
 
-  Content Filter - Word filtering, spam detection, and message size limits
+  - Content Filter - Word filtering, spam detection, and message size limits
 
-  Selfbot Detection - Automatic detection and punishment of selfbots
+  - Selfbot Detection - Automatic detection and punishment of selfbots
 
-  Raid Protection - Multi-layered raid detection and mitigation
+  - Raid Protection - Multi-layered raid detection and mitigation
 
-Community Features
+## Community Features
 
-  Confession System - Anonymous confessions with moderation
+  - Confession System - Anonymous confessions with moderation
 
-  Skullboard - Highlight popular messages (like starboard)
+  - Skullboard - Highlight popular messages (like starboard)
 
-  Friend Groups - User-managed private channels and roles
+  - Friend Groups - User-managed private channels and roles
 
-  Gender Verification - ID-based verification system
+  - Gender Verification - ID-based verification system
 
-  Ban Appeals - Structured ban appeal process
+  - Ban Appeals - Structured ban appeal process
 
-Voice Features
+## Voice Features
 
-  Join to Create - Dynamic voice channel creation
+  - Join to Create - Dynamic voice channel creation
 
-  Booster Perks - Custom voice channels for boosters
+  - Booster Perks - Custom voice channels for boosters
 
