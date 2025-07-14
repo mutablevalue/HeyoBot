@@ -1,4 +1,4 @@
-token: MTM3OTkzNzIyNDI1NDI5NjE2NA.GJA1YB.PzezHN1z844GQvRJ46DR-POR4ayTub_kb3c4f0
+token: YOUR_BOT_TOKEN_HERE
 prefix: ""
 logging:
   level: info
@@ -11,7 +11,7 @@ bot:
     url: null
     color: RED
   bio: I'm a multi-purpose Discord bot!
-developmentGuildId: "1375334842434060318"
+developmentGuildId: "DEVELOPMENT_GUILD_ID"
 environment: production
 queue:
   maxSize: 100
@@ -58,13 +58,13 @@ linkProtection:
     - discordapp\.com\/invite\/[a-zA-Z0-9]+
   allowed:
     users:
-      - "123456789012345678"
+      - "ALLOWED_USER_ID"
     roles:
-      - "789012345678901234"
+      - "ALLOWED_ROLE_ID"
     useLinkPermRole: true
   exemptChannels:
-    - "1234567890123456789"
-  logChannel: "1380422905191731210"
+    - "EXEMPT_CHANNEL_ID"
+  logChannel: "LOG_CHANNEL_ID"
   deleteMessage: true
   warningMessage: Stop posting links.
   ephemeralWarning: true
@@ -98,11 +98,11 @@ vanity:
   vanityStrings:
     - /pow
   roles:
-    - "789012345678901234"
-    - "890123456789012345"
-    - "1380398417079046205"
-    - "1386756010282188922"
-  logChannel: "1380422905191731210"
+    - "VANITY_ROLE_ID_1"
+    - "VANITY_ROLE_ID_2"
+    - "VANITY_ROLE_ID_3"
+    - "VANITY_ROLE_ID_4"
+  logChannel: "VANITY_LOG_CHANNEL_ID"
   enableLogging: false
   caseSensitive: false
   checkUsername: true
@@ -110,35 +110,28 @@ vanity:
   checkBio: true
   checkStatus: true
   exemptRoles:
-    - "901234567890123456"
+    - "EXEMPT_ROLE_ID"
   removeOnVanityLoss: true
 moderation:
   ownerBypass: true
   permissions:
     botOwner:
       users:
-        - "1235002473698299956"
+        - "BOT_OWNER_USER_ID"
       roles: []
       commands:
         - all
     antiNukeAdmin:
       users:
-        - "1235002473698299956"
-        - "1135418923572023317"
-        - "766136631370711042"
-        - "1162730217895379025"
+        - "ANTINUKE_ADMIN_USER_ID"
       roles: []
       commands:
         - all
     administrator:
       users:
-        - "1162730217895379025"
-        - "825436754680348683"
-        - "744763880093384756"
+        - ""
       roles:
-        - "1386505042970021899"
-        - "1386505052285304856"
-        - "1386505045226291352"
+        - ""
       commands:
         - ban
         - unban
@@ -168,9 +161,7 @@ moderation:
     moderator:
       users: []
       roles:
-        - "1386505054676324454"
-        - "1386505053459845231"
-        - "1386505056014303382"
+        - ""
       commands:
         - lockchannel
         - unlockchannel
@@ -182,10 +173,10 @@ moderation:
         - verifylist
         - verifystatus
   permRoles:
-    vc: "1389287021758906549"
-    pic: "1389287023386558718"
-    link: "1389287024065773740"
-  logChannel: "1376674252173873183"
+    vc: "VC_PERM_ROLE_ID"
+    pic: "PIC_PERM_ROLE_ID"
+    link: "LINK_PERM_ROLE_ID"
+  logChannel: "MOD_LOG_CHANNEL_ID"
   cooldowns:
     default: 3
     nuke: 60
@@ -216,7 +207,7 @@ moderation:
     checkInterval: 5000
     roleId: null
   permMuteRole:
-    roleId: "1381115435885264896"
+    roleId: "MUTE_ROLE_ID"
     defaultName: Muted
     defaultColor: 8421504
   multiUserCommands:
@@ -253,7 +244,7 @@ moderation:
 antiNuke:
   whitelist:
     users:
-      - "1249300395600384025"
+      - "WHITELIST_USER_ID"
     roles: []
   limits:
     commands:
@@ -301,8 +292,8 @@ antiNuke:
       maxActions: 1
       timeWindowSeconds: 60
       highAlertMaxActions: 1
-  adminLogChannel: "1376674252173873183"
-  abuseLogChannel: "1376674252173873183"
+  adminLogChannel: "ADMIN_LOG_CHANNEL_ID"
+  abuseLogChannel: "ABUSE_LOG_CHANNEL_ID"
   logCooldown: 3600000
   warningCooldown: 30000
   cleanupInterval: 300000
@@ -412,10 +403,10 @@ antiNuke:
       minUsersForRaid: 3
     timeoutDuration: 300000
     exemptRoles:
-      - "1235002473698299956"
+      - "EXEMPT_ROLE_ID"
   reactionExemptRoles:
-    - "1235002473698299956"
-    - "456789012345678901"
+    - "REACTION_EXEMPT_ROLE_ID_1"
+    - "REACTION_EXEMPT_ROLE_ID_2"
   multiUserDetection:
     enabled: true
     coordinationWindow: 10000
@@ -469,21 +460,21 @@ j2c:
   j2cChannelId: null
   defaultCategoryName: Voice Channels
   guilds:
-    "1379953422241103943":
-      j2cChannelId: "1382574668766121994"
-      categoryId: "1382574667310698516"
+    "GUILD_ID_1":
+      j2cChannelId: "J2C_CHANNEL_ID_1"
+      categoryId: "J2C_CATEGORY_ID_1"
       createdAt: 2025-06-12T04:19:00.215Z
-    "1385835001874088018":
-      j2cChannelId: "1386382294889136313"
-      categoryId: "1386382293706342601"
+    "GUILD_ID_2":
+      j2cChannelId: "J2C_CHANNEL_ID_2"
+      categoryId: "J2C_CATEGORY_ID_2"
       createdAt: 2025-06-22T16:29:17.463Z
-    "1375334842434060318":
-      j2cChannelId: "1389287452807663707"
-      categoryId: "1389287451406762034"
+    "GUILD_ID_3":
+      j2cChannelId: "J2C_CHANNEL_ID_3"
+      categoryId: "J2C_CATEGORY_ID_3"
       createdAt: 2025-06-30T16:53:23.472Z
 welcome:
   enabled: true
-  channel: "1386505643992682567"
+  channel: "WELCOME_CHANNEL_ID"
   message:
     description: fedK
     thumbnail: true
@@ -496,7 +487,7 @@ roleTracker:
   maxHistoryPerUser: 10
   trackBots: false
   exemptRoles: []
-  logChannel: "1386404206281490552"
+  logChannel: "ROLE_TRACKER_LOG_CHANNEL_ID"
 leaderboard:
   enabled: true
   trackMessages: true
@@ -549,12 +540,12 @@ ticketSystem:
     Thank you for creating a ticket! 
     Please describe your issue in detail and our support team will assist you shortly.
   categories:
-    - id: "1379953422241103944"
+    - id: "TICKET_CATEGORY_ID"
       name: Text Channels
       description: a
-      supportRole: "1380398417079046205"
-      categoryId: "1379953422241103944"
-      welcomeMessage: Welcome to your Text Channels ticket! A member of <@&1380398417079046205> will assist you shortly.
+      supportRole: "SUPPORT_ROLE_ID"
+      categoryId: "TICKET_CATEGORY_ID"
+      welcomeMessage: Welcome to your Text Channels ticket! A member of <@&SUPPORT_ROLE_ID> will assist you shortly.
   panelEmbed:
     title: Support Tickets
     description: Need help? Create a ticket and our support team will assist you!
@@ -566,14 +557,14 @@ ticketSystem:
     enabled: true
     timeout: 300000
   transcriptChannel: null
-  logChannel: "1386404206281490552"
+  logChannel: "TICKET_LOG_CHANNEL_ID"
   enableLogging: true
   stats:
     totalTickets: 6
     totalClosed: 6
     averageResponseTime: 0
     averageResolutionTime: 0
-  defaultCategoryId: "1379953422241103944"
+  defaultCategoryId: "DEFAULT_TICKET_CATEGORY_ID"
   closeOwnTicket: true
   transcriptOnClose: true
   dmTranscripts: false
@@ -623,9 +614,9 @@ filter:
   wordFilter:
     enabled: true
     defaultWords:
-      - nigger
-      - faggot
-      - fag
+      - [REMOVED]
+      - [REMOVED]
+      - [REMOVED]
     customWords: []
     exemptRoles: []
     exemptChannels: []
@@ -731,24 +722,24 @@ banAppeal:
     cooldown: You must wait {time} before submitting another appeal.
     maxReached: You have reached the maximum number of appeals allowed.
     error: An error occurred while submitting your appeal. Please try again later.
-  logChannel: "1386404206281490552"
+  logChannel: "BAN_APPEAL_LOG_CHANNEL_ID"
   enableLogging: true
 confess:
   enabled: true
   dataFile: confess_data.json
   channels:
-    "1379953422241103943": "1380422905191731210"
+    "SOURCE_GUILD_ID": "CONFESSION_CHANNEL_ID"
   cooldown: 300
   minLength: 10
   maxLength: 2000
   showConfessionNumber: true
   filterBannedWords: true
   bannedWords:
-    - nigger
-    - faggot
-    - fag
-    - retard
-    - kys
+    - [REMOVED]
+    - [REMOVED]
+    - [REMOVED]
+    - [REMOVED]
+    - [REMOVED]
   successMessage: "Your confession has been sent! ID: {id}"
   logChannel: null
   setupMessage:
@@ -763,8 +754,8 @@ skullboard:
   emoji: 💀
   defaultThreshold: 5
   guilds:
-    "1379953422241103943":
-      channelId: "1380422918017650719"
+    "SKULLBOARD_GUILD_ID":
+      channelId: "SKULLBOARD_CHANNEL_ID"
       threshold: 2
       emoji: 💀
   excludedChannels: []
@@ -884,24 +875,24 @@ genderVerify:
     notifyOnSubmit: true
     notifyOnReview: true
     dmResults: true
-  logChannel: "1386442742019788800"
+  logChannel: "GENDER_VERIFY_LOG_CHANNEL_ID"
   deleteDataAfterDays: 30
   requireAge18: true
   guilds:
-    "1379953422241103943":
-      guildId: "1379953422241103943"
+    "GENDER_VERIFY_GUILD_ID":
+      guildId: "GENDER_VERIFY_GUILD_ID"
       roles:
-        female: "1382455703364440066"
-        male: "1382455711983730862"
+        female: "FEMALE_ROLE_ID"
+        male: "MALE_ROLE_ID"
       channels:
-        verify: "1382455720624128030"
-        female: "1382455721714647122"
-        male: "1382455722918543402"
-        verified: "1382455723652546694"
-        verifiedVC: "1382455724570837057"
-        mainCategory: "1382455713187631164"
-        reviewCategory: "1382455714047463496"
-      panelMessageId: "1382455725544046696"
+        verify: "VERIFY_CHANNEL_ID"
+        female: "FEMALE_CHANNEL_ID"
+        male: "MALE_CHANNEL_ID"
+        verified: "VERIFIED_CHANNEL_ID"
+        verifiedVC: "VERIFIED_VC_ID"
+        mainCategory: "MAIN_CATEGORY_ID"
+        reviewCategory: "REVIEW_CATEGORY_ID"
+      panelMessageId: "PANEL_MESSAGE_ID"
       createdAt: 2025-06-11T20:26:21.348Z
 friendGroup:
   enabled: true
@@ -930,7 +921,7 @@ friendGroup:
     notifyOnSubmit: true
     notifyOnReview: true
     dmResults: true
-  logChannel: "1386442742019788800"
+  logChannel: "FRIEND_GROUP_LOG_CHANNEL_ID"
   deleteDataAfterDays: 30
   maxActiveGroups: 50
   maxActiveApplications: 20
@@ -941,18 +932,18 @@ friendGroup:
     - Stream
     - UseVAD
   guilds:
-    "1379953422241103943":
-      guildId: "1379953422241103943"
+    "FRIEND_GROUP_GUILD_ID":
+      guildId: "FRIEND_GROUP_GUILD_ID"
       categories:
-        review: "1382498243547496508"
-        friendGroups: "1382584383768363079"
+        review: "FG_REVIEW_CATEGORY_ID"
+        friendGroups: "FG_CATEGORY_ID"
       createdAt: 2025-06-11T23:15:19.546Z
       updatedAt: 2025-06-12T04:57:36.376Z
 giveaway:
   enabled: true
   dataFile: giveaways.json
   dmWinners: true
-  logChannel: "1386404206281490552"
+  logChannel: "GIVEAWAY_LOG_CHANNEL_ID"
   stats:
     totalGiveaways: 0
     totalWinners: 0
