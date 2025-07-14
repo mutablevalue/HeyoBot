@@ -56,11 +56,3 @@ Voice Features
 
   Booster Perks - Custom voice channels for boosters
 
-Setup
-  Prerequisites
-
-    Node.js 18.0.0 or higher
-    Discord Bot Token
-    Required bot permissions
-
-
