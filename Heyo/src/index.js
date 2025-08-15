@@ -1,6 +1,3 @@
-// src/index.js
-// Entry point for your Discord bot (ESM) with unified AntiNuke system
-
 import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, resolve } from "path";
 import fs from "fs";
