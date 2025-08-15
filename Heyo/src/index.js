@@ -6,17 +6,15 @@ import { ConfigLoader } from "./utils/configLoader.js";
 import { CommandRegistry } from "./utils/commandRegistry.js";
 import { EmbedLoader } from "./utils/embedLoader.js";
 import { RateLimiter } from "./utils/rateLimiter.js";
-import AntiNuke from "./systems/antiNuke.js"; // Now includes permissions & moderation
+import AntiNuke from "./systems/antiNuke.js";
 import { J2CManager } from "./systems/j2cManager.js";
 import { VanityManager } from "./systems/vanityManager.js";
 import { AfkManager } from "./systems/afkManager.js";
-// LinkProtection is now integrated into AntiNuke
 import { WelcomeSystem } from "./systems/welcomeSystem.js";
 import { RoleTracker } from "./systems/roleTracker.js";
 import { LeaderboardSystem } from "./systems/leaderboardSystem.js";
 import { EventHostingSystem } from "./systems/eventHostingSystem.js";
 import { BoosterSystem } from "./systems/boosterSystem.js";
-// FilterSystem is now integrated into AntiNuke
 import { BanAppealSystem } from "./systems/banAppealSystem.js";
 import { TicketSystem } from "./systems/ticketSystem.js";
 import { ConfessSystem } from "./systems/confessSystem.js";
