@@ -84,7 +84,7 @@ export class CommandRegistry {
     }
     
     if (allIssues.length > 0) {
-      console.error('\n❌ COMMAND VALIDATION FAILED:');
+      console.error('\n X COMMAND VALIDATION FAILED:');
       allIssues.forEach(({ command, issues }) => {
         console.error(`\nCommand: /${command}`);
         issues.forEach(issue => {
@@ -95,7 +95,7 @@ export class CommandRegistry {
       return;
     }
     
-    console.log('✅ All commands validated successfully!');
+    console.log(' All commands validated successfully!');
     console.log('\nCommands to register:', commandData.map(cmd => cmd.name).join(', '));
     
     try {
@@ -104,16 +104,16 @@ export class CommandRegistry {
           Routes.applicationGuildCommands(clientId, guildId),
           { body: commandData }
         );
-        console.log(`\n✅ Successfully registered ${commandData.length} slash commands to guild ${guildId}.`);
+        console.log(`\n Successfully registered ${commandData.length} slash commands to guild ${guildId}.`);
       } else {
         const result = await this.rest.put(
           Routes.applicationCommands(clientId),
           { body: commandData }
         );
-        console.log(`\n✅ Successfully registered ${commandData.length} slash commands globally.`);
+        console.log(`\n Successfully registered ${commandData.length} slash commands globally.`);
       }
     } catch (error) {
-      console.error('\n❌ Error registering commands:', error);
+      console.error('\n Error registering commands:', error);
       
       // Try to identify which command caused the error
       if (error.rawError && error.rawError.errors) {
